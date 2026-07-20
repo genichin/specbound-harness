@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SpecBound approval record (bootstrap slice)",
+  "type": "object",
+  "required": ["requirement_path", "requirement_id", "revision", "sha256", "risk", "authority"],
+  "properties": {
+    "requirement_path": {"type": "string"},
+    "requirement_id": {"type": "string", "pattern": "^req-[0-9]+$"},
+    "revision": {"type": "integer", "minimum": 1},
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "risk": {"type": "string", "minLength": 1},
+    "authority": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": true
+}
