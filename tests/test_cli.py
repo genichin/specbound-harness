@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 
 import pytest
+
+import specbound.validation as validation
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "fixtures"
@@ -33,8 +37,11 @@ def test_context_discovers_fixture_root() -> None:
     assert result.returncode == 0, result.stderr
     body = payload(result)
     assert body["requirements_root"] == "docs/requirements"
-    assert body["discoveries_root"] == "docs/discoveries"
-    assert body["discovery_confirmations_root"] == ".specbound/discovery-confirmations"
+    assert body["discoveries_root"] == ".specbound/discoveries"
+    assert body["discovery_confirmations_root"] == ".specbound/confirmations"
+    assert body["micro_specs_root"] == ".specbound/micro-specs"
+    assert body["iteration_qc_root"] == ".specbound/iteration-qc"
+    assert body["delivery_qc_root"] == ".specbound/delivery-qc"
 
 
 def test_preflight_accepts_bootstrap_config() -> None:
@@ -66,7 +73,9 @@ def test_discovery_template_matches_confirmation_contract() -> None:
     template = (ROOT / "templates/discovery.md").read_text(encoding="utf-8")
 
     assert "risk_class: <repository-defined risk classification>" in template
-    assert "docs/discoveries/dcy-<id>/disc-<id>-r<revision>.md" in template
+    assert ".specbound/discoveries/dcy-<id>-r<revision>.md" in template
+    assert "This is a `draft` Discovery." not in template
+    assert "lifecycle state is determined by its frontmatter" in template
     for heading in (
         "## 1. User intent",
         "## 2. Problem and target users",
@@ -126,7 +135,7 @@ def test_preflight_rejects_wrong_discovery_pattern(tmp_path: Path) -> None:
     config = fixture / "specbound.yaml"
     config.write_text(
         config.read_text(encoding="utf-8").replace(
-            "dcy-<id>/disc-<id>-r<revision>.md", "disc-<id>/disc-<id>-r<revision>.md"
+            "dcy-<id>-r<revision>.md", "dcy-<id>/dcy-<id>-r<revision>.md"
         ),
         encoding="utf-8",
     )
@@ -152,6 +161,142 @@ def test_preflight_requires_discovery_confirmer_allowlist(tmp_path: Path) -> Non
 
     assert result.returncode == 2
     assert "malformed_config" in {item["code"] for item in payload(result)["blockers"]}
+
+
+def test_discovery_confirm_creates_exact_record_and_validates(tmp_path: Path) -> None:
+    fixture = tmp_path / "confirm-discovery"
+    shutil.copytree(FIXTURES / "valid-minimal", fixture)
+    confirmation_path = fixture / ".specbound/confirmations/dcy-0001-r1.confirmation.json"
+    confirmation_path.unlink()
+    discovery_path = fixture / ".specbound/discoveries/dcy-0001-r1.md"
+    discovery_path.write_text(
+        discovery_path.read_text(encoding="utf-8").replace("status: confirmed", "status: in_review", 1),
+        encoding="utf-8",
+    )
+    reviewed_digest = hashlib.sha256(discovery_path.read_bytes()).hexdigest()
+    reviewed_body = discovery_path.read_text(encoding="utf-8").split("\n---\n", 1)[1]
+
+    result = run_cli(
+        "--root",
+        str(fixture),
+        "discovery",
+        "confirm",
+        "dcy-0001-r1",
+        "--authority",
+        "fixture-maintainer",
+    )
+
+    assert result.returncode == 0, result.stdout
+    record = json.loads(confirmation_path.read_text(encoding="utf-8"))
+    assert record["discovery_path"] == ".specbound/discoveries/dcy-0001-r1.md"
+    assert record["discovery_id"] == "dcy-0001"
+    assert record["revision"] == 1
+    assert record["reviewed_sha256"] == reviewed_digest
+    confirmed_text = discovery_path.read_text(encoding="utf-8")
+    assert "status: confirmed" in confirmed_text
+    assert confirmed_text.split("\n---\n", 1)[1] == reviewed_body
+    assert record["sha256"] == hashlib.sha256(
+        discovery_path.read_bytes()
+    ).hexdigest()
+    assert record["authority"] == "fixture-maintainer"
+    assert record["decision"] == "confirmed"
+    assert record["permitted_next_action"] == "draft_req_only"
+    assert run_cli("--root", str(fixture), "validate").returncode == 0
+
+
+def test_validate_rejects_confirmed_discovery_without_record(tmp_path: Path) -> None:
+    fixture = tmp_path / "confirmed-without-record"
+    shutil.copytree(FIXTURES / "valid-minimal", fixture)
+    (fixture / ".specbound/confirmations/dcy-0001-r1.confirmation.json").unlink()
+
+    result = run_cli("--root", str(fixture), "validate")
+
+    assert result.returncode == 2
+    assert "missing_discovery_confirmation" in {item["code"] for item in payload(result)["blockers"]}
+
+
+def test_discovery_confirm_rejects_existing_confirmation(tmp_path: Path) -> None:
+    fixture = tmp_path / "duplicate-confirmation"
+    shutil.copytree(FIXTURES / "valid-minimal", fixture)
+
+    result = run_cli(
+        "--root",
+        str(fixture),
+        "discovery",
+        "confirm",
+        "dcy-0001-r1",
+        "--authority",
+        "fixture-maintainer",
+    )
+
+    assert result.returncode == 2
+    assert "confirmation_already_exists" in {item["code"] for item in payload(result)["blockers"]}
+
+
+def test_discovery_confirm_rejects_superseded_revision_without_exception(tmp_path: Path) -> None:
+    fixture = tmp_path / "superseded-confirmation"
+    shutil.copytree(FIXTURES / "valid-minimal", fixture)
+    (fixture / ".specbound/confirmations/dcy-0001-r1.confirmation.json").unlink()
+    r1 = fixture / ".specbound/discoveries/dcy-0001-r1.md"
+    r1.write_text(r1.read_text(encoding="utf-8").replace("status: confirmed", "status: in_review", 1), encoding="utf-8")
+    r2 = fixture / ".specbound/discoveries/dcy-0001-r2.md"
+    r2.write_text(
+        r1.read_text(encoding="utf-8").replace("revision: 1", "revision: 2", 1), encoding="utf-8"
+    )
+
+    rejected = run_cli(
+        "--root",
+        str(fixture),
+        "discovery",
+        "confirm",
+        "dcy-0001-r1",
+        "--authority",
+        "fixture-maintainer",
+    )
+    assert rejected.returncode == 2
+    assert "superseded_discovery_revision" in {item["code"] for item in payload(rejected)["blockers"]}
+
+    accepted = run_cli(
+        "--root",
+        str(fixture),
+        "discovery",
+        "confirm",
+        "dcy-0001-r1",
+        "--authority",
+        "fixture-maintainer",
+        "--supersession-exception",
+        "Required historical baseline for migration audit.",
+    )
+    assert accepted.returncode == 0, accepted.stdout
+    record = json.loads((fixture / ".specbound/confirmations/dcy-0001-r1.confirmation.json").read_text(encoding="utf-8"))
+    assert record["supersession_exception"]["reason"] == "Required historical baseline for migration audit."
+
+
+def test_discovery_confirm_rejects_unallowlisted_authority(tmp_path: Path) -> None:
+    fixture = tmp_path / "unallowlisted-confirmation"
+    shutil.copytree(FIXTURES / "valid-minimal", fixture)
+    confirmation_path = fixture / ".specbound/confirmations/dcy-0001-r1.confirmation.json"
+    confirmation_path.unlink()
+    discovery_path = fixture / ".specbound/discoveries/dcy-0001-r1.md"
+    discovery_path.write_text(
+        discovery_path.read_text(encoding="utf-8").replace("status: confirmed", "status: in_review", 1),
+        encoding="utf-8",
+    )
+
+    result = run_cli(
+        "--root",
+        str(fixture),
+        "discovery",
+        "confirm",
+        "dcy-0001-r1",
+        "--authority",
+        "untrusted-actor",
+    )
+
+    assert result.returncode == 2
+    assert "invalid_discovery_confirmation_authority" in {item["code"] for item in payload(result)["blockers"]}
+    assert not confirmation_path.exists()
+    assert "status: in_review" in discovery_path.read_text(encoding="utf-8")
 
 
 def test_validate_rejects_symlinked_approval_record(tmp_path: Path) -> None:
@@ -187,7 +332,7 @@ def test_validate_rejects_digest_mismatch(tmp_path: Path) -> None:
 def test_validate_rejects_discovery_confirmation_digest_mismatch(tmp_path: Path) -> None:
     fixture = tmp_path / "discovery-digest-mismatch"
     shutil.copytree(FIXTURES / "valid-minimal", fixture)
-    discovery = fixture / "docs/discoveries/dcy-0001/disc-0001-r1.md"
+    discovery = fixture / ".specbound/discoveries/dcy-0001-r1.md"
     discovery.write_text(discovery.read_text(encoding="utf-8") + "\nChanged after confirmation.\n", encoding="utf-8")
 
     result = run_cli("--root", str(fixture), "validate")
@@ -201,7 +346,7 @@ def test_validate_rejects_discovery_confirmation_digest_mismatch(tmp_path: Path)
 def test_validate_rejects_excessive_discovery_authorization(tmp_path: Path) -> None:
     fixture = tmp_path / "excessive-discovery-authorization"
     shutil.copytree(FIXTURES / "valid-minimal", fixture)
-    confirmation_path = fixture / ".specbound/discovery-confirmations/disc-0001-r1.confirmation.json"
+    confirmation_path = fixture / ".specbound/confirmations/dcy-0001-r1.confirmation.json"
     confirmation = json.loads(confirmation_path.read_text(encoding="utf-8"))
     confirmation["permitted_next_action"] = "implementation"
     confirmation_path.write_text(json.dumps(confirmation), encoding="utf-8")
@@ -215,7 +360,7 @@ def test_validate_rejects_excessive_discovery_authorization(tmp_path: Path) -> N
 def test_validate_rejects_unallowlisted_discovery_confirmer(tmp_path: Path) -> None:
     fixture = tmp_path / "unallowlisted-discovery-confirmer"
     shutil.copytree(FIXTURES / "valid-minimal", fixture)
-    confirmation_path = fixture / ".specbound/discovery-confirmations/disc-0001-r1.confirmation.json"
+    confirmation_path = fixture / ".specbound/confirmations/dcy-0001-r1.confirmation.json"
     confirmation = json.loads(confirmation_path.read_text(encoding="utf-8"))
     confirmation["authority"] = "untrusted-actor"
     confirmation_path.write_text(json.dumps(confirmation), encoding="utf-8")
@@ -229,7 +374,7 @@ def test_validate_rejects_unallowlisted_discovery_confirmer(tmp_path: Path) -> N
 def test_validate_rejects_missing_discovery_schema_version(tmp_path: Path) -> None:
     fixture = tmp_path / "missing-discovery-schema-version"
     shutil.copytree(FIXTURES / "valid-minimal", fixture)
-    confirmation_path = fixture / ".specbound/discovery-confirmations/disc-0001-r1.confirmation.json"
+    confirmation_path = fixture / ".specbound/confirmations/dcy-0001-r1.confirmation.json"
     confirmation = json.loads(confirmation_path.read_text(encoding="utf-8"))
     del confirmation["schema_version"]
     confirmation_path.write_text(json.dumps(confirmation), encoding="utf-8")
@@ -278,7 +423,7 @@ def test_validate_rejects_symlinked_intermediate_directory(tmp_path: Path, link_
 def test_validate_rejects_symlinked_discovery_directory(tmp_path: Path) -> None:
     fixture = tmp_path / "symlinked-discovery"
     shutil.copytree(FIXTURES / "valid-minimal", fixture)
-    directory = fixture / "docs/discoveries/dcy-0001"
+    directory = fixture / ".specbound/discoveries"
     outside = tmp_path / "outside-discovery"
     directory.rename(outside)
     try:
@@ -290,3 +435,5 @@ def test_validate_rejects_symlinked_discovery_directory(tmp_path: Path) -> None:
 
     assert result.returncode == 2
     assert "unsafe_artifact_path" in {item["code"] for item in payload(result)["blockers"]}
+
+

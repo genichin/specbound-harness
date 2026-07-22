@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "requirement_path": "docs/requirements/req-0001/req-0001-r1.md",
+  "requirement_id": "req-0001",
+  "revision": 1,
+  "reviewed_sha256": "d4b86206eedfdd58acb0bbccab413efdb815b031947d7c678473b05c4667192c",
+  "sha256": "f8c8edb5eeb3a854c1cf3410ed23adda227b03d38235067b2d45069117a4d971",
+  "risk": "high",
+  "authority": "independent-advanced-llm-reviewer",
+  "approved_at": "2026-07-21T23:37:27+09:00",
+  "reason": "An independent review found no approval blocker for the exact in-review REQ snapshot. The accountable user explicitly selected the policy-allowlisted independent-advanced-llm-reviewer authority for this high-risk approval decision.",
+  "issuance_mode": "manual_bootstrap_exception",
+  "exception_authorized_by": "accountable user direct instruction in this session",
+  "supersession_exception": {
+    "reason": "r2 is required solely to correct r1's stale in-review lifecycle prose while preserving r1's exact approved bytes as historical implementation-verification baseline; it does not authorize adoption, implementation, merge, delivery, release, or an expansion of approved scope.",
+    "authority": "independent-advanced-llm-reviewer",
+    "recorded_at": "2026-07-22T16:05:27+09:00"
+  }
+}

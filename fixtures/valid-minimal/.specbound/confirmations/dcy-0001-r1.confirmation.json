@@ -1,0 +1,13 @@
+{
+  "authority": "fixture-maintainer",
+  "confirmed_at": "2026-07-20T23:14:09.623351+09:00",
+  "decision": "confirmed",
+  "discovery_id": "dcy-0001",
+  "discovery_path": ".specbound/discoveries/dcy-0001-r1.md",
+  "permitted_next_action": "draft_req_only",
+  "reviewed_sha256": "0b131a52d3a84031ef41d2685620de80552c10bb7d7418462b3104aa8e981eb7",
+  "revision": 1,
+  "risk_class": "low",
+  "schema_version": 1,
+  "sha256": "bc41dc62d293826f2d394dd622d30c913f9c54d64efd6f74c74b1608c1fe08e2"
+}

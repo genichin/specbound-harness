@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "micro_spec": {
+    "path": ".specbound/micro-specs/req-<id>/ms-<id>-<slice>.md",
+    "id": "ms-<id>-<slice>",
+    "sha256": "<exact-canonical-micro-spec-sha256>"
+  },
+  "selected_acceptance_criteria": ["AC-<id>"],
+  "verification": [
+    {
+      "command": "<reproducible-focused-command>",
+      "result": "passed",
+      "exit_code": 0
+    }
+  ],
+  "verdict": "verified",
+  "remaining_acceptance_criteria": ["AC-<id-not-in-this-slice>"]
+}

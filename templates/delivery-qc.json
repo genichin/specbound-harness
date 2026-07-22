@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "requirement": {
+    "path": "docs/requirements/req-<id>/req-<id>-r<revision>.md",
+    "id": "req-<id>",
+    "revision": 1,
+    "sha256": "<exact-approved-req-sha256>"
+  },
+  "coverage": [
+    {
+      "acceptance_criterion": "AC-<id>",
+      "iteration_qc": {
+        "path": ".specbound/iteration-qc/req-<id>/iqc-<id>-<slice>-r<revision>.json",
+        "sha256": "<exact-canonical-iteration-qc-sha256>"
+      }
+    }
+  ],
+  "regression_evidence": [
+    {
+      "command": "<reproducible-cross-iteration-command>",
+      "result": "passed",
+      "exit_code": 0
+    }
+  ],
+  "authority": "<risk-policy-allowlisted-qc-authority>",
+  "residual_risk": {
+    "unresolved_exceptions": [],
+    "disposition": "No unresolved exceptions; evidence is ready for a separately authorized delivery decision."
+  },
+  "verdict": "verified"
+}

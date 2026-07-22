@@ -2,15 +2,25 @@
 version: 1
 canonical:
   requirements_root: docs/requirements
-  discoveries_root: docs/discoveries
+  discoveries_root: .specbound/discoveries
   control_root: .specbound
   approvals_root: .specbound/approvals
-  discovery_confirmations_root: .specbound/discovery-confirmations
+  discovery_confirmations_root: .specbound/confirmations
+  # .specbound/micro-specs/req-<id>/ms-<id>-<slice>.md
+  # .specbound/iteration-qc/req-<id>/iqc-<id>-<slice>-r<revision>.json
+  # .specbound/delivery-qc/dqc-<id>-r<revision>.json
+  micro_specs_root: .specbound/micro-specs
+  iteration_qc_root: .specbound/iteration-qc
+  delivery_qc_root: .specbound/delivery-qc
   requirement_pattern: "req-<id>/req-<id>-r<revision>.md"
-  discovery_pattern: "dcy-<id>/disc-<id>-r<revision>.md"
+  discovery_pattern: "dcy-<id>-r<revision>.md"
+  micro_spec_pattern: "req-<id>/ms-<id>-<slice>.md"
+  iteration_qc_pattern: "req-<id>/iqc-<id>-<slice>-r<revision>.json"
+  delivery_qc_pattern: "dqc-<id>-r<revision>.json"
 policy:
   approved_status: approved
-  confirmed_discovery_status: in_review
+  confirmed_discovery_status: confirmed
+  discovery_confirmation_revision_policy: latest_only_with_explicit_exception
   required_approval_fields:
     - requirement_path
     - requirement_id
@@ -23,6 +33,7 @@ policy:
     - discovery_path
     - discovery_id
     - revision
+    - reviewed_sha256
     - sha256
     - risk_class
     - authority
@@ -36,3 +47,15 @@ policy:
       - repository-maintainer
     high:
       - repository-maintainer
+  delivery_qc_authorities_by_risk:
+    low:
+      - repository-maintainer
+    medium:
+      - repository-maintainer
+    high:
+      - independent-advanced-llm-reviewer
+  # Opt in one exact approved REQ snapshot only after an explicit adoption decision.
+  # Adoption is required for iteration/delivery validation claims; it does not migrate history.
+  control_plane_adoption:
+    schema_version: 1
+    requirements: []

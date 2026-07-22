@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://specbound.local/schemas/micro-spec.schema.json",
+  "title": "SpecBound canonical Micro-SPEC v1",
+  "type": "object",
+  "required": ["schema_version", "id", "kind", "requirement", "selected_acceptance_criteria"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "id": {"type": "string", "pattern": "^ms-[0-9]+-0*[1-9][0-9]*$"},
+    "kind": {"const": "micro-spec"},
+    "requirement": {
+      "type": "object",
+      "required": ["path", "id", "revision", "sha256"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^docs/requirements/req-[0-9]+/req-[0-9]+-r[1-9][0-9]*\\.md$"},
+        "id": {"type": "string", "pattern": "^req-[0-9]+$"},
+        "revision": {"type": "integer", "minimum": 1},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      },
+      "additionalProperties": false
+    },
+    "selected_acceptance_criteria": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^AC-[0-9]+$"}
+    }
+  },
+  "additionalProperties": true
+}

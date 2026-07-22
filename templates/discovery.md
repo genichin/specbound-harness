@@ -1,5 +1,5 @@
 ---
-id: disc-<id>
+id: dcy-<id>
 revision: <revision>
 status: draft
 title: <concise discovery title>
@@ -14,7 +14,7 @@ related_requirement_refs: []
 
 # Discovery: <concise discovery title>
 
-> **Lifecycle boundary:** This is a `draft` Discovery. It is not an approved requirement and does not authorize implementation, merge, delivery, or release. A separate content-addressed confirmation record at `.specbound/discovery-confirmations/disc-<id>-r<revision>.confirmation.json` must bind the reviewed `docs/discoveries/dcy-<id>/disc-<id>-r<revision>.md` snapshot before it may authorize REQ drafting. Repository protection, CI, and (where required) a signed or external record enforce immutability beyond this local validator.
+> **Lifecycle boundary:** This Discovery's lifecycle state is determined by its frontmatter and any matching content-addressed confirmation record. It is not an approved requirement and never authorizes implementation, merge, delivery, or release. REQ drafting is permitted only when a valid confirmation record at `.specbound/confirmations/dcy-<id>-r<revision>.confirmation.json` binds this exact `.specbound/discoveries/dcy-<id>-r<revision>.md` snapshot with `permitted_next_action: draft_req_only`. Repository protection, CI, and (where required) a signed or external record enforce immutability beyond this local validator.
 
 ## 0. Discovery context and lineage
 

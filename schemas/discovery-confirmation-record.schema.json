@@ -7,6 +7,7 @@
     "discovery_path",
     "discovery_id",
     "revision",
+    "reviewed_sha256",
     "sha256",
     "risk_class",
     "authority",
@@ -16,15 +17,26 @@
   ],
   "properties": {
     "schema_version": {"const": 1},
-    "discovery_path": {"type": "string", "pattern": "^docs/discoveries/dcy-[0-9]+/disc-[0-9]+-r[1-9][0-9]*\\.md$"},
-    "discovery_id": {"type": "string", "pattern": "^disc-[0-9]+$"},
+    "discovery_path": {"type": "string", "pattern": "^\\.specbound/discoveries/dcy-[0-9]+-r[1-9][0-9]*\\.md$"},
+    "discovery_id": {"type": "string", "pattern": "^dcy-[0-9]+$"},
     "revision": {"type": "integer", "minimum": 1},
+    "reviewed_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "risk_class": {"type": "string", "minLength": 1},
     "authority": {"type": "string", "minLength": 1},
     "confirmed_at": {"type": "string", "format": "date-time"},
     "decision": {"const": "confirmed"},
-    "permitted_next_action": {"const": "draft_req_only"}
+    "permitted_next_action": {"const": "draft_req_only"},
+    "supersession_exception": {
+      "type": "object",
+      "required": ["reason", "authority", "recorded_at"],
+      "additionalProperties": false,
+      "properties": {
+        "reason": {"type": "string", "minLength": 1},
+        "authority": {"type": "string", "minLength": 1},
+        "recorded_at": {"type": "string", "format": "date-time"}
+      }
+    }
   },
   "additionalProperties": true
 }

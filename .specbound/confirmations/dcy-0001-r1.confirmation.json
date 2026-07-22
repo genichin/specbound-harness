@@ -1,0 +1,13 @@
+{
+  "authority": "Justin Ko",
+  "confirmed_at": "2026-07-20T23:18:29.533374+09:00",
+  "decision": "confirmed",
+  "discovery_id": "dcy-0001",
+  "discovery_path": ".specbound/discoveries/dcy-0001-r1.md",
+  "permitted_next_action": "draft_req_only",
+  "reviewed_sha256": "eadbd2e200dd23838b430d91d91f5d0a91acc11e503182ef9fba79f54e1f79f3",
+  "revision": 1,
+  "risk_class": "high",
+  "schema_version": 1,
+  "sha256": "c7f8fcc0eefa85fefaa85b870979bbc09e9be963d5d8b3ad839f5b7ab22aee07"
+}
