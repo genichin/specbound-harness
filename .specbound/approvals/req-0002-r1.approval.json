@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "requirement_path": "docs/requirements/req-0002/req-0002-r1.md",
+  "requirement_id": "req-0002",
+  "revision": 1,
+  "reviewed_sha256": "2a302fcac92c13b46e172773ae66fafc1751d06bce69c15c6c6db1f7c90f0b9f",
+  "sha256": "22dc8cfe0e762d751382d5a6afa45cf1cd4960078c404a7e6653c10f19b00f83",
+  "risk": "high",
+  "authority": "independent-advanced-llm-reviewer",
+  "approved_at": "2026-07-21T15:30:27+09:00",
+  "reason": "The exact reviewed REQ snapshot is semantically approval-ready: its confirmed parent binding, scope/non-goals, testable acceptance criteria, risk handling, and lifecycle/authorization boundaries are coherent. The accountable user explicitly authorized this manual bootstrap approval exception while req approve automation is not yet implemented.",
+  "issuance_mode": "manual_bootstrap_exception",
+  "exception_authorized_by": "accountable user direct instruction in this session"
+}

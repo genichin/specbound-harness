@@ -17,6 +17,7 @@ import yaml
 REQUIREMENT_RE = re.compile(r"^(req-[0-9]+)-r([1-9][0-9]*)\.md$")
 DISCOVERY_RE = re.compile(r"^(dcy-[0-9]+)-r([1-9][0-9]*)\.md$")
 DISCOVERY_CONFIRMATION_RE = re.compile(r"^(dcy-[0-9]+)-r([1-9][0-9]*)\.confirmation\.json$")
+REQUIREMENT_REJECTION_RE = re.compile(r"^(req-[0-9]+)-r([1-9][0-9]*)\.rejection\.json$")
 MICRO_SPEC_RE = re.compile(r"^ms-([0-9]+)-(0*[1-9][0-9]*)\.md$")
 ITERATION_QC_RE = re.compile(r"^iqc-([0-9]+)-(0*[1-9][0-9]*)-r([1-9][0-9]*)\.json$")
 DELIVERY_QC_RE = re.compile(r"^dqc-([0-9]+)-r([1-9][0-9]*)\.json$")
@@ -25,6 +26,7 @@ REQUIRED_ROOTS = {
     "discoveries_root": ".specbound/discoveries",
     "control_root": ".specbound",
     "approvals_root": ".specbound/approvals",
+    "rejections_root": ".specbound/rejections",
     "discovery_confirmations_root": ".specbound/confirmations",
     "micro_specs_root": ".specbound/micro-specs",
     "iteration_qc_root": ".specbound/iteration-qc",
@@ -44,6 +46,19 @@ REQUIRED_APPROVAL_FIELDS = {
     "sha256",
     "risk",
     "authority",
+}
+REQUIRED_REJECTION_FIELDS = {
+    "schema_version",
+    "requirement_path",
+    "requirement_id",
+    "revision",
+    "reviewed_sha256",
+    "sha256",
+    "risk",
+    "authority",
+    "rejected_at",
+    "decision",
+    "reason",
 }
 REQUIRED_DISCOVERY_CONFIRMATION_FIELDS = {
     "schema_version",
@@ -169,7 +184,14 @@ def preflight(root: Path) -> Result:
             "specbound.yaml",
             "policy.discovery_confirmation_revision_policy must equal 'latest_only_with_explicit_exception'",
         )
+    if not isinstance(policy, dict) or policy.get("requirement_revision_policy") != LATEST_ONLY_WITH_EXCEPTION:
+        result.block(
+            "malformed_config",
+            "specbound.yaml",
+            "policy.requirement_revision_policy must equal 'latest_only_with_explicit_exception'",
+        )
     _validate_required_field_config(result, policy, "required_approval_fields", REQUIRED_APPROVAL_FIELDS)
+    _validate_required_field_config(result, policy, "required_rejection_fields", REQUIRED_REJECTION_FIELDS)
     _validate_required_field_config(
         result,
         policy,
@@ -189,6 +211,20 @@ def preflight(root: Path) -> Result:
             "malformed_config",
             "specbound.yaml",
             "policy.discovery_confirmation_authorities_by_risk must map each non-empty risk class to a non-empty list of non-empty authority strings",
+        )
+    requirement_authorities_by_risk = policy.get("requirement_review_authorities_by_risk") if isinstance(policy, dict) else None
+    if not isinstance(requirement_authorities_by_risk, dict) or not requirement_authorities_by_risk or not all(
+        isinstance(risk, str)
+        and risk.strip()
+        and isinstance(authorities, list)
+        and authorities
+        and all(isinstance(authority, str) and authority.strip() for authority in authorities)
+        for risk, authorities in requirement_authorities_by_risk.items()
+    ):
+        result.block(
+            "malformed_config",
+            "specbound.yaml",
+            "policy.requirement_review_authorities_by_risk must map each non-empty risk to a non-empty list of non-empty authority strings",
         )
     delivery_qc_authorities_by_risk = policy.get("delivery_qc_authorities_by_risk") if isinstance(policy, dict) else None
     if not isinstance(delivery_qc_authorities_by_risk, dict) or not delivery_qc_authorities_by_risk or not all(
@@ -342,7 +378,7 @@ def _atomic_replace_text(path: Path, text: str) -> None:
         raise
 
 
-def _validate_requirement(root: Path, path: Path, result: Result) -> None:
+def _validate_requirement(root: Path, path: Path, result: Result, latest_revisions: dict[str, int]) -> None:
     relative = path.relative_to(root).as_posix()
     symlink = _first_symlink_component(root, path)
     if symlink:
@@ -376,8 +412,20 @@ def _validate_requirement(root: Path, path: Path, result: Result) -> None:
         result.block("requirement_binding_mismatch", relative, "frontmatter id/revision differs from path")
         return
     status = metadata.get("status")
-    if status not in {"draft", "in_review", "approved"}:
-        result.block("malformed_requirement", relative, "frontmatter status must be draft, in_review, or approved")
+    if status not in {"draft", "in_review", "approved", "rejected"}:
+        result.block("malformed_requirement", relative, "frontmatter status must be 'draft', 'in_review', 'approved', or 'rejected'")
+        return
+    if status == "rejected":
+        rejection_relative = f".specbound/rejections/{requirement_id}-r{revision_text}.rejection.json"
+        rejection_path = root / rejection_relative
+        approval_path = root / f".specbound/approvals/{requirement_id}-r{revision_text}.approval.json"
+        symlink = _first_symlink_component(root, rejection_path)
+        if symlink:
+            result.block("unsafe_artifact_path", symlink.relative_to(root).as_posix(), "rejection path must not contain a symlink")
+        elif not rejection_path.is_file():
+            result.block("missing_rejection", rejection_relative, "rejected REQ has no rejection record")
+        if approval_path.exists():
+            result.block("conflicting_requirement_decision", relative, "rejected REQ must not retain an approval record")
         return
     if status != "approved":
         return
@@ -427,8 +475,104 @@ def _validate_requirement(root: Path, path: Path, result: Result) -> None:
         result.block("malformed_approval", approval_relative, "sha256 must be a lowercase 64-character hex digest")
     elif approval["sha256"] != _digest(path):
         result.block("requirement_digest_mismatch", approval_relative, "approval digest differs from REQ content")
+    latest_revision = latest_revisions.get(requirement_id, revision)
+    if revision < latest_revision:
+        exception = approval.get("supersession_exception")
+        if exception is None:
+            result.block(
+                "superseded_requirement_revision",
+                approval_relative,
+                f"r{revision} is not latest r{latest_revision}; require a substantive authority-bound supersession_exception",
+            )
+        elif (
+            not isinstance(exception, dict)
+            or set(exception) != {"reason", "authority", "recorded_at"}
+            or not isinstance(exception.get("reason"), str)
+            or not exception["reason"].strip()
+            or PLACEHOLDER_RE.search(exception["reason"])
+            or exception.get("authority") != approval.get("authority")
+            or not _valid_timestamp(exception.get("recorded_at"))
+        ):
+            result.block(
+                "malformed_supersession_exception",
+                approval_relative,
+                "supersession_exception must bind a substantive reason, matching authority, and ISO-8601 recorded_at",
+            )
     if len(result.blockers) == initially_valid:
         result.approved_requirements += 1
+
+
+def _validate_requirement_rejection(
+    root: Path, path: Path, result: Result, allowed_authorities_by_risk: dict[str, set[str]]
+) -> None:
+    relative = path.relative_to(root).as_posix()
+    symlink = _first_symlink_component(root, path)
+    if symlink:
+        result.block("unsafe_artifact_path", symlink.relative_to(root).as_posix(), "rejection path must not contain a symlink")
+        return
+    try:
+        parts = path.relative_to(root / REQUIRED_ROOTS["rejections_root"]).parts
+    except ValueError:
+        result.block("invalid_rejection_path", relative, "rejection is outside its canonical root")
+        return
+    if len(parts) != 1 or not (match := REQUIREMENT_REJECTION_RE.fullmatch(parts[0])):
+        result.block("invalid_rejection_path", relative, "expected req-<id>-r<revision>.rejection.json")
+        return
+    requirement_id, revision_text = match.groups()
+    requirement_relative = f"docs/requirements/{requirement_id}/{requirement_id}-r{revision_text}.md"
+    requirement_path = root / requirement_relative
+    try:
+        rejection = json.loads(path.read_text(encoding="utf-8"))
+        metadata = _frontmatter(requirement_path)
+    except FileNotFoundError:
+        result.block("missing_requirement", requirement_relative, "rejection references a missing REQ")
+        return
+    except (OSError, ValueError, yaml.YAMLError, json.JSONDecodeError) as exc:
+        result.block("malformed_rejection", relative, str(exc))
+        return
+    if not isinstance(rejection, dict):
+        result.block("malformed_rejection", relative, "rejection record must be an object")
+        return
+    missing = sorted(REQUIRED_REJECTION_FIELDS - set(rejection))
+    if missing:
+        result.block("malformed_rejection", relative, f"missing fields: {', '.join(missing)}")
+        return
+    if (
+        rejection.get("schema_version") != 1
+        or rejection.get("requirement_path") != requirement_relative
+        or rejection.get("requirement_id") != requirement_id
+        or rejection.get("revision") != int(revision_text)
+        or metadata.get("id") != requirement_id
+        or metadata.get("revision") != int(revision_text)
+        or metadata.get("status") != "rejected"
+    ):
+        result.block("rejection_binding_mismatch", relative, "rejection must bind the canonical rejected REQ")
+    risk = metadata.get("risk")
+    if not isinstance(rejection.get("risk"), str) or rejection["risk"] != risk:
+        result.block("rejection_binding_mismatch", relative, "rejection risk differs from REQ")
+    authority = rejection.get("authority")
+    if (
+        not isinstance(authority, str)
+        or not authority.strip()
+        or not isinstance(risk, str)
+        or authority not in allowed_authorities_by_risk.get(risk, set())
+    ):
+        result.block("invalid_rejection_authority", relative, "authority is not allowlisted for the REQ risk")
+    if rejection.get("decision") != "rejected":
+        result.block("invalid_rejection_decision", relative, "decision must equal 'rejected'")
+    if not isinstance(rejection.get("reason"), str) or not rejection["reason"].strip() or PLACEHOLDER_RE.search(rejection["reason"]):
+        result.block("malformed_rejection", relative, "reason must be substantive and non-placeholder")
+    if not _valid_timestamp(rejection.get("rejected_at")):
+        result.block("malformed_rejection", relative, "rejected_at must be an ISO-8601 timestamp")
+    for key, expected in (
+        ("reviewed_sha256", _transitioned_discovery_digest(requirement_path, "rejected", "in_review")),
+        ("sha256", _digest(requirement_path)),
+    ):
+        value = rejection.get(key)
+        if not isinstance(value, str) or not re.fullmatch(r"[a-f0-9]{64}", value):
+            result.block("malformed_rejection", relative, f"{key} must be a lowercase 64-character hex digest")
+        elif value != expected:
+            result.block("rejection_digest_mismatch", relative, f"{key} differs from the bound REQ content")
 
 
 def _validate_discovery(root: Path, path: Path, result: Result) -> None:
@@ -508,6 +652,156 @@ def _valid_timestamp(value: Any) -> bool:
     except ValueError:
         return False
     return parsed.tzinfo is not None
+
+
+class RequirementDraftError(ValueError):
+    def __init__(self, code: str, path: str, detail: str) -> None:
+        super().__init__(detail)
+        self.code = code
+        self.path = path
+        self.detail = detail
+
+
+def create_requirement_draft(root: Path, discovery_target: str, requirement_target: str) -> Path:
+    """Create one canonical, non-overwritable draft REQ from exact Discovery evidence."""
+    discovery_match = DISCOVERY_RE.fullmatch(f"{discovery_target}.md")
+    requirement_match = REQUIREMENT_RE.fullmatch(f"{requirement_target}.md")
+    if not discovery_match:
+        raise RequirementDraftError("invalid_discovery_target", discovery_target, "target must be dcy-<id>-r<revision>")
+    if not requirement_match:
+        raise RequirementDraftError("invalid_requirement_target", requirement_target, "target must be req-<id>-r<revision>")
+    discovery_id, discovery_revision_text = discovery_match.groups()
+    requirement_id, requirement_revision_text = requirement_match.groups()
+    discovery_relative = f".specbound/discoveries/{discovery_target}.md"
+    confirmation_relative = f".specbound/confirmations/{discovery_target}.confirmation.json"
+    requirement_relative = f"docs/requirements/{requirement_id}/{requirement_target}.md"
+    before = validate(root)
+    if not before.valid:
+        parent_blocker = next(
+            (blocker for blocker in before.blockers if blocker["path"] in {discovery_relative, confirmation_relative}),
+            None,
+        )
+        if parent_blocker:
+            raise RequirementDraftError(
+                parent_blocker["code"], parent_blocker["path"], parent_blocker["detail"]
+            )
+        raise RequirementDraftError("repository_validation_failed", ".", "repository must pass specbound validate before draft issuance")
+    discovery_path = root / discovery_relative
+    confirmation_path = root / confirmation_relative
+    requirement_path = root / requirement_relative
+    for path, label in ((discovery_path, "Discovery"), (confirmation_path, "confirmation"), (requirement_path.parent, "REQ directory")):
+        symlink = _first_symlink_component(root, path)
+        if symlink:
+            raise RequirementDraftError("unsafe_artifact_path", symlink.relative_to(root).as_posix(), f"canonical {label} path must not contain a symlink")
+    if requirement_path.exists():
+        raise RequirementDraftError("requirement_already_exists", requirement_relative, "draft issuance is non-overwritable; mint a new revision")
+    try:
+        discovery = _frontmatter(discovery_path)
+        confirmation = json.loads(confirmation_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise RequirementDraftError("missing_parent_evidence", discovery_relative, "confirmed Discovery and matching confirmation are required") from exc
+    except (OSError, ValueError, yaml.YAMLError, json.JSONDecodeError) as exc:
+        raise RequirementDraftError("malformed_parent_evidence", discovery_relative, str(exc)) from exc
+    if not isinstance(confirmation, dict):
+        raise RequirementDraftError("malformed_parent_evidence", confirmation_relative, "confirmation record must be an object")
+    if (
+        discovery.get("id") != discovery_id
+        or discovery.get("revision") != int(discovery_revision_text)
+        or discovery.get("status") != "confirmed"
+        or confirmation.get("discovery_path") != discovery_relative
+        or confirmation.get("discovery_id") != discovery_id
+        or confirmation.get("revision") != int(discovery_revision_text)
+        or confirmation.get("decision") != "confirmed"
+        or confirmation.get("permitted_next_action") != "draft_req_only"
+        or confirmation.get("sha256") != _digest(discovery_path)
+    ):
+        raise RequirementDraftError("invalid_parent_authorization", confirmation_relative, "parent must be exact, confirmed, digest-bound, and authorize draft_req_only")
+    risk = discovery.get("risk_class")
+    if not isinstance(risk, str) or not risk.strip():
+        raise RequirementDraftError("malformed_parent_evidence", discovery_relative, "Discovery risk_class must be a non-empty string")
+    text = (
+        "---\n"
+        f"id: {requirement_id}\nrevision: {int(requirement_revision_text)}\nstatus: draft\nrisk: {risk}\nowner: repository-maintainer\n"
+        "parent_discovery:\n"
+        f"  id: {discovery_id}\n  revision: {int(discovery_revision_text)}\n  path: {discovery_relative}\n"
+        f"  sha256: {confirmation['sha256']}\n  confirmation_path: {confirmation_relative}\n---\n\n"
+        f"# REQ: {requirement_id} r{int(requirement_revision_text)}\n\n"
+        "> **Lifecycle boundary:** This artifact's lifecycle state is determined only by frontmatter plus its matching content-addressed decision record. Draft issuance is not review, rejection, approval, or implementation authority.\n\n"
+        "## Goal\n\nDescribe the approved problem and intended outcome.\n\n"
+        "## Scope\n\n- Define the narrow, implementable change.\n\n"
+        "## Non-goals\n\n- Approval issuance, implementation, merge, delivery, and release are separate actions.\n\n"
+        "## Acceptance criteria\n\n- Replace this placeholder with deterministic, verifiable criteria before review.\n\n"
+        "## Approval handoff\n\nReview the exact snapshot separately; do not infer approval from issuance.\n"
+    )
+    if not requirement_path.parent.exists():
+        try:
+            requirement_path.parent.mkdir()
+        except FileExistsError:
+            pass
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    try:
+        requirement_directory_fd = os.open(requirement_path.parent, directory_flags)
+    except OSError as exc:
+        raise RequirementDraftError(
+            "unsafe_artifact_path",
+            requirement_path.parent.relative_to(root).as_posix(),
+            "canonical REQ directory must remain a non-symlink directory",
+        ) from exc
+    published_identity: tuple[int, int] | None = None
+
+    def remove_published_draft_if_owned() -> None:
+        if published_identity is None:
+            return
+        try:
+            target_stat = os.stat(
+                requirement_path.name,
+                dir_fd=requirement_directory_fd,
+                follow_symlinks=False,
+            )
+        except FileNotFoundError:
+            return
+        if (target_stat.st_dev, target_stat.st_ino) == published_identity:
+            os.unlink(requirement_path.name, dir_fd=requirement_directory_fd)
+
+    try:
+        target_flags = os.O_WRONLY | os.O_TMPFILE
+        try:
+            requirement_fd = os.open(".", target_flags, 0o666, dir_fd=requirement_directory_fd)
+        except OSError as exc:
+            raise RequirementDraftError("requirement_write_failed", requirement_relative, str(exc)) from exc
+        try:
+            with os.fdopen(requirement_fd, "w", encoding="utf-8") as handle:
+                handle.write(text)
+                handle.flush()
+                os.fsync(handle.fileno())
+                source_stat = os.fstat(handle.fileno())
+                try:
+                    os.link(
+                        f"/proc/self/fd/{handle.fileno()}",
+                        requirement_path.name,
+                        dst_dir_fd=requirement_directory_fd,
+                        follow_symlinks=True,
+                    )
+                except FileExistsError as exc:
+                    raise RequirementDraftError(
+                        "requirement_already_exists",
+                        requirement_relative,
+                        "draft issuance is non-overwritable; mint a new revision",
+                    ) from exc
+                published_identity = (source_stat.st_dev, source_stat.st_ino)
+                os.fsync(requirement_directory_fd)
+        except RequirementDraftError:
+            remove_published_draft_if_owned()
+            raise
+        except OSError as exc:
+            remove_published_draft_if_owned()
+            raise RequirementDraftError("requirement_write_failed", requirement_relative, str(exc)) from exc
+        if validate(root).valid:
+            return requirement_path
+        remove_published_draft_if_owned()
+        raise RequirementDraftError("generated_requirement_invalid", requirement_relative, "generated draft did not pass specbound validate")
+    finally:
+        os.close(requirement_directory_fd)
 
 
 class ConfirmationError(ValueError):
@@ -1307,6 +1601,92 @@ def create_discovery_confirmation(
     raise ConfirmationError("generated_confirmation_invalid", confirmation_relative, "generated record did not pass specbound validate")
 
 
+class RequirementRejectionError(ValueError):
+    def __init__(self, code: str, path: str, detail: str) -> None:
+        super().__init__(detail)
+        self.code = code
+        self.path = path
+        self.detail = detail
+
+
+def reject_requirement(root: Path, target: str, authority: str, reason: str) -> Path:
+    """Atomically reject one exact in-review REQ with immutable decision evidence."""
+    match = REQUIREMENT_RE.fullmatch(f"{target}.md")
+    if not match:
+        raise RequirementRejectionError("invalid_requirement_target", target, "target must be req-<id>-r<revision>")
+    requirement_id, revision_text = match.groups()
+    revision = int(revision_text)
+    requirement_relative = f"docs/requirements/{requirement_id}/{target}.md"
+    rejection_relative = f".specbound/rejections/{target}.rejection.json"
+    before = validate(root)
+    if not before.valid:
+        raise RequirementRejectionError("repository_validation_failed", ".", "repository must pass specbound validate before rejection")
+    requirement_path = root / requirement_relative
+    rejection_path = root / rejection_relative
+    for path, label in ((requirement_path, "REQ"), (rejection_path.parent, "rejection directory")):
+        symlink = _first_symlink_component(root, path)
+        if symlink:
+            raise RequirementRejectionError("unsafe_artifact_path", symlink.relative_to(root).as_posix(), f"canonical {label} path must not contain a symlink")
+    if not requirement_path.is_file():
+        raise RequirementRejectionError("missing_requirement", requirement_relative, "canonical REQ does not exist")
+    if rejection_path.exists():
+        raise RequirementRejectionError("rejection_already_exists", rejection_relative, "rejection records are non-overwritable")
+    approval_path = root / f".specbound/approvals/{target}.approval.json"
+    if approval_path.exists():
+        raise RequirementRejectionError("conflicting_requirement_decision", requirement_relative, "REQ with an approval record cannot be rejected")
+    if not reason.strip() or PLACEHOLDER_RE.search(reason):
+        raise RequirementRejectionError("malformed_rejection_reason", rejection_relative, "reason must be substantive and non-placeholder")
+    try:
+        metadata = _frontmatter(requirement_path)
+        reviewed_text = requirement_path.read_text(encoding="utf-8")
+        rejected_text = _transitioned_discovery_text(reviewed_text, "in_review", "rejected")
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        raise RequirementRejectionError("invalid_requirement_status_transition", requirement_relative, str(exc)) from exc
+    if metadata.get("id") != requirement_id or metadata.get("revision") != revision:
+        raise RequirementRejectionError("requirement_binding_mismatch", requirement_relative, "frontmatter id/revision differs from path")
+    if metadata.get("status") != "in_review":
+        raise RequirementRejectionError("requirement_not_in_review", requirement_relative, "only an in_review REQ may be rejected")
+    risk = metadata.get("risk")
+    if not isinstance(risk, str) or not risk.strip():
+        raise RequirementRejectionError("malformed_requirement", requirement_relative, "risk must be a non-empty string")
+    allowed = _load_config(root)["policy"]["requirement_review_authorities_by_risk"].get(risk, [])
+    if authority not in allowed:
+        raise RequirementRejectionError("invalid_rejection_authority", rejection_relative, "authority is not allowlisted for the REQ risk")
+    timestamp = datetime.now().astimezone().isoformat()
+    record = {
+        "schema_version": 1,
+        "requirement_path": requirement_relative,
+        "requirement_id": requirement_id,
+        "revision": revision,
+        "reviewed_sha256": sha256(reviewed_text.encode("utf-8")).hexdigest(),
+        "sha256": sha256(rejected_text.encode("utf-8")).hexdigest(),
+        "risk": risk,
+        "authority": authority,
+        "rejected_at": timestamp,
+        "decision": "rejected",
+        "reason": reason.strip(),
+    }
+    record_text = json.dumps(record, indent=2, sort_keys=True) + "\n"
+    try:
+        _atomic_replace_text(requirement_path, rejected_text)
+        with rejection_path.open("x", encoding="utf-8") as handle:
+            handle.write(record_text)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except FileExistsError as exc:
+        _atomic_replace_text(requirement_path, reviewed_text)
+        raise RequirementRejectionError("rejection_already_exists", rejection_relative, "rejection records are non-overwritable") from exc
+    except OSError as exc:
+        _atomic_replace_text(requirement_path, reviewed_text)
+        raise RequirementRejectionError("rejection_write_failed", rejection_relative, str(exc)) from exc
+    if validate(root).valid:
+        return rejection_path
+    if rejection_path.exists() and rejection_path.read_text(encoding="utf-8") == record_text:
+        rejection_path.unlink()
+    _atomic_replace_text(requirement_path, reviewed_text)
+    raise RequirementRejectionError("generated_rejection_invalid", rejection_relative, "generated rejection did not pass specbound validate")
+
+
 def _adopted_requirement_entries(root: Path, config: dict[str, Any], result: Result) -> dict[str, dict[str, Any]]:
     """Return exact adopted REQ snapshots, rejecting stale or non-approved entries."""
     entries = config["policy"]["control_plane_adoption"]["requirements"]
@@ -1433,6 +1813,10 @@ def validate(root: Path, claim: str | None = None, requirement: str | None = Non
         risk_class: set(authorities)
         for risk_class, authorities in config["policy"]["discovery_confirmation_authorities_by_risk"].items()
     }
+    allowed_requirement_authorities_by_risk = {
+        risk: set(authorities)
+        for risk, authorities in config["policy"]["requirement_review_authorities_by_risk"].items()
+    }
     requirement_root = _validate_root(root, REQUIRED_ROOTS["requirements_root"], result, "requirements")
     discovery_root = _validate_root(root, REQUIRED_ROOTS["discoveries_root"], result, "discoveries")
     confirmation_root = _validate_root(
@@ -1441,18 +1825,36 @@ def validate(root: Path, claim: str | None = None, requirement: str | None = Non
         result,
         "discovery confirmations",
     )
+    rejection_root = _validate_root(root, REQUIRED_ROOTS["rejections_root"], result, "rejections")
     micro_spec_root = _validate_root(root, REQUIRED_ROOTS["micro_specs_root"], result, "Micro-SPECs")
     iteration_qc_root = _validate_root(root, REQUIRED_ROOTS["iteration_qc_root"], result, "iteration-QC")
     delivery_qc_root = _validate_root(root, REQUIRED_ROOTS["delivery_qc_root"], result, "delivery-QC")
     if requirement_root:
-        for path in sorted(requirement_root.rglob("*.md")):
-            _validate_requirement(root, path, result)
+        requirement_paths = sorted(requirement_root.rglob("*.md"))
+        latest_revisions: dict[str, int] = {}
+        seen_identities: set[tuple[str, int]] = set()
+        for path in requirement_paths:
+            match = REQUIREMENT_RE.fullmatch(path.name)
+            if not match:
+                continue
+            requirement_id, revision_text = match.groups()
+            identity = (requirement_id, int(revision_text))
+            relative = path.relative_to(root).as_posix()
+            if identity in seen_identities:
+                result.block("duplicate_requirement_revision", relative, "duplicate REQ id/revision artifact")
+            seen_identities.add(identity)
+            latest_revisions[requirement_id] = max(latest_revisions.get(requirement_id, 0), identity[1])
+        for path in requirement_paths:
+            _validate_requirement(root, path, result, latest_revisions)
     if discovery_root:
         for path in sorted(discovery_root.rglob("*.md")):
             _validate_discovery(root, path, result)
     if confirmation_root:
         for path in sorted(confirmation_root.rglob("*.json")):
             _validate_discovery_confirmation(root, path, result, allowed_authorities_by_risk)
+    if rejection_root:
+        for path in sorted(rejection_root.rglob("*.json")):
+            _validate_requirement_rejection(root, path, result, allowed_requirement_authorities_by_risk)
     if micro_spec_root:
         _validate_family_root(root, micro_spec_root, result, "micro_specs")
     if iteration_qc_root:

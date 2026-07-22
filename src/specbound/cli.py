@@ -8,9 +8,13 @@ from pathlib import Path
 
 from .validation import (
     ConfirmationError,
+    RequirementDraftError,
+    RequirementRejectionError,
     create_discovery_confirmation,
+    create_requirement_draft,
     discover_root,
     preflight,
+    reject_requirement,
     validate,
 )
 
@@ -32,6 +36,16 @@ def build_parser() -> argparse.ArgumentParser:
     validate_command = commands.add_parser("validate", help="validate canonical lifecycle artifacts or a scoped adopted claim")
     validate_command.add_argument("--claim", choices=("iteration", "delivery"), help="validate one adopted evidence claim")
     validate_command.add_argument("--requirement", help="exact adopted REQ: req-<id>-r<revision> (required with --claim)")
+
+    req = commands.add_parser("req", help="operate on canonical REQ artifacts")
+    req_commands = req.add_subparsers(dest="req_command", required=True)
+    req_draft = req_commands.add_parser("draft", help="issue a non-overwritable canonical REQ draft")
+    req_draft.add_argument("discovery_target", help="exact parent: dcy-<id>-r<revision>")
+    req_draft.add_argument("requirement_target", help="exact target: req-<id>-r<revision>")
+    req_reject = req_commands.add_parser("reject", help="reject an in-review REQ with canonical evidence")
+    req_reject.add_argument("requirement_target", help="exact target: req-<id>-r<revision>")
+    req_reject.add_argument("--authority", required=True, help="allowlisted rejection authority")
+    req_reject.add_argument("--reason", required=True, help="substantive rejection reason")
 
     discovery = commands.add_parser("discovery", help="operate on canonical Discovery artifacts")
     discovery_commands = discovery.add_subparsers(dest="discovery_command", required=True)
@@ -76,6 +90,24 @@ def main(argv: list[str] | None = None) -> int:
         result = validate(root, claim=args.claim, requirement=args.requirement)
         _emit(result.payload())
         return 0 if result.valid else 2
+
+    if args.command == "req" and args.req_command == "draft":
+        try:
+            path = create_requirement_draft(root, args.discovery_target, args.requirement_target)
+        except RequirementDraftError as exc:
+            _emit({"valid": False, "blockers": [{"code": exc.code, "path": exc.path, "detail": exc.detail}]})
+            return 2
+        _emit({"valid": True, "requirement_path": path.relative_to(root).as_posix()})
+        return 0
+
+    if args.command == "req" and args.req_command == "reject":
+        try:
+            path = reject_requirement(root, args.requirement_target, args.authority, args.reason)
+        except RequirementRejectionError as exc:
+            _emit({"valid": False, "blockers": [{"code": exc.code, "path": exc.path, "detail": exc.detail}]})
+            return 2
+        _emit({"valid": True, "rejection_path": path.relative_to(root).as_posix()})
+        return 0
 
     if args.command == "discovery" and args.discovery_command == "confirm":
         try:

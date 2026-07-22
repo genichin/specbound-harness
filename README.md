@@ -8,7 +8,9 @@ This initial slice supplies:
 
 - `specbound context` — discover and print repository adoption context.
 - `specbound preflight` — verify the adoption configuration and canonical roots.
-- `specbound validate` — fail-closed validation of canonical Discovery/confirmation and REQ/approval bindings.
+- `specbound validate` — fail-closed validation of canonical Discovery/confirmation, REQ/approval, and REQ/rejection bindings.
+- `specbound req reject` — atomic rejection of an exact in-review REQ with immutable decision evidence.
+- `specbound discovery confirm` — non-overwritable, exact-byte confirmation record creation after an explicit authority decision.
 - isolated valid/invalid fixtures and CI.
 - a repository-backed Hermes skill source under `skills/`.
 
@@ -31,7 +33,18 @@ python3 -m venv .venv
 .venv/bin/python -m pytest
 ```
 
-For a target repository, copy/adapt `specbound.yaml`, retain canonical Discoveries under `docs/discoveries/dcy-<id>/disc-<id>-r<revision>.md` with confirmation records under `.specbound/discovery-confirmations/`, retain canonical requirements under `docs/requirements/`, and retain approval records under `.specbound/approvals/`.
+For a target repository, copy/adapt `specbound.yaml`, retain canonical Discoveries under `.specbound/discoveries/dcy-<id>-r<revision>.md` with confirmation records under `.specbound/confirmations/`, canonical requirements under `docs/requirements/`, approval records under `.specbound/approvals/`, and rejection records under `.specbound/rejections/`. The version-one artifact families are deliberately distinct: human-readable Micro-SPEC planning at `.specbound/micro-specs/req-<id>/ms-<id>-<slice>.md`, machine iteration-QC at `.specbound/iteration-qc/req-<id>/iqc-<id>-<slice>-r<revision>.json`, and machine delivery-QC at `.specbound/delivery-qc/dqc-<id>-r<revision>.json`. The current validator enforces canonical Micro-SPEC safe paths plus `schema_version: 1`, exact canonical approved-REQ path/ID/revision/SHA-256 binding, a unique selected subset of the parent REQ's current `AC-<id>` entries, and substantive planning sections. A canonical Micro-SPEC has this binding shape:
+
+```yaml
+requirement:
+  path: docs/requirements/req-<id>/req-<id>-r<revision>.md
+  id: req-<id>
+  revision: <revision>
+  sha256: <exact-approved-req-sha256>
+selected_acceptance_criteria: [AC-<id>]
+```
+
+Canonical iteration-QC records bind the exact canonical Micro-SPEC path/ID/SHA-256 snapshot, preserve that Micro-SPEC's selected AC list, retain one or more reproducible focused `command`/`result`/`exit_code` entries, use only `verified`, `rework`, or `blocked` verdicts, and enumerate exactly the parent REQ ACs remaining outside the slice. `verified` requires complete passing focused evidence. Canonical delivery-QC records bind one exact approved REQ snapshot and its risk-policy-allowlisted QC authority, map every parent AC to one or more exact, verified canonical iteration-QC snapshots, retain passing cross-iteration regression evidence, and explicitly preserve unresolved exceptions plus residual-risk disposition. A delivery-QC cannot contain merge, delivery, release, or authorization claims; it proves readiness evidence only and never authorizes a transition. Control-plane evidence remains opt-in: `policy.control_plane_adoption` is a strict versioned registry of exact approved REQ `{path, id, revision, sha256}` snapshots. Normal `specbound validate` preserves compatibility when canonical Micro-SPEC/QC evidence is absent. An explicit `specbound validate --claim iteration|delivery --requirement req-<id>-r<revision>` requires that exact REQ to be adopted and then fails closed only for the requested claim when the required canonical evidence is absent or invalid. Adoption never retroactively relabels manual-bootstrap artifacts or authorizes merge, delivery, or release. Discovery confirmation permits only REQ drafting. An explicit allowlisted authority may reject an exact `in_review` revision only through `specbound req reject req-<id>-r<revision> --authority <allowlisted-authority> --reason <substantive-reason>`; it atomically transitions the REQ to `rejected` and records both reviewed and final byte digests.
 
 ## Runtime boundary
 

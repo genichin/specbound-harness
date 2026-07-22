@@ -4,6 +4,7 @@ canonical:
   discoveries_root: .specbound/discoveries
   control_root: .specbound
   approvals_root: .specbound/approvals
+  rejections_root: .specbound/rejections
   discovery_confirmations_root: .specbound/confirmations
   # .specbound/micro-specs/req-<id>/ms-<id>-<slice>.md
   # .specbound/iteration-qc/req-<id>/iqc-<id>-<slice>-r<revision>.json
@@ -20,6 +21,7 @@ policy:
   approved_status: approved
   confirmed_discovery_status: confirmed
   discovery_confirmation_revision_policy: latest_only_with_explicit_exception
+  requirement_revision_policy: latest_only_with_explicit_exception
   required_approval_fields:
     - requirement_path
     - requirement_id
@@ -27,6 +29,18 @@ policy:
     - sha256
     - risk
     - authority
+  required_rejection_fields:
+    - schema_version
+    - requirement_path
+    - requirement_id
+    - revision
+    - reviewed_sha256
+    - sha256
+    - risk
+    - authority
+    - rejected_at
+    - decision
+    - reason
   required_discovery_confirmation_fields:
     - schema_version
     - discovery_path
@@ -47,6 +61,14 @@ policy:
     high:
       - repository-maintainer
       - Justin Ko
+  requirement_review_authorities_by_risk:
+    low:
+      - repository-maintainer
+    medium:
+      - repository-maintainer
+    high:
+      - repository-maintainer
+      - independent-advanced-llm-reviewer
   delivery_qc_authorities_by_risk:
     low:
       - repository-maintainer

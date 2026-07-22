@@ -28,6 +28,7 @@ An issue tracker state never substitutes for a SpecBound approval record. Conver
 4. **Evidence before progress.** Implementation does not advance an iteration. A passing, focused verification result and required QC evidence do.
 5. **Re-plan rather than stretch scope.** A discovery that changes acceptance criteria, risk, or requirement scope returns to Discovery/REQ revision. A change confined to implementation approach may produce a revised Micro-SPEC for the same approved REQ.
 6. **The issue closes only when all in-scope acceptance criteria are evidenced or explicitly dispositioned by the authorized actor.**
+7. **Progressive, bounded decomposition.** Approval of a REQ does not require all of its future Micro-SPECs to be created or fixed up front. Start with the smallest independently reviewable and testable slice. When implementation or verification identifies an unfulfilled approved acceptance criterion that requires a distinct acceptance, risk, or evidence boundary, plan and review an additional Micro-SPEC bound to the same approved REQ revision. Each later Micro-SPEC must name its selected acceptance criteria, explicit exclusions, parent binding, and required review/evidence; it must not silently extend the current slice or expand the approved REQ. A changed acceptance criterion, scope, non-goal, or material risk requires Discovery/REQ revision instead.
 
 ## Lifecycle
 
@@ -46,6 +47,29 @@ An issue tracker state never substitutes for a SpecBound approval record. Conver
 | 11. Merge and release | `done` / `released` | Authorized delivery decision | Merge/release provenance and issue closure | Close issue | Merge/release not completed, provenance absent, or post-release blocker open. |
 
 State labels are illustrative. An adopting team's tracker may use different labels, but it must preserve the transition semantics, required outputs, and blocker conditions above.
+
+## Canonical artifact topology (version-one envelope)
+
+The validator separates planning from machine QC records and enforces the exact roots, filenames, safe non-symlink paths, and `schema_version: 1` envelope below. For canonical Micro-SPECs it additionally enforces exact approved-REQ path/ID/revision/SHA-256 binding, a unique non-empty selected subset of the parent's listed AC IDs, and substantive plan sections. Canonical iteration-QC additionally binds the exact canonical Micro-SPEC snapshot, preserves its selected AC list, validates reproducible focused command/result/exit-code evidence and bounded verdict, and derives the remaining parent-REQ AC list. Canonical delivery-QC binds an exact approved REQ snapshot, maps its full AC set to exact verified iteration-QC snapshots, requires passing cross-iteration regression evidence, a risk-policy allowlisted QC authority, and explicit residual-risk disposition. It is evidence aggregation only, not delivery, merge, or release authorization.
+
+```text
+.specbound/micro-specs/req-<id>/ms-<id>-<slice>.md
+.specbound/iteration-qc/req-<id>/iqc-<id>-<slice>-r<revision>.json
+.specbound/delivery-qc/dqc-<id>-r<revision>.json
+```
+
+A Micro-SPEC is human-reviewable Markdown; iteration-QC and delivery-QC are JSON control artifacts and are never interchangeable. A canonical Micro-SPEC binds one exact approved parent snapshot as follows:
+
+```yaml
+requirement:
+  path: docs/requirements/req-<id>/req-<id>-r<revision>.md
+  id: req-<id>
+  revision: <revision>
+  sha256: <exact-approved-req-sha256>
+selected_acceptance_criteria: [AC-<id>]
+```
+
+Its selected IDs must be a unique non-empty subset of the parent REQ's current AC list, and its objective, scope, non-goals, baseline, verification plan, and QC exit rule must be substantive; high-risk parents also require rollback/containment. Canonical Micro-SPECs still do not validate iteration evidence/verdicts, aggregate delivery coverage, or authorize delivery/merge/release. Existing manual-bootstrap Micro-SPECs remain non-canonical planning evidence. The implemented version-one `policy.control_plane_adoption` registry can opt in an exact approved REQ snapshot for claim-scoped validation, but it does not relabel, migrate, or let a manual-bootstrap artifact satisfy canonical iteration or delivery evidence.
 
 ## Micro-SPEC contract
 
@@ -100,15 +124,15 @@ The bootstrap implementation currently recognizes these lifecycle artifacts:
 
 ```text
 specbound.yaml
-docs/discoveries/dcy-<id>/disc-<id>-r<revision>.md
-.specbound/discovery-confirmations/disc-<id>-r<revision>.confirmation.json
+.specbound/discoveries/dcy-<id>-r<revision>.md
+.specbound/confirmations/dcy-<id>-r<revision>.confirmation.json
 docs/requirements/req-<id>/req-<id>-r<revision>.md
 .specbound/approvals/req-<id>-r<revision>.approval.json
 ```
 
-`templates/discovery.md` is the reusable **draft Discovery template**, not an instance or confirmation record. A reviewed Discovery uses `status: in_review`; confirmation is valid only when its separately stored record binds `schema_version: 1`, exact path, ID, revision, SHA-256 digest, matching risk class, policy-allowlisted authority, timezone-bearing confirmation time, `decision: confirmed`, and `permitted_next_action: draft_req_only`. It never authorizes implementation, merge, delivery, or release.
+`templates/discovery.md` is the reusable **draft Discovery template**, not an instance or confirmation record. A reviewed Discovery uses `status: in_review`; after an explicit accountable decision, `specbound discovery confirm dcy-<id>-r<revision> --authority <allowlisted-authority>` atomically changes only that field to `status: confirmed` and writes a separate record binding `schema_version: 1`, exact path, ID, revision, the prior reviewed SHA-256, final confirmed SHA-256, matching risk class, policy-allowlisted authority, timezone-bearing confirmation time, `decision: confirmed`, and `permitted_next_action: draft_req_only`. The default `latest_only_with_explicit_exception` policy rejects issuance for a lower revision while a newer revision exists unless an auditable supersession exception is recorded. Confirmation never authorizes implementation, merge, delivery, or release.
 
-Micro-SPEC, iteration QC, delivery QC, merge, and release records remain lifecycle requirements in this document, but their canonical schemas, paths, and CLI checks require a subsequent approved design and implementation slice.
+Canonical Micro-SPEC, iteration-QC, and delivery-QC path/schema/semantic checks are implemented as bounded bootstrap validator slices. Delivery-QC aggregates complete canonical iteration evidence and policy-allowlisted QC review, but does not authorize merge or release. Merge and release records remain lifecycle requirements in this document and require subsequent approved implementation slices. None of the implemented artifacts authorizes merge or release.
 
 ## Minimum evidence before a transition claim
 
