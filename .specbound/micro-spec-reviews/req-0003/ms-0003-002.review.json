@@ -1,0 +1,16 @@
+{
+  "authority": "independent-advanced-llm-reviewer",
+  "decided_at": "2026-07-23T22:32:04Z",
+  "decision": "approved_for_implementation",
+  "micro_spec_id": "ms-0003-002",
+  "micro_spec_path": ".specbound/micro-specs/req-0003/ms-0003-002.md",
+  "micro_spec_sha256": "b4d835e9c1b3f68dd680d491b369346d6133186999492e065d6cc24bcdca2777",
+  "permitted_next_action": "implement_bound_micro_spec_only",
+  "reason": "Manual bootstrap exception explicitly authorized by the user: this implementation agent issues the configured independent-review label despite role separation being incomplete. Substantive review found the slice is bounded to AC-001/AC-002, preserves the pre-adoption empty registry and immutable historical evidence, excludes AC-003 through AC-008 and publication/merge/release authority, and specifies read-only prevalidation plus target-absence negative evidence. Approval is limited to beginning this exact bounded implementation slice; it does not approve later ACs, adoption, merge, delivery, or release.",
+  "requirement_id": "req-0003",
+  "requirement_path": "docs/requirements/req-0003/req-0003-r2.md",
+  "requirement_sha256": "2c0f5c42a68a7ded6ba8f95fca19cc657986867a928a945a9c969dfba93d28fe",
+  "revision": 2,
+  "risk": "high",
+  "schema_version": 1
+}
