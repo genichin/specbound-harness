@@ -1131,7 +1131,7 @@ def _required_micro_spec_sections(text: str, risk: str) -> list[str]:
 
 def _requirement_acceptance_criteria(path: Path) -> set[str]:
     text = path.read_text(encoding="utf-8")
-    return set(re.findall(r"(?m)^\s*-\s+(?:\*\*)?(AC-[0-9]+)(?:\*\*)?(?:\s+—|:)", text))
+    return set(re.findall(r"(?m)^(?:\s*#{1,6}\s+|\s*-\s+(?:\*\*)?)(AC-[0-9]+)(?:\*\*)?(?:\s+—|:)", text))
 
 
 def _validate_micro_spec(root: Path, path: Path, result: Result, seen_targets: set[str]) -> None:
