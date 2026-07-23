@@ -53,14 +53,36 @@ docs/requirements/req-0002/req-0002-r1.md
 
 It refuses noncanonical identifiers, traversal, symlinked canonical paths, invalid parent evidence, missing confirmation records, stale parent digests, over-broad parent authorization, and existing targets.
 
-4. Complete the generated document with an outcome, explicit scope, non-goals, verifiable acceptance criteria, risk/owner context, and any material open decisions. Preserve the generated parent binding exactly.
-5. Keep the draft as `status: draft`. Do not self-approve, write `.specbound/approvals/*.approval.json`, or mutate an approved revision. A separate accountable approval decision and matching approval record are required later.
-6. Re-run:
+4. Complete the generated document with an outcome, explicit scope, non-goals, risk/owner context, and any material open decisions. Preserve the generated parent binding exactly.
+5. For **every** AC, replace all nine completion-contract placeholders before review:
+   - `observable_success`
+   - `required_preconditions`
+   - `mutation_boundary`
+   - `negative_behavior`
+   - `direct_evidence`
+   - `dependencies`
+   - `completion_group`
+   - `candidate_micro_spec`
+   - `non_goals`
+
+   Describe a directly observable success and the fail-closed behavior. Record every prerequisite or AC dependency explicitly. If multiple ACs cannot be completed and evidenced separately, give them the same `completion_group`, explain why, and do not imply that a partial group is implementation-ready.
+6. Keep the draft as `status: draft`. Do not self-approve, write `.specbound/approvals/*.approval.json`, or mutate an approved revision. A separate accountable approval decision and matching approval record are required later.
+7. Re-run:
 
 ```bash
 .venv/bin/python -m specbound.cli validate
 .venv/bin/python -m pytest
 ```
+
+8. Submit only after deterministic readiness passes:
+
+```bash
+.venv/bin/python -m specbound.cli req check-readiness req-0002-r1
+.venv/bin/python -m specbound.cli req to-in-review req-0002-r1
+.venv/bin/python -m specbound.cli validate
+```
+
+`check-readiness` is read-only and grants no approval or implementation authority. `to-in-review` is the sole canonical, rollback-safe `draft → in_review` transition; it creates a non-authorizing record bound to exact draft and reviewed SHA-256 snapshots. `in_review` remains distinct from approval, implementation, merge, delivery, and release.
 
 ## Revision Rules
 
@@ -82,5 +104,8 @@ It refuses noncanonical identifiers, traversal, symlinked canonical paths, inval
 - [ ] The CLI output names the expected canonical REQ path.
 - [ ] Draft frontmatter is `status: draft` and has exact parent path, ID, revision, confirmation path, and SHA-256.
 - [ ] The draft documents goal, scope, non-goals, risk, and deterministic acceptance criteria.
+- [ ] Every AC completes `observable_success`, `required_preconditions`, `mutation_boundary`, `negative_behavior`, `direct_evidence`, `dependencies`, `completion_group`, `candidate_micro_spec`, and `non_goals`.
+- [ ] An AC sharing a completion group does not claim that a partial group is independently implementation-ready.
+- [ ] `check-readiness` passed before `to-in-review`; no manual status edit or hand-authored review-submission record was used.
 - [ ] No approval record or `approved` status was created by the drafting workflow.
 - [ ] Final `validate` and `pytest` passed.

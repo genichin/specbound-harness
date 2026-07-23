@@ -1,0 +1,13 @@
+{
+  "approved_at": "2026-07-24T00:24:04.616188+09:00",
+  "authority": "independent-advanced-llm-reviewer",
+  "decision": "approved",
+  "reason": "The accountable user explicitly directed approval after append-only reconsideration and an approval-ready independent review verdict.",
+  "requirement_id": "req-0003",
+  "requirement_path": "docs/requirements/req-0003/req-0003-r2.md",
+  "reviewed_sha256": "8cf8681ec3b2b76f34f5b03148a45974df9306cc205a0ec9118d622f02ff5684",
+  "revision": 2,
+  "risk": "high",
+  "schema_version": 1,
+  "sha256": "2c0f5c42a68a7ded6ba8f95fca19cc657986867a928a945a9c969dfba93d28fe"
+}

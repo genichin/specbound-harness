@@ -11,7 +11,12 @@ import sys
 import pytest
 
 import specbound.validation as validation
-from specbound.validation import RequirementDraftError, create_requirement_draft
+from specbound.validation import (
+    RequirementDraftError,
+    RequirementReviewSubmissionError,
+    create_requirement_draft,
+    submit_requirement_for_review,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "fixtures"
@@ -106,6 +111,19 @@ def test_requirement_template_and_draft_skill_match_draft_contract() -> None:
         "## Scope",
         "## Non-goals",
         "## Acceptance criteria",
+        "AC completion contract",
+        "`observable_success`",
+        "`required_preconditions`",
+        "`mutation_boundary`",
+        "`negative_behavior`",
+        "`direct_evidence`",
+        "`dependencies`",
+        "`completion_group`",
+        "`candidate_micro_spec`",
+        "`non_goals`",
+        "specbound req check-readiness",
+        "specbound req to-in-review",
+        "review-submission record",
         "Draft issuance is not review, rejection, approval, or implementation authority.",
     ):
         assert text in template
@@ -113,6 +131,8 @@ def test_requirement_template_and_draft_skill_match_draft_contract() -> None:
         ".venv/bin/python -m specbound.cli req draft",
         "Do not self-approve",
         "approval record",
+        "`observable_success`",
+        "`completion_group`",
         "Only a passing CLI and validator result proves the repository contract.",
         "new numeric REQ revision",
     ):
@@ -487,6 +507,20 @@ def test_req_draft_mints_exact_parent_bound_draft(tmp_path: Path) -> None:
     assert "Draft issuance is not review, rejection, approval, or implementation authority." in text
     assert "Approval issuance, implementation, merge, delivery, and release are separate actions." in text
     assert "Review the exact snapshot separately; do not infer approval from issuance." in text
+    assert "specbound req check-readiness" in text
+    assert "specbound req to-in-review" in text
+    for field in (
+        "observable_success",
+        "required_preconditions",
+        "mutation_boundary",
+        "negative_behavior",
+        "direct_evidence",
+        "dependencies",
+        "completion_group",
+        "candidate_micro_spec",
+        "non_goals",
+    ):
+        assert f"`{field}`" in text
     assert "This draft is not" not in text
     assert "outside this draft command" not in text
     assert run_cli("--root", str(fixture), "validate").returncode == 0
@@ -705,6 +739,20 @@ def test_req_draft_rejects_invalid_parent_evidence(
     assert not (fixture / "docs/requirements/req-0002/req-0002-r1.md").exists()
 
 
+def test_req_draft_can_issue_draft_revision_without_mutating_historical_approval(tmp_path: Path) -> None:
+    fixture = tmp_path / "req-draft-revision"
+    shutil.copytree(FIXTURES / "valid-minimal", fixture)
+    historical_approval = fixture / ".specbound/approvals/req-0001-r1.approval.json"
+    original_approval = historical_approval.read_bytes()
+
+    requirement = create_requirement_draft(fixture, "dcy-0001-r1", "req-0001-r2")
+
+    assert requirement == fixture / "docs/requirements/req-0001/req-0001-r2.md"
+    assert "status: draft" in requirement.read_text(encoding="utf-8")
+    assert historical_approval.read_bytes() == original_approval
+    assert validation.validate(fixture).valid
+
+
 def test_validate_requires_valid_exception_for_approved_historical_revision(tmp_path: Path) -> None:
     fixture = tmp_path / "requirement-revision-policy"
     shutil.copytree(FIXTURES / "valid-minimal", fixture)
@@ -712,17 +760,23 @@ def test_validate_requires_valid_exception_for_approved_historical_revision(tmp_
     r2 = fixture / "docs/requirements/req-0001/req-0001-r2.md"
     r2.write_text(
         r1.read_text(encoding="utf-8")
-        .replace("revision: 1", "revision: 2", 1)
-        .replace("status: approved", "status: draft", 1),
+        .replace("revision: 1", "revision: 2", 1),
         encoding="utf-8",
+    )
+    approval_path = fixture / ".specbound/approvals/req-0001-r1.approval.json"
+    approval = json.loads(approval_path.read_text(encoding="utf-8"))
+    r2_approval = dict(approval)
+    r2_approval["requirement_path"] = "docs/requirements/req-0001/req-0001-r2.md"
+    r2_approval["revision"] = 2
+    r2_approval["sha256"] = validation._digest(r2)
+    (fixture / ".specbound/approvals/req-0001-r2.approval.json").write_text(
+        json.dumps(r2_approval), encoding="utf-8"
     )
 
     rejected = run_cli("--root", str(fixture), "validate")
     assert rejected.returncode == 2
     assert "superseded_requirement_revision" in {item["code"] for item in payload(rejected)["blockers"]}
 
-    approval_path = fixture / ".specbound/approvals/req-0001-r1.approval.json"
-    approval = json.loads(approval_path.read_text(encoding="utf-8"))
     approval["supersession_exception"] = {
         "reason": "Retained as an approved historical audit baseline.",
         "authority": approval["authority"],
@@ -738,13 +792,233 @@ def test_validate_requires_valid_exception_for_approved_historical_revision(tmp_
     assert "malformed_supersession_exception" in {item["code"] for item in payload(malformed)["blockers"]}
 
 
-def _make_in_review_requirement(fixture: Path) -> Path:
-    requirement = fixture / "docs/requirements/req-0001/req-0001-r1.md"
+def _make_ready_draft(fixture: Path, target: str = "req-0002-r1") -> Path:
+    requirement = create_requirement_draft(fixture, "dcy-0001-r1", target)
+    frontmatter = requirement.read_text(encoding="utf-8").split("---\n", 2)[1]
     requirement.write_text(
-        requirement.read_text(encoding="utf-8").replace("status: approved", "status: in_review", 1),
+        "---\n"
+        + frontmatter
+        + "---\n\n"
+        + f"# REQ: {target}\n\n"
+        + "## 목표 (Goal)\n\nSubmit one closed, evidence-backed completion contract for review.\n\n"
+        + "## Scope (범위)\n\n- Validate and submit this exact draft only.\n\n"
+        + "## Non-goals (비목표)\n\n- Approval, implementation, merge, delivery, and release remain separate actions.\n\n"
+        + "## Acceptance criteria\n\n"
+        + "### AC-001 — Submit exact review snapshot\n\n"
+        + "- `observable_success`: The CLI emits one digest-bound review-submission record.\n"
+        + "- `required_preconditions`: A confirmed parent Discovery and a canonical draft REQ exist.\n"
+        + "- `mutation_boundary`: Only this REQ status and its new review-submission record may change.\n"
+        + "- `negative_behavior`: Invalid readiness preserves the draft and creates no record.\n"
+        + "- `direct_evidence`: .venv/bin/python -m pytest tests/test_cli.py -q\n"
+        + "- `dependencies`: none\n"
+        + "- `completion_group`: AC-001\n"
+        + "- `candidate_micro_spec`: ms-0002-1\n"
+        + "- `non_goals`: This does not approve or implement the REQ.\n\n"
+        + "## Approval handoff\n\nReview this exact digest-bound draft. Submission is not approval.\n",
         encoding="utf-8",
     )
+    return requirement
+
+
+def test_req_check_readiness_rejects_unfilled_scaffold_without_mutation(tmp_path: Path) -> None:
+    fixture = tmp_path / "readiness-scaffold"
+    shutil.copytree(FIXTURES / "valid-minimal", fixture)
+    requirement = create_requirement_draft(fixture, "dcy-0001-r1", "req-0002-r1")
+    original = requirement.read_bytes()
+
+    result = run_cli("--root", str(fixture), "req", "check-readiness", "req-0002-r1")
+
+    assert result.returncode == 2
+    assert "incomplete_review_handoff" in {item["code"] for item in payload(result)["blockers"]}
+    assert requirement.read_bytes() == original
+    assert not (fixture / ".specbound/review-submissions/req-0002-r1.review-submission.json").exists()
+
+
+def test_req_to_in_review_atomically_binds_draft_and_reviewed_snapshots(tmp_path: Path) -> None:
+    fixture = tmp_path / "ready-review-submission"
+    shutil.copytree(FIXTURES / "valid-minimal", fixture)
+    requirement = _make_ready_draft(fixture)
+    draft_digest = hashlib.sha256(requirement.read_bytes()).hexdigest()
+
+    readiness = run_cli("--root", str(fixture), "req", "check-readiness", "req-0002-r1")
+    submitted = run_cli("--root", str(fixture), "req", "to-in-review", "req-0002-r1")
+
+    assert readiness.returncode == 0, readiness.stdout
+    assert submitted.returncode == 0, submitted.stdout
+    record_path = fixture / ".specbound/review-submissions/req-0002-r1.review-submission.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    assert payload(submitted)["review_submission_path"] == ".specbound/review-submissions/req-0002-r1.review-submission.json"
+    assert "status: in_review" in requirement.read_text(encoding="utf-8")
+    assert record["draft_sha256"] == draft_digest
+    assert record["reviewed_sha256"] == hashlib.sha256(requirement.read_bytes()).hexdigest()
+    assert record["decision"] == "submitted_for_review"
+    assert record["permitted_next_action"] == "review_decision_only"
+    assert run_cli("--root", str(fixture), "validate").returncode == 0
+
+
+def test_req_check_readiness_fails_closed_for_unknown_ac_dependency(tmp_path: Path) -> None:
+    fixture = tmp_path / "unknown-ac-dependency"
+    shutil.copytree(FIXTURES / "valid-minimal", fixture)
+    requirement = _make_ready_draft(fixture)
+    requirement.write_text(
+        requirement.read_text(encoding="utf-8").replace("- `dependencies`: none", "- `dependencies`: AC-999"),
+        encoding="utf-8",
+    )
+
+    result = run_cli("--root", str(fixture), "req", "check-readiness", "req-0002-r1")
+
+    assert result.returncode == 2
+    assert "unknown_acceptance_criterion_dependency" in {item["code"] for item in payload(result)["blockers"]}
+
+
+def test_req_to_in_review_rolls_back_on_status_publish_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fixture = tmp_path / "review-submission-rollback"
+    shutil.copytree(FIXTURES / "valid-minimal", fixture)
+    requirement = _make_ready_draft(fixture)
+    original = requirement.read_bytes()
+
+    def fail_status_publish(_path: Path, _text: str) -> None:
+        raise OSError("simulated status publish failure")
+
+    monkeypatch.setattr(validation, "_atomic_replace_text", fail_status_publish)
+    with pytest.raises(RequirementReviewSubmissionError) as excinfo:
+        submit_requirement_for_review(fixture, "req-0002-r1")
+
+    assert excinfo.value.code == "review_submission_write_failed"
+    assert requirement.read_bytes() == original
+    assert not (fixture / ".specbound/review-submissions/req-0002-r1.review-submission.json").exists()
+
+
+def test_req_to_in_review_rolls_back_after_generated_validation_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fixture = tmp_path / "review-submission-validation-rollback"
+    shutil.copytree(FIXTURES / "valid-minimal", fixture)
+    requirement = _make_ready_draft(fixture)
+    original = requirement.read_bytes()
+    original_validate = validation.validate
+    calls = 0
+
+    def fail_only_generated_result(
+        root: Path, claim: str | None = None, requirement: str | None = None
+    ) -> validation.Result:
+        nonlocal calls
+        calls += 1
+        result = original_validate(root, claim=claim, requirement=requirement)
+        if calls == 2:
+            result.block("simulated_generated_validation_failure", "test", "force rollback after publication")
+        return result
+
+    monkeypatch.setattr(validation, "validate", fail_only_generated_result)
+    with pytest.raises(RequirementReviewSubmissionError) as excinfo:
+        submit_requirement_for_review(fixture, "req-0002-r1")
+
+    assert excinfo.value.code == "generated_review_submission_invalid"
+    assert requirement.read_bytes() == original
+    assert not (fixture / ".specbound/review-submissions/req-0002-r1.review-submission.json").exists()
+
+
+def test_req_to_in_review_leaves_no_record_when_record_fsync_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fixture = tmp_path / "review-submission-record-write-failure"
+    shutil.copytree(FIXTURES / "valid-minimal", fixture)
+    requirement = _make_ready_draft(fixture)
+    original = requirement.read_bytes()
+
+    def fail_fsync(_fd: int) -> None:
+        raise OSError("simulated record fsync failure")
+
+    monkeypatch.setattr(validation.os, "fsync", fail_fsync)
+    with pytest.raises(RequirementReviewSubmissionError) as excinfo:
+        submit_requirement_for_review(fixture, "req-0002-r1")
+
+    assert excinfo.value.code == "review_submission_write_failed"
+    assert requirement.read_bytes() == original
+    assert not (fixture / ".specbound/review-submissions/req-0002-r1.review-submission.json").exists()
+
+
+def test_req_to_in_review_rejects_mutation_after_readiness_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fixture = tmp_path / "review-submission-concurrent-mutation"
+    shutil.copytree(FIXTURES / "valid-minimal", fixture)
+    requirement = _make_ready_draft(fixture)
+    original = requirement.read_bytes()
+    original_readiness = validation.check_requirement_readiness
+
+    def mutate_after_readiness(root: Path, target: str) -> validation.Result:
+        result = original_readiness(root, target)
+        requirement.write_text(requirement.read_text(encoding="utf-8") + "\nConcurrent mutation.\n", encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(validation, "check_requirement_readiness", mutate_after_readiness)
+    with pytest.raises(RequirementReviewSubmissionError) as excinfo:
+        submit_requirement_for_review(fixture, "req-0002-r1")
+
+    assert excinfo.value.code == "concurrent_requirement_mutation"
+    assert requirement.read_bytes() != original
+    assert not (fixture / ".specbound/review-submissions/req-0002-r1.review-submission.json").exists()
+
+
+def test_req_to_in_review_preserves_a_complete_pair_when_rollback_cleanup_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fixture = tmp_path / "review-submission-rollback-cleanup-failure"
+    shutil.copytree(FIXTURES / "valid-minimal", fixture)
+    requirement = _make_ready_draft(fixture)
+    original_validate = validation.validate
+    calls = 0
+
+    def fail_generated_validation(root: Path, claim: str | None = None, requirement: str | None = None) -> validation.Result:
+        nonlocal calls
+        calls += 1
+        result = original_validate(root, claim=claim, requirement=requirement)
+        if calls == 2:
+            result.block("simulated_generated_validation_failure", "test", "force rollback")
+        return result
+
+    def fail_record_cleanup(_directory_fd: int, _name: str, _identity: tuple[int, int]) -> None:
+        raise OSError("simulated record cleanup failure")
+
+    monkeypatch.setattr(validation, "validate", fail_generated_validation)
+    monkeypatch.setattr(validation, "_unlink_review_submission_if_owned", fail_record_cleanup)
+    with pytest.raises(RequirementReviewSubmissionError) as excinfo:
+        submit_requirement_for_review(fixture, "req-0002-r1")
+
+    assert excinfo.value.code == "review_submission_rollback_failed"
+    assert "status: in_review" in requirement.read_text(encoding="utf-8")
+    assert (fixture / ".specbound/review-submissions/req-0002-r1.review-submission.json").exists()
+
+
+def _make_in_review_requirement(fixture: Path) -> Path:
+    requirement = fixture / "docs/requirements/req-0001/req-0001-r1.md"
+    reviewed_text = requirement.read_text(encoding="utf-8").replace("status: approved", "status: in_review", 1)
+    requirement.write_text(reviewed_text, encoding="utf-8")
     (fixture / ".specbound/approvals/req-0001-r1.approval.json").unlink()
+    review_submission = {
+        "schema_version": 1,
+        "requirement_path": "docs/requirements/req-0001/req-0001-r1.md",
+        "requirement_id": "req-0001",
+        "revision": 1,
+        "draft_sha256": hashlib.sha256(reviewed_text.replace("status: in_review", "status: draft", 1).encode()).hexdigest(),
+        "reviewed_sha256": hashlib.sha256(reviewed_text.encode()).hexdigest(),
+        "risk": "low",
+        "owner": "fixture-owner",
+        "submitted_at": "2026-07-23T09:00:00+00:00",
+        "decision": "submitted_for_review",
+        "permitted_next_action": "review_decision_only",
+    }
+    (fixture / ".specbound/review-submissions/req-0001-r1.review-submission.json").write_text(
+        json.dumps(review_submission), encoding="utf-8"
+    )
+    review_decision = {
+        "schema_version": 1,
+        "requirement_path": "docs/requirements/req-0001/req-0001-r1.md",
+        "requirement_id": "req-0001",
+        "revision": 1,
+        "reviewed_sha256": hashlib.sha256(reviewed_text.encode()).hexdigest(),
+        "risk": "low",
+        "authority": "fixture-maintainer",
+        "decided_at": "2026-07-23T09:01:00+00:00",
+        "decision": "rejected",
+        "reason": "Fixture blocker with direct deterministic evidence.",
+    }
+    decision_path = fixture / ".specbound/review-decisions/req-0001-r1.review-decision.json"
+    decision_path.parent.mkdir(parents=True, exist_ok=True)
+    decision_path.write_text(json.dumps(review_decision), encoding="utf-8")
     assert run_cli("--root", str(fixture), "validate").returncode == 0
     return requirement
 

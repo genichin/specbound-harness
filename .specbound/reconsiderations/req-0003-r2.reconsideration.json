@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "requirement_path": "docs/requirements/req-0003/req-0003-r2.md",
+  "requirement_id": "req-0003",
+  "revision": 2,
+  "reviewed_sha256": "8cf8681ec3b2b76f34f5b03148a45974df9306cc205a0ec9118d622f02ff5684",
+  "rejected_sha256": "5760f25b3f05515ba330a235b07d81f5ea507fa6d67404a69b5b695358417370",
+  "reopened_sha256": "8cf8681ec3b2b76f34f5b03148a45974df9306cc205a0ec9118d622f02ff5684",
+  "risk": "high",
+  "authority": "independent-advanced-llm-reviewer",
+  "reconsidered_at": "2026-07-24T00:00:00+00:00",
+  "decision": "reopened_for_review",
+  "reason": "The preserved rejection rests only on lifecycle prose, while the exact digest-bound independent review found no blocking REQ defect; the accountable user directed reconsideration."
+}

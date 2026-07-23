@@ -35,8 +35,11 @@ specbound.yaml
 .specbound/discoveries/dcy-<id>-r<revision>.md
 .specbound/confirmations/dcy-<id>-r<revision>.confirmation.json
 docs/requirements/req-<id>/req-<id>-r<revision>.md
-.specbound/approvals/req-<id>-r<revision>.approval.json
+.specbound/review-submissions/req-<id>-r<revision>.review-submission.json
+.specbound/review-decisions/req-<id>-r<revision>.review-decision.json
 .specbound/rejections/req-<id>-r<revision>.rejection.json
+.specbound/reconsiderations/req-<id>-r<revision>.reconsideration.json
+.specbound/approvals/req-<id>-r<revision>.approval.json
 .specbound/micro-specs/req-<id>/ms-<id>-<slice>.md
 .specbound/iteration-qc/req-<id>/iqc-<id>-<slice>-r<revision>.json
 .specbound/delivery-qc/dqc-<id>-r<revision>.json

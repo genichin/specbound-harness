@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "requirement_path": "docs/requirements/req-0001/req-0001-r2.md",
+  "requirement_id": "req-0001",
+  "revision": 2,
+  "reviewed_sha256": "39cfe9f4c33a3bf227193ef4d2dd8e766178682c1e636cc17e8d5e39c7f9bb83",
+  "sha256": "28e49c395740379d14a72d5d0fd003d6d6f2e42fd61f972b12c837540b6b9297",
+  "risk": "high",
+  "authority": "independent-advanced-llm-reviewer",
+  "approved_at": "2026-07-22T16:50:34+09:00",
+  "reason": "User-authorized manual-bootstrap independent approval for the exact r2 final snapshot. Independent review confirmed that the only permitted transition was status: in_review to status: approved, correcting r1's stale lifecycle prose without expanding scope or authorizing adoption, implementation, merge, delivery, or release.",
+  "issuance_mode": "manual_bootstrap_exception",
+  "exception_authorized_by": "accountable user direct instruction in this session"
+}

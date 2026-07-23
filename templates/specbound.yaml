@@ -6,6 +6,9 @@ canonical:
   control_root: .specbound
   approvals_root: .specbound/approvals
   rejections_root: .specbound/rejections
+  review_submissions_root: .specbound/review-submissions
+  review_decisions_root: .specbound/review-decisions
+  reconsiderations_root: .specbound/reconsiderations
   discovery_confirmations_root: .specbound/confirmations
   # .specbound/micro-specs/req-<id>/ms-<id>-<slice>.md
   # .specbound/iteration-qc/req-<id>/iqc-<id>-<slice>-r<revision>.json
@@ -42,6 +45,42 @@ policy:
     - rejected_at
     - decision
     - reason
+  required_review_submission_fields:
+    - schema_version
+    - requirement_path
+    - requirement_id
+    - revision
+    - draft_sha256
+    - reviewed_sha256
+    - risk
+    - owner
+    - submitted_at
+    - decision
+    - permitted_next_action
+  required_review_decision_fields:
+    - schema_version
+    - requirement_path
+    - requirement_id
+    - revision
+    - reviewed_sha256
+    - risk
+    - authority
+    - decided_at
+    - decision
+    - reason
+  required_reconsideration_fields:
+    - schema_version
+    - requirement_path
+    - requirement_id
+    - revision
+    - reviewed_sha256
+    - rejected_sha256
+    - reopened_sha256
+    - risk
+    - authority
+    - reconsidered_at
+    - decision
+    - reason
   required_discovery_confirmation_fields:
     - schema_version
     - discovery_path
@@ -62,6 +101,30 @@ policy:
     high:
       - repository-maintainer
   requirement_review_authorities_by_risk:
+    low:
+      - repository-maintainer
+    medium:
+      - repository-maintainer
+    high:
+      - repository-maintainer
+      - independent-advanced-llm-reviewer
+  requirement_review_decision_authorities_by_risk:
+    low:
+      - repository-maintainer
+    medium:
+      - repository-maintainer
+    high:
+      - repository-maintainer
+      - independent-advanced-llm-reviewer
+  requirement_reconsideration_authorities_by_risk:
+    low:
+      - repository-maintainer
+    medium:
+      - repository-maintainer
+    high:
+      - repository-maintainer
+      - independent-advanced-llm-reviewer
+  requirement_approval_authorities_by_risk:
     low:
       - repository-maintainer
     medium:

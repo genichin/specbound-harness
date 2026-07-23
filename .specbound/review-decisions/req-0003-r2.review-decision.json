@@ -1,0 +1,12 @@
+{
+  "authority": "independent-advanced-llm-reviewer",
+  "decided_at": "2026-07-24T00:24:04.445409+09:00",
+  "decision": "approval_ready",
+  "reason": "Independent review of the exact in-review snapshot found no blocking lifecycle, scope, acceptance-contract, or authority-boundary defect.",
+  "requirement_id": "req-0003",
+  "requirement_path": "docs/requirements/req-0003/req-0003-r2.md",
+  "reviewed_sha256": "8cf8681ec3b2b76f34f5b03148a45974df9306cc205a0ec9118d622f02ff5684",
+  "revision": 2,
+  "risk": "high",
+  "schema_version": 1
+}

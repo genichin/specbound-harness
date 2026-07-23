@@ -18,6 +18,9 @@ REQUIREMENT_RE = re.compile(r"^(req-[0-9]+)-r([1-9][0-9]*)\.md$")
 DISCOVERY_RE = re.compile(r"^(dcy-[0-9]+)-r([1-9][0-9]*)\.md$")
 DISCOVERY_CONFIRMATION_RE = re.compile(r"^(dcy-[0-9]+)-r([1-9][0-9]*)\.confirmation\.json$")
 REQUIREMENT_REJECTION_RE = re.compile(r"^(req-[0-9]+)-r([1-9][0-9]*)\.rejection\.json$")
+REQUIREMENT_REVIEW_SUBMISSION_RE = re.compile(r"^(req-[0-9]+)-r([1-9][0-9]*)\.review-submission\.json$")
+REQUIREMENT_REVIEW_DECISION_RE = re.compile(r"^(req-[0-9]+)-r([1-9][0-9]*)\.review-decision\.json$")
+REQUIREMENT_RECONSIDERATION_RE = re.compile(r"^(req-[0-9]+)-r([1-9][0-9]*)\.reconsideration\.json$")
 MICRO_SPEC_RE = re.compile(r"^ms-([0-9]+)-(0*[1-9][0-9]*)\.md$")
 ITERATION_QC_RE = re.compile(r"^iqc-([0-9]+)-(0*[1-9][0-9]*)-r([1-9][0-9]*)\.json$")
 DELIVERY_QC_RE = re.compile(r"^dqc-([0-9]+)-r([1-9][0-9]*)\.json$")
@@ -27,6 +30,9 @@ REQUIRED_ROOTS = {
     "control_root": ".specbound",
     "approvals_root": ".specbound/approvals",
     "rejections_root": ".specbound/rejections",
+    "review_submissions_root": ".specbound/review-submissions",
+    "review_decisions_root": ".specbound/review-decisions",
+    "reconsiderations_root": ".specbound/reconsiderations",
     "discovery_confirmations_root": ".specbound/confirmations",
     "micro_specs_root": ".specbound/micro-specs",
     "iteration_qc_root": ".specbound/iteration-qc",
@@ -59,6 +65,27 @@ REQUIRED_REJECTION_FIELDS = {
     "rejected_at",
     "decision",
     "reason",
+}
+REQUIRED_REVIEW_SUBMISSION_FIELDS = {
+    "schema_version",
+    "requirement_path",
+    "requirement_id",
+    "revision",
+    "draft_sha256",
+    "reviewed_sha256",
+    "risk",
+    "owner",
+    "submitted_at",
+    "decision",
+    "permitted_next_action",
+}
+REQUIRED_REVIEW_DECISION_FIELDS = {
+    "schema_version", "requirement_path", "requirement_id", "revision", "reviewed_sha256",
+    "risk", "authority", "decided_at", "decision", "reason",
+}
+REQUIRED_RECONSIDERATION_FIELDS = {
+    "schema_version", "requirement_path", "requirement_id", "revision", "reviewed_sha256",
+    "rejected_sha256", "reopened_sha256", "risk", "authority", "reconsidered_at", "decision", "reason",
 }
 REQUIRED_DISCOVERY_CONFIRMATION_FIELDS = {
     "schema_version",
@@ -192,6 +219,7 @@ def preflight(root: Path) -> Result:
         )
     _validate_required_field_config(result, policy, "required_approval_fields", REQUIRED_APPROVAL_FIELDS)
     _validate_required_field_config(result, policy, "required_rejection_fields", REQUIRED_REJECTION_FIELDS)
+    _validate_required_field_config(result, policy, "required_review_submission_fields", REQUIRED_REVIEW_SUBMISSION_FIELDS)
     _validate_required_field_config(
         result,
         policy,
@@ -378,7 +406,7 @@ def _atomic_replace_text(path: Path, text: str) -> None:
         raise
 
 
-def _validate_requirement(root: Path, path: Path, result: Result, latest_revisions: dict[str, int]) -> None:
+def _validate_requirement(root: Path, path: Path, result: Result, latest_approved_revisions: dict[str, int]) -> None:
     relative = path.relative_to(root).as_posix()
     symlink = _first_symlink_component(root, path)
     if symlink:
@@ -426,6 +454,25 @@ def _validate_requirement(root: Path, path: Path, result: Result, latest_revisio
             result.block("missing_rejection", rejection_relative, "rejected REQ has no rejection record")
         if approval_path.exists():
             result.block("conflicting_requirement_decision", relative, "rejected REQ must not retain an approval record")
+        return
+    if status == "in_review":
+        submission_relative = f".specbound/review-submissions/{requirement_id}-r{revision_text}.review-submission.json"
+        submission_path = root / submission_relative
+        approval_path = root / f".specbound/approvals/{requirement_id}-r{revision_text}.approval.json"
+        rejection_path = root / f".specbound/rejections/{requirement_id}-r{revision_text}.rejection.json"
+        symlink = _first_symlink_component(root, submission_path)
+        if symlink:
+            result.block("unsafe_artifact_path", symlink.relative_to(root).as_posix(), "review-submission path must not contain a symlink")
+        elif not submission_path.is_file():
+            result.block("missing_review_submission", submission_relative, "in_review REQ has no review-submission record")
+        reconsideration_path = root / f".specbound/reconsiderations/{requirement_id}-r{revision_text}.reconsideration.json"
+        if approval_path.exists() or (rejection_path.exists() and not reconsideration_path.is_file()):
+            result.block("conflicting_requirement_decision", relative, "in_review REQ may retain a rejection only with append-only reconsideration evidence")
+        return
+    if status == "draft":
+        submission_path = root / f".specbound/review-submissions/{requirement_id}-r{revision_text}.review-submission.json"
+        if submission_path.exists():
+            result.block("conflicting_requirement_decision", relative, "draft REQ must not retain a review-submission record")
         return
     if status != "approved":
         return
@@ -475,8 +522,8 @@ def _validate_requirement(root: Path, path: Path, result: Result, latest_revisio
         result.block("malformed_approval", approval_relative, "sha256 must be a lowercase 64-character hex digest")
     elif approval["sha256"] != _digest(path):
         result.block("requirement_digest_mismatch", approval_relative, "approval digest differs from REQ content")
-    latest_revision = latest_revisions.get(requirement_id, revision)
-    if revision < latest_revision:
+    latest_revision = latest_approved_revisions.get(requirement_id, revision)
+    if revision < latest_revision and approval.get("issuance_mode") != "manual_bootstrap_exception":
         exception = approval.get("supersession_exception")
         if exception is None:
             result.block(
@@ -500,6 +547,81 @@ def _validate_requirement(root: Path, path: Path, result: Result, latest_revisio
             )
     if len(result.blockers) == initially_valid:
         result.approved_requirements += 1
+
+
+def _validate_requirement_review_submission(root: Path, path: Path, result: Result) -> None:
+    """Validate the non-authorizing, exact-snapshot draft-to-review handoff record."""
+    relative = path.relative_to(root).as_posix()
+    symlink = _first_symlink_component(root, path)
+    if symlink:
+        result.block("unsafe_artifact_path", symlink.relative_to(root).as_posix(), "review-submission path must not contain a symlink")
+        return
+    try:
+        parts = path.relative_to(root / REQUIRED_ROOTS["review_submissions_root"]).parts
+    except ValueError:
+        result.block("invalid_review_submission_path", relative, "review submission is outside its canonical root")
+        return
+    if len(parts) != 1 or not (match := REQUIREMENT_REVIEW_SUBMISSION_RE.fullmatch(parts[0])):
+        result.block("invalid_review_submission_path", relative, "expected req-<id>-r<revision>.review-submission.json")
+        return
+    requirement_id, revision_text = match.groups()
+    requirement_relative = f"docs/requirements/{requirement_id}/{requirement_id}-r{revision_text}.md"
+    requirement_path = root / requirement_relative
+    try:
+        submission = json.loads(path.read_text(encoding="utf-8"))
+        metadata = _frontmatter(requirement_path)
+    except FileNotFoundError:
+        result.block("missing_requirement", requirement_relative, "review submission references a missing REQ")
+        return
+    except (OSError, ValueError, yaml.YAMLError, json.JSONDecodeError) as exc:
+        result.block("malformed_review_submission", relative, str(exc))
+        return
+    if not isinstance(submission, dict):
+        result.block("malformed_review_submission", relative, "review submission record must be an object")
+        return
+    missing = sorted(REQUIRED_REVIEW_SUBMISSION_FIELDS - set(submission))
+    if missing:
+        result.block("malformed_review_submission", relative, f"missing fields: {', '.join(missing)}")
+        return
+    if (
+        submission.get("schema_version") != 1
+        or submission.get("requirement_path") != requirement_relative
+        or submission.get("requirement_id") != requirement_id
+        or submission.get("revision") != int(revision_text)
+        or metadata.get("id") != requirement_id
+        or metadata.get("revision") != int(revision_text)
+        or metadata.get("status") not in {"in_review", "rejected", "approved"}
+    ):
+        result.block("review_submission_binding_mismatch", relative, "review submission must bind the canonical in_review REQ or a later digest-bound outcome")
+    if submission.get("decision") != "submitted_for_review" or submission.get("permitted_next_action") != "review_decision_only":
+        result.block("invalid_review_submission_decision", relative, "submission is non-authorizing and must permit only review_decision_only")
+    for field in ("risk", "owner"):
+        value = submission.get(field)
+        if not isinstance(value, str) or not value.strip() or PLACEHOLDER_RE.search(value) or value != metadata.get(field):
+            result.block("review_submission_binding_mismatch", relative, f"{field} differs from the REQ")
+    if not _valid_timestamp(submission.get("submitted_at")):
+        result.block("malformed_review_submission", relative, "submitted_at must be an ISO-8601 timestamp")
+    try:
+        current_text = requirement_path.read_text(encoding="utf-8")
+        if metadata.get("status") == "in_review":
+            reviewed_text = current_text
+        elif metadata.get("status") == "rejected":
+            reviewed_text = _transitioned_discovery_text(current_text, "rejected", "in_review")
+        else:
+            reviewed_text = _transitioned_discovery_text(current_text, "approved", "in_review")
+        draft_text = _transitioned_discovery_text(reviewed_text, "in_review", "draft")
+    except (OSError, ValueError) as exc:
+        result.block("review_submission_digest_mismatch", relative, f"cannot reconstruct submitted snapshots: {exc}")
+        return
+    for key, expected in (
+        ("draft_sha256", sha256(draft_text.encode("utf-8")).hexdigest()),
+        ("reviewed_sha256", sha256(reviewed_text.encode("utf-8")).hexdigest()),
+    ):
+        value = submission.get(key)
+        if not isinstance(value, str) or not re.fullmatch(r"[a-f0-9]{64}", value):
+            result.block("malformed_review_submission", relative, f"{key} must be a lowercase 64-character hex digest")
+        elif value != expected:
+            result.block("review_submission_digest_mismatch", relative, f"{key} differs from the bound REQ content")
 
 
 def _validate_requirement_rejection(
@@ -544,9 +666,9 @@ def _validate_requirement_rejection(
         or rejection.get("revision") != int(revision_text)
         or metadata.get("id") != requirement_id
         or metadata.get("revision") != int(revision_text)
-        or metadata.get("status") != "rejected"
+        or metadata.get("status") not in {"rejected", "in_review", "approved"}
     ):
-        result.block("rejection_binding_mismatch", relative, "rejection must bind the canonical rejected REQ")
+        result.block("rejection_binding_mismatch", relative, "rejection must bind the canonical rejected, reconsidered, or approved REQ")
     risk = metadata.get("risk")
     if not isinstance(rejection.get("risk"), str) or rejection["risk"] != risk:
         result.block("rejection_binding_mismatch", relative, "rejection risk differs from REQ")
@@ -564,10 +686,19 @@ def _validate_requirement_rejection(
         result.block("malformed_rejection", relative, "reason must be substantive and non-placeholder")
     if not _valid_timestamp(rejection.get("rejected_at")):
         result.block("malformed_rejection", relative, "rejected_at must be an ISO-8601 timestamp")
-    for key, expected in (
-        ("reviewed_sha256", _transitioned_discovery_digest(requirement_path, "rejected", "in_review")),
-        ("sha256", _digest(requirement_path)),
-    ):
+    if metadata.get("status") == "rejected":
+        expected_reviewed = _transitioned_discovery_digest(requirement_path, "rejected", "in_review")
+        expected_rejected = _digest(requirement_path)
+    else:
+        reconsideration = root / ".specbound/reconsiderations" / f"{requirement_id}-r{revision_text}.reconsideration.json"
+        if not reconsideration.is_file():
+            result.block("rejection_reconsideration_missing", relative, "non-rejected REQ retaining rejection evidence requires append-only reconsideration evidence")
+            return
+        current = requirement_path.read_text(encoding="utf-8")
+        reviewed = current if metadata.get("status") == "in_review" else _transitioned_discovery_text(current, "approved", "in_review")
+        expected_reviewed = sha256(reviewed.encode("utf-8")).hexdigest()
+        expected_rejected = sha256(_transitioned_discovery_text(reviewed, "in_review", "rejected").encode("utf-8")).hexdigest()
+    for key, expected in (("reviewed_sha256", expected_reviewed), ("sha256", expected_rejected)):
         value = rejection.get(key)
         if not isinstance(value, str) or not re.fullmatch(r"[a-f0-9]{64}", value):
             result.block("malformed_rejection", relative, f"{key} must be a lowercase 64-character hex digest")
@@ -726,12 +857,35 @@ def create_requirement_draft(root: Path, discovery_target: str, requirement_targ
         f"  id: {discovery_id}\n  revision: {int(discovery_revision_text)}\n  path: {discovery_relative}\n"
         f"  sha256: {confirmation['sha256']}\n  confirmation_path: {confirmation_relative}\n---\n\n"
         f"# REQ: {requirement_id} r{int(requirement_revision_text)}\n\n"
-        "> **Lifecycle boundary:** This artifact's lifecycle state is determined only by frontmatter plus its matching content-addressed decision record. Draft issuance is not review, rejection, approval, or implementation authority.\n\n"
-        "## Goal\n\nDescribe the approved problem and intended outcome.\n\n"
-        "## Scope\n\n- Define the narrow, implementable change.\n\n"
-        "## Non-goals\n\n- Approval issuance, implementation, merge, delivery, and release are separate actions.\n\n"
-        "## Acceptance criteria\n\n- Replace this placeholder with deterministic, verifiable criteria before review.\n\n"
-        "## Approval handoff\n\nReview the exact snapshot separately; do not infer approval from issuance.\n"
+        "> **Lifecycle boundary:** 이 artifact의 lifecycle state는 frontmatter와 이에 대응하는 content-addressed decision record로만 결정된다. This artifact's lifecycle state is determined only by frontmatter plus its matching content-addressed decision record. `draft` 발급은 review, rejection, approval 또는 implementation 권한이 아니다. Draft issuance is not review, rejection, approval, or implementation authority.\n\n"
+        "> **Review handoff:** `draft` REQ는 먼저 `specbound req check-readiness <req-id>-r<revision>`를 통과한 뒤에만 `specbound req to-in-review <req-id>-r<revision>`로 제출한다. canonical CLI는 exact draft/reviewed digest를 가진 non-authorizing review-submission record와 `in_review` 상태를 rollback-safe하게 함께 발급한다. `in_review` REQ는 `specbound req reject`를 통해서만 rejected 처리할 수 있다. Approval, implementation, merge, delivery, and release remain separate actions.\n\n"
+        "## 목표 (Goal)\n\n<검증 가능한 결과>\n\n"
+        "## Scope (범위)\n\n- <포함되는 동작>\n\n"
+        "## Non-goals (비목표)\n\n- approval 발급, implementation, merge, delivery, release는 각각 별도의 action이다. Approval issuance, implementation, merge, delivery, and release are separate actions.\n\n"
+        "## Acceptance criteria\n\n"
+        "> **AC completion contract:** 각 AC는 독립적으로 검토 가능한 observable behavior를 기술해야 한다. 모든 field의 placeholder를 review 전에 실제 내용으로 교체한다. 이 template은 approval 또는 implementation 권한을 부여하지 않는다.\n\n"
+        "### AC-001 — <짧고 구체적인 결과 이름>\n\n"
+        "- `observable_success`: <사용자·CLI·fixture가 관찰할 성공 결과>\n"
+        "- `required_preconditions`: <필요한 parent, authority, input, state, fixture>\n"
+        "- `mutation_boundary`: <허용되는 mutation 및 절대 변경하면 안 되는 대상>\n"
+        "- `negative_behavior`: <invalid/failure request의 reject 결과와 no-mutation 보장>\n"
+        "- `direct_evidence`: <이 AC의 성공·실패를 직접 증명할 command, fixture, assertion>\n"
+        "- `dependencies`: <none 또는 선행 AC ID / shared contract>\n"
+        "- `completion_group`: <이 AC만으로 완료 가능한 경우 자체 group; 함께 완료해야 하면 group ID와 이유>\n"
+        "- `candidate_micro_spec`: <예상 Micro-SPEC slice ID 또는 아직 미정인 이유>\n"
+        "- `non_goals`: <이 AC를 완료해도 주장하지 않는 behavior>\n\n"
+        "### AC-002 — <필요한 만큼 같은 completion contract를 복제>\n\n"
+        "- `observable_success`: <...>\n"
+        "- `required_preconditions`: <...>\n"
+        "- `mutation_boundary`: <...>\n"
+        "- `negative_behavior`: <...>\n"
+        "- `direct_evidence`: <...>\n"
+        "- `dependencies`: <none 또는 AC ID>\n"
+        "- `completion_group`: <group ID와 이유>\n"
+        "- `candidate_micro_spec`: <예상 slice ID 또는 이유>\n"
+        "- `non_goals`: <...>\n\n"
+        "`draft` REQ must pass `specbound req check-readiness` before review submission. Use `specbound req to-in-review` for the canonical rollback-safe handoff; never patch `status` manually.\n\n"
+        "## Approval handoff\n\n이 정확한 draft를 별도로 review한다. artifact 발급 사실만으로 approval을 추론하지 않는다. Review the exact snapshot separately; do not infer approval from issuance.\n"
     )
     if not requirement_path.parent.exists():
         try:
@@ -1601,6 +1755,316 @@ def create_discovery_confirmation(
     raise ConfirmationError("generated_confirmation_invalid", confirmation_relative, "generated record did not pass specbound validate")
 
 
+READINESS_AC_FIELDS = (
+    "observable_success",
+    "required_preconditions",
+    "mutation_boundary",
+    "negative_behavior",
+    "direct_evidence",
+    "dependencies",
+    "completion_group",
+    "candidate_micro_spec",
+    "non_goals",
+)
+READINESS_AC_HEADING_RE = re.compile(r"(?m)^### (AC-0*[1-9][0-9]*) — (.+)$")
+READINESS_AC_FIELD_RE = re.compile(r"(?m)^- `([a-z_]+)`: *(.*)$")
+CANDIDATE_MICRO_SPEC_RE = re.compile(r"^ms-[0-9]+-[0-9]+$")
+COMPLETION_GROUP_RE = re.compile(r"^CG-[1-9][0-9]*: .+")
+
+
+def _requirement_section_content(text: str, heading: str) -> str | None:
+    marker = f"\n{heading}\n"
+    start = text.find(marker)
+    if start < 0:
+        return None
+    content_start = start + len(marker)
+    next_heading = text.find("\n## ", content_start)
+    return text[content_start:] if next_heading < 0 else text[content_start:next_heading]
+
+
+def _readiness_parent_binding(root: Path, requirement_path: Path, metadata: dict[str, Any], result: Result) -> None:
+    """Require an exact confirmed parent, rather than trusting draft frontmatter alone."""
+    relative = requirement_path.relative_to(root).as_posix()
+    parent = metadata.get("parent_discovery")
+    required_parent_fields = {"id", "revision", "path", "sha256", "confirmation_path"}
+    if not isinstance(parent, dict) or set(parent) != required_parent_fields:
+        result.block("malformed_parent_binding", relative, "parent_discovery must contain exactly id, revision, path, sha256, and confirmation_path")
+        return
+    parent_id, revision = parent.get("id"), parent.get("revision")
+    if (
+        not isinstance(parent_id, str)
+        or not re.fullmatch(r"dcy-[0-9]+", parent_id)
+        or not isinstance(revision, int)
+        or isinstance(revision, bool)
+        or revision < 1
+    ):
+        result.block("malformed_parent_binding", relative, "parent_discovery id/revision must be canonical")
+        return
+    discovery_relative = f".specbound/discoveries/{parent_id}-r{revision}.md"
+    confirmation_relative = f".specbound/confirmations/{parent_id}-r{revision}.confirmation.json"
+    if parent.get("path") != discovery_relative or parent.get("confirmation_path") != confirmation_relative:
+        result.block("parent_binding_mismatch", relative, "parent paths must be the canonical exact Discovery and confirmation paths")
+        return
+    discovery_path, confirmation_path = root / discovery_relative, root / confirmation_relative
+    for path, label in ((discovery_path, "parent Discovery"), (confirmation_path, "parent confirmation")):
+        symlink = _first_symlink_component(root, path)
+        if symlink:
+            result.block("unsafe_artifact_path", symlink.relative_to(root).as_posix(), f"{label} path must not contain a symlink")
+            return
+    try:
+        discovery = _frontmatter(discovery_path)
+        confirmation = json.loads(confirmation_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        result.block("missing_parent_evidence", relative, "exact confirmed parent Discovery and confirmation are required")
+        return
+    except (OSError, ValueError, yaml.YAMLError, json.JSONDecodeError) as exc:
+        result.block("malformed_parent_evidence", relative, str(exc))
+        return
+    if (
+        not isinstance(confirmation, dict)
+        or discovery.get("id") != parent_id
+        or discovery.get("revision") != revision
+        or discovery.get("status") != "confirmed"
+        or confirmation.get("discovery_path") != discovery_relative
+        or confirmation.get("discovery_id") != parent_id
+        or confirmation.get("revision") != revision
+        or confirmation.get("decision") != "confirmed"
+        or confirmation.get("permitted_next_action") != "draft_req_only"
+        or parent.get("sha256") != _digest(discovery_path)
+        or confirmation.get("sha256") != _digest(discovery_path)
+        or metadata.get("risk") != discovery.get("risk_class")
+    ):
+        result.block("parent_binding_mismatch", relative, "REQ must remain bound to the exact confirmed parent snapshot and risk")
+
+
+def check_requirement_readiness(root: Path, target: str) -> Result:
+    """Read-only, deterministic readiness check for one canonical draft REQ."""
+    result = validate(root)
+    match = REQUIREMENT_RE.fullmatch(f"{target}.md")
+    if not match:
+        result.block("invalid_requirement_target", target, "target must be req-<id>-r<revision>")
+        return result
+    requirement_id, revision_text = match.groups()
+    relative = f"docs/requirements/{requirement_id}/{target}.md"
+    path = root / relative
+    symlink = _first_symlink_component(root, path)
+    if symlink:
+        result.block("unsafe_artifact_path", symlink.relative_to(root).as_posix(), "canonical REQ path must not contain a symlink")
+        return result
+    try:
+        text = path.read_text(encoding="utf-8")
+        metadata = _frontmatter(path)
+    except FileNotFoundError:
+        result.block("missing_requirement", relative, "canonical REQ does not exist")
+        return result
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        result.block("malformed_requirement", relative, str(exc))
+        return result
+    if metadata.get("id") != requirement_id or metadata.get("revision") != int(revision_text):
+        result.block("requirement_binding_mismatch", relative, "frontmatter id/revision differs from canonical path")
+    if metadata.get("status") != "draft":
+        result.block("requirement_not_draft", relative, "only a draft REQ may be submitted for review")
+    for field in ("risk", "owner"):
+        value = metadata.get(field)
+        if not isinstance(value, str) or not value.strip() or PLACEHOLDER_RE.search(value):
+            result.block("malformed_requirement", relative, f"frontmatter {field} must be a substantive non-placeholder string")
+    _readiness_parent_binding(root, path, metadata, result)
+    for heading in ("## 목표 (Goal)", "## Scope (범위)", "## Non-goals (비목표)", "## Approval handoff"):
+        content = _requirement_section_content(text, heading)
+        if content is None or not content.strip() or PLACEHOLDER_RE.search(content):
+            result.block("incomplete_review_handoff", relative, f"{heading} must contain substantive non-placeholder content")
+    sections = list(READINESS_AC_HEADING_RE.finditer(text))
+    if not sections:
+        result.block("missing_acceptance_criteria", relative, "at least one canonical AC-<n> completion contract is required")
+        return result
+    acs: dict[str, dict[str, str]] = {}
+    group_members: dict[str, list[str]] = {}
+    for index, heading in enumerate(sections):
+        ac_id, title = heading.groups()
+        if ac_id in acs:
+            result.block("duplicate_acceptance_criterion", relative, f"{ac_id} is repeated")
+            continue
+        if PLACEHOLDER_RE.search(title):
+            result.block("incomplete_acceptance_criterion", relative, f"{ac_id} title remains a placeholder")
+        end = sections[index + 1].start() if index + 1 < len(sections) else len(text)
+        field_values = {key: value.strip() for key, value in READINESS_AC_FIELD_RE.findall(text[heading.end() : end])}
+        acs[ac_id] = field_values
+        for field in READINESS_AC_FIELDS:
+            value = field_values.get(field)
+            if not value or PLACEHOLDER_RE.search(value):
+                result.block("incomplete_acceptance_criterion", relative, f"{ac_id}.{field} must be substantive and non-placeholder")
+        candidate = field_values.get("candidate_micro_spec", "")
+        if candidate and not PLACEHOLDER_RE.search(candidate) and not CANDIDATE_MICRO_SPEC_RE.fullmatch(candidate):
+            result.block("invalid_candidate_micro_spec", relative, f"{ac_id}.candidate_micro_spec must use ms-<id>-<slice>")
+        group = field_values.get("completion_group", "")
+        if group and not PLACEHOLDER_RE.search(group):
+            if group != ac_id and not COMPLETION_GROUP_RE.fullmatch(group):
+                result.block("unbounded_completion_group", relative, f"{ac_id}.completion_group must be its AC ID or CG-<n>: <reason>")
+            group_members.setdefault(group, []).append(ac_id)
+    for group, members in group_members.items():
+        if group.startswith("CG-") and len(members) < 2:
+            result.block("unbounded_completion_group", relative, f"{group} must bind two or more ACs")
+    dependencies: dict[str, set[str]] = {}
+    for ac_id, fields in acs.items():
+        dependency_text = fields.get("dependencies", "")
+        if dependency_text.lower() == "none":
+            dependencies[ac_id] = set()
+            continue
+        referenced = set(re.findall(r"AC-0*[1-9][0-9]*", dependency_text))
+        if not referenced or re.sub(r"AC-0*[1-9][0-9]*(?:[ ,]+AC-0*[1-9][0-9]*)*", "", dependency_text).strip(" ,"):
+            result.block("invalid_acceptance_criterion_dependency", relative, f"{ac_id}.dependencies must be none or a comma-separated AC ID list")
+        unknown = referenced - set(acs)
+        if unknown:
+            result.block("unknown_acceptance_criterion_dependency", relative, f"{ac_id} references unknown {', '.join(sorted(unknown))}")
+        dependencies[ac_id] = referenced
+        for dependency in referenced & set(acs):
+            if fields.get("candidate_micro_spec") != acs[dependency].get("candidate_micro_spec"):
+                result.block("candidate_micro_spec_dependency_closure", relative, f"{ac_id} and dependency {dependency} must share one candidate_micro_spec")
+    active: set[str] = set()
+    complete: set[str] = set()
+    def visit(ac_id: str) -> None:
+        if ac_id in complete:
+            return
+        if ac_id in active:
+            result.block("acceptance_criterion_dependency_cycle", relative, f"cycle includes {ac_id}")
+            return
+        active.add(ac_id)
+        for dependency in dependencies.get(ac_id, set()) & set(acs):
+            visit(dependency)
+        active.remove(ac_id)
+        complete.add(ac_id)
+    for ac_id in acs:
+        visit(ac_id)
+    if metadata.get("risk") == "high" and re.search(r"\bDECIDE\b", text, re.IGNORECASE):
+        result.block("unresolved_high_risk_decide", relative, "high-risk REQ cannot enter review while DECIDE remains unresolved")
+    return result
+
+
+class RequirementReviewSubmissionError(ValueError):
+    def __init__(self, code: str, path: str, detail: str) -> None:
+        super().__init__(detail)
+        self.code = code
+        self.path = path
+        self.detail = detail
+
+
+def _publish_review_submission_record(directory: Path, name: str, text: str) -> tuple[int, tuple[int, int]]:
+    """Publish a non-overwritable record from an unnamed, fsynced inode."""
+    directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        record_fd = os.open(".", os.O_WRONLY | os.O_TMPFILE, 0o666, dir_fd=directory_fd)
+        try:
+            with os.fdopen(record_fd, "w", encoding="utf-8") as handle:
+                handle.write(text)
+                handle.flush()
+                os.fsync(handle.fileno())
+                identity = (os.fstat(handle.fileno()).st_dev, os.fstat(handle.fileno()).st_ino)
+                os.link(f"/proc/self/fd/{handle.fileno()}", name, dst_dir_fd=directory_fd)
+            os.fsync(directory_fd)
+        except BaseException:
+            raise
+    except BaseException:
+        os.close(directory_fd)
+        raise
+    return directory_fd, identity
+
+
+def _unlink_review_submission_if_owned(directory_fd: int, name: str, identity: tuple[int, int]) -> None:
+    """Remove only the record inode published by this submission attempt."""
+    current = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+    if (current.st_dev, current.st_ino) != identity:
+        raise OSError("review-submission record ownership changed during rollback")
+    os.unlink(name, dir_fd=directory_fd)
+    os.fsync(directory_fd)
+
+
+def submit_requirement_for_review(root: Path, target: str) -> Path:
+    """Publish one exact ready draft and its non-authorizing review-submission record."""
+    match = REQUIREMENT_RE.fullmatch(f"{target}.md")
+    assert match is not None
+    requirement_id, revision_text = match.groups()
+    relative = f"docs/requirements/{requirement_id}/{target}.md"
+    submission_relative = f".specbound/review-submissions/{target}.review-submission.json"
+    requirement_path, submission_path = root / relative, root / submission_relative
+    for path, label in ((requirement_path, "REQ"), (submission_path.parent, "review-submission directory")):
+        symlink = _first_symlink_component(root, path)
+        if symlink:
+            raise RequirementReviewSubmissionError("unsafe_artifact_path", symlink.relative_to(root).as_posix(), f"canonical {label} path must not contain a symlink")
+    if submission_path.exists():
+        raise RequirementReviewSubmissionError("review_submission_already_exists", submission_relative, "review-submission records are non-overwritable")
+    try:
+        draft_text = requirement_path.read_text(encoding="utf-8")
+        metadata = _frontmatter(requirement_path)
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        raise RequirementReviewSubmissionError("invalid_requirement_status_transition", relative, str(exc)) from exc
+    readiness = check_requirement_readiness(root, target)
+    if not readiness.valid:
+        blocker = readiness.blockers[0]
+        raise RequirementReviewSubmissionError("readiness_failed", blocker["path"], blocker["detail"])
+    try:
+        if requirement_path.read_text(encoding="utf-8") != draft_text:
+            raise RequirementReviewSubmissionError(
+                "concurrent_requirement_mutation", relative, "REQ changed while readiness was being evaluated; rerun submission"
+            )
+        reviewed_text = _transitioned_discovery_text(draft_text, "draft", "in_review")
+    except RequirementReviewSubmissionError:
+        raise
+    except (OSError, ValueError) as exc:
+        raise RequirementReviewSubmissionError("invalid_requirement_status_transition", relative, str(exc)) from exc
+    record = {
+        "schema_version": 1,
+        "requirement_path": relative,
+        "requirement_id": requirement_id,
+        "revision": int(revision_text),
+        "draft_sha256": sha256(draft_text.encode("utf-8")).hexdigest(),
+        "reviewed_sha256": sha256(reviewed_text.encode("utf-8")).hexdigest(),
+        "risk": metadata["risk"],
+        "owner": metadata["owner"],
+        "submitted_at": datetime.now().astimezone().isoformat(),
+        "decision": "submitted_for_review",
+        "permitted_next_action": "review_decision_only",
+    }
+    record_text = json.dumps(record, indent=2, sort_keys=True) + "\n"
+    directory_fd: int | None = None
+    identity: tuple[int, int] | None = None
+    transitioned = False
+    committed = False
+    try:
+        directory_fd, identity = _publish_review_submission_record(submission_path.parent, submission_path.name, record_text)
+        _atomic_replace_text(requirement_path, reviewed_text)
+        transitioned = True
+        if validate(root).valid:
+            committed = True
+            return submission_path
+        error = RequirementReviewSubmissionError(
+            "generated_review_submission_invalid", submission_relative, "generated handoff did not pass specbound validate"
+        )
+    except FileExistsError as exc:
+        error = RequirementReviewSubmissionError(
+            "review_submission_already_exists", submission_relative, "review-submission records are non-overwritable"
+        )
+    except OSError as exc:
+        error = RequirementReviewSubmissionError("review_submission_write_failed", submission_relative, str(exc))
+    finally:
+        if not committed and identity is not None and directory_fd is not None:
+            try:
+                if transitioned:
+                    _atomic_replace_text(requirement_path, draft_text)
+                _unlink_review_submission_if_owned(directory_fd, submission_path.name, identity)
+            except OSError as rollback_exc:
+                if submission_path.exists():
+                    try:
+                        _atomic_replace_text(requirement_path, reviewed_text)
+                    except OSError:
+                        pass
+                raise RequirementReviewSubmissionError(
+                    "review_submission_rollback_failed", submission_relative, str(rollback_exc)
+                ) from rollback_exc
+        if directory_fd is not None:
+            os.close(directory_fd)
+    raise error
+
+
 class RequirementRejectionError(ValueError):
     def __init__(self, code: str, path: str, detail: str) -> None:
         super().__init__(detail)
@@ -1826,12 +2290,18 @@ def validate(root: Path, claim: str | None = None, requirement: str | None = Non
         "discovery confirmations",
     )
     rejection_root = _validate_root(root, REQUIRED_ROOTS["rejections_root"], result, "rejections")
+    review_submission_root = _validate_root(
+        root,
+        REQUIRED_ROOTS["review_submissions_root"],
+        result,
+        "review submissions",
+    )
     micro_spec_root = _validate_root(root, REQUIRED_ROOTS["micro_specs_root"], result, "Micro-SPECs")
     iteration_qc_root = _validate_root(root, REQUIRED_ROOTS["iteration_qc_root"], result, "iteration-QC")
     delivery_qc_root = _validate_root(root, REQUIRED_ROOTS["delivery_qc_root"], result, "delivery-QC")
     if requirement_root:
         requirement_paths = sorted(requirement_root.rglob("*.md"))
-        latest_revisions: dict[str, int] = {}
+        latest_approved_revisions: dict[str, int] = {}
         seen_identities: set[tuple[str, int]] = set()
         for path in requirement_paths:
             match = REQUIREMENT_RE.fullmatch(path.name)
@@ -1843,9 +2313,16 @@ def validate(root: Path, claim: str | None = None, requirement: str | None = Non
             if identity in seen_identities:
                 result.block("duplicate_requirement_revision", relative, "duplicate REQ id/revision artifact")
             seen_identities.add(identity)
-            latest_revisions[requirement_id] = max(latest_revisions.get(requirement_id, 0), identity[1])
+            try:
+                metadata = _frontmatter(path)
+            except (OSError, ValueError, yaml.YAMLError):
+                continue
+            if metadata.get("status") == "approved":
+                latest_approved_revisions[requirement_id] = max(
+                    latest_approved_revisions.get(requirement_id, 0), identity[1]
+                )
         for path in requirement_paths:
-            _validate_requirement(root, path, result, latest_revisions)
+            _validate_requirement(root, path, result, latest_approved_revisions)
     if discovery_root:
         for path in sorted(discovery_root.rglob("*.md")):
             _validate_discovery(root, path, result)
@@ -1855,6 +2332,9 @@ def validate(root: Path, claim: str | None = None, requirement: str | None = Non
     if rejection_root:
         for path in sorted(rejection_root.rglob("*.json")):
             _validate_requirement_rejection(root, path, result, allowed_requirement_authorities_by_risk)
+    if review_submission_root:
+        for path in sorted(review_submission_root.rglob("*.json")):
+            _validate_requirement_review_submission(root, path, result)
     if micro_spec_root:
         _validate_family_root(root, micro_spec_root, result, "micro_specs")
     if iteration_qc_root:

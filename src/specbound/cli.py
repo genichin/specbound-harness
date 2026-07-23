@@ -9,14 +9,16 @@ from pathlib import Path
 from .validation import (
     ConfirmationError,
     RequirementDraftError,
-    RequirementRejectionError,
+    RequirementReviewSubmissionError,
+    check_requirement_readiness,
     create_discovery_confirmation,
     create_requirement_draft,
     discover_root,
     preflight,
-    reject_requirement,
+    submit_requirement_for_review,
     validate,
 )
+from .requirement_lifecycle import RequirementLifecycleError, approve_requirement, record_review_decision, reconsider_requirement, reject_requirement
 
 
 def _emit(payload: object) -> None:
@@ -46,6 +48,20 @@ def build_parser() -> argparse.ArgumentParser:
     req_reject.add_argument("requirement_target", help="exact target: req-<id>-r<revision>")
     req_reject.add_argument("--authority", required=True, help="allowlisted rejection authority")
     req_reject.add_argument("--reason", required=True, help="substantive rejection reason")
+    req_review_decision = req_commands.add_parser("review-decision", help="record a completed digest-bound review verdict")
+    req_review_decision.add_argument("requirement_target", help="exact target: req-<id>-r<revision>")
+    req_review_decision.add_argument("--authority", required=True)
+    req_review_decision.add_argument("--decision", required=True, choices=("approval_ready", "rejected"))
+    req_review_decision.add_argument("--reason", required=True)
+    for name, help_text in (("reconsider", "append reconsideration evidence and reopen a rejected REQ"), ("approve", "approve an exact in-review snapshot with review evidence")):
+        command = req_commands.add_parser(name, help=help_text)
+        command.add_argument("requirement_target", help="exact target: req-<id>-r<revision>")
+        command.add_argument("--authority", required=True)
+        command.add_argument("--reason", required=True)
+    req_readiness = req_commands.add_parser("check-readiness", help="validate whether a draft REQ has a closed review handoff")
+    req_readiness.add_argument("requirement_target", help="exact target: req-<id>-r<revision>")
+    req_submit = req_commands.add_parser("to-in-review", help="atomically submit a ready draft REQ for review")
+    req_submit.add_argument("requirement_target", help="exact target: req-<id>-r<revision>")
 
     discovery = commands.add_parser("discovery", help="operate on canonical Discovery artifacts")
     discovery_commands = discovery.add_subparsers(dest="discovery_command", required=True)
@@ -100,13 +116,34 @@ def main(argv: list[str] | None = None) -> int:
         _emit({"valid": True, "requirement_path": path.relative_to(root).as_posix()})
         return 0
 
-    if args.command == "req" and args.req_command == "reject":
+    if args.command == "req" and args.req_command == "check-readiness":
+        result = check_requirement_readiness(root, args.requirement_target)
+        _emit(result.payload())
+        return 0 if result.valid else 2
+
+    if args.command == "req" and args.req_command == "to-in-review":
         try:
-            path = reject_requirement(root, args.requirement_target, args.authority, args.reason)
-        except RequirementRejectionError as exc:
+            path = submit_requirement_for_review(root, args.requirement_target)
+        except RequirementReviewSubmissionError as exc:
             _emit({"valid": False, "blockers": [{"code": exc.code, "path": exc.path, "detail": exc.detail}]})
             return 2
-        _emit({"valid": True, "rejection_path": path.relative_to(root).as_posix()})
+        _emit({"valid": True, "review_submission_path": path.relative_to(root).as_posix()})
+        return 0
+
+    if args.command == "req" and args.req_command in {"review-decision", "reconsider", "approve", "reject"}:
+        try:
+            if args.req_command == "review-decision":
+                path = record_review_decision(root, args.requirement_target, args.authority, args.decision, args.reason); field = "review_decision_path"
+            elif args.req_command == "reconsider":
+                path = reconsider_requirement(root, args.requirement_target, args.authority, args.reason); field = "reconsideration_path"
+            elif args.req_command == "approve":
+                path = approve_requirement(root, args.requirement_target, args.authority, args.reason); field = "approval_path"
+            else:
+                path = reject_requirement(root, args.requirement_target, args.authority, args.reason); field = "rejection_path"
+        except RequirementLifecycleError as exc:
+            _emit({"valid": False, "blockers": [{"code": exc.code, "path": exc.path, "detail": exc.detail}]})
+            return 2
+        _emit({"valid": True, field: path.relative_to(root).as_posix()})
         return 0
 
     if args.command == "discovery" and args.discovery_command == "confirm":

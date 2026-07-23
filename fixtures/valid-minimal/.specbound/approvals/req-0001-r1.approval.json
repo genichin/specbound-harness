@@ -2,7 +2,7 @@
   "requirement_path": "docs/requirements/req-0001/req-0001-r1.md",
   "requirement_id": "req-0001",
   "revision": 1,
-  "sha256": "4bc9a6fbaf8ba05ed9f96785e79bb6d166641ad508803ead7bd416b9ae2b2c6e",
+  "sha256": "0927a3aa7922f1f6145154fc924cdc640cb9462f9d62f4c44ddcc11790b4bbaa",
   "risk": "low",
   "authority": "delegated-lead"
 }

@@ -1,0 +1,13 @@
+{
+  "authority": "independent-advanced-llm-reviewer",
+  "decision": "rejected",
+  "reason": "The exact in_review snapshot remains internally lifecycle-inconsistent: lines 17 and 141 call r2 a successor/exact draft and describe to-in-review as a future next action, although frontmatter is status: in_review and the immutable review-submission already records that transition. This conflicts with the canonical review snapshot and must be corrected in a fresh revision rather than by mutating the digest-bound in_review artifact.",
+  "rejected_at": "2026-07-23T23:54:18.031856+09:00",
+  "requirement_id": "req-0003",
+  "requirement_path": "docs/requirements/req-0003/req-0003-r2.md",
+  "reviewed_sha256": "8cf8681ec3b2b76f34f5b03148a45974df9306cc205a0ec9118d622f02ff5684",
+  "revision": 2,
+  "risk": "high",
+  "schema_version": 1,
+  "sha256": "5760f25b3f05515ba330a235b07d81f5ea507fa6d67404a69b5b695358417370"
+}

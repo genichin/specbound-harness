@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "requirement_path": "docs/requirements/req-0003/req-0003-r1.md",
+  "requirement_id": "req-0003",
+  "revision": 1,
+  "reviewed_sha256": "c29be16fc5c733cd6a37ce9b39c7b46a031a52ad0a8fba67b00a0dc0395f3c6c",
+  "sha256": "245785a9b2508575745e134e02425bfe4f62cbabc2e45649e2df382f1549bc50",
+  "risk": "high",
+  "authority": "independent-advanced-llm-reviewer",
+  "approved_at": "2026-07-23T18:59:23+09:00",
+  "reason": "User-authorized manual-bootstrap approval for the exact req-0003-r1 final snapshot after independent review found no blocking or non-blocking issues. The approval authorizes only subsequent Micro-SPEC planning; it does not authorize implementation, adoption, merge, delivery, release, or live rollout.",
+  "issuance_mode": "manual_bootstrap_exception",
+  "exception_authorized_by": "accountable user direct instruction in this session"
+}
