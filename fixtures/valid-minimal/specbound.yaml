@@ -8,6 +8,7 @@ canonical:
   review_submissions_root: .specbound/review-submissions
   review_decisions_root: .specbound/review-decisions
   reconsiderations_root: .specbound/reconsiderations
+  micro_spec_reviews_root: .specbound/micro-spec-reviews
   discovery_confirmations_root: .specbound/confirmations
   micro_specs_root: .specbound/micro-specs
   iteration_qc_root: .specbound/iteration-qc
@@ -89,6 +90,21 @@ policy:
     - confirmed_at
     - decision
     - permitted_next_action
+  required_micro_spec_review_fields:
+    - schema_version
+    - micro_spec_path
+    - micro_spec_id
+    - micro_spec_sha256
+    - requirement_path
+    - requirement_id
+    - revision
+    - requirement_sha256
+    - risk
+    - authority
+    - decided_at
+    - decision
+    - reason
+    - permitted_next_action
   discovery_confirmation_authorities_by_risk:
     low:
       - fixture-maintainer
@@ -102,6 +118,9 @@ policy:
     low:
       - fixture-maintainer
   requirement_approval_authorities_by_risk:
+    low:
+      - fixture-maintainer
+  micro_spec_review_authorities_by_risk:
     low:
       - fixture-maintainer
   delivery_qc_authorities_by_risk:

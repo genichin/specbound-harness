@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SpecBound Micro-SPEC Review Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "micro_spec_path", "micro_spec_id", "micro_spec_sha256",
+    "requirement_path", "requirement_id", "revision", "requirement_sha256", "risk",
+    "authority", "decided_at", "decision", "reason", "permitted_next_action"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "micro_spec_path": {"type": "string"},
+    "micro_spec_id": {"type": "string", "pattern": "^ms-[0-9]+-[1-9][0-9]*$"},
+    "micro_spec_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "requirement_path": {"type": "string"},
+    "requirement_id": {"type": "string", "pattern": "^req-[0-9]+$"},
+    "revision": {"type": "integer", "minimum": 1},
+    "requirement_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "risk": {"type": "string", "minLength": 1},
+    "authority": {"type": "string", "minLength": 1},
+    "decided_at": {"type": "string", "format": "date-time"},
+    "decision": {"enum": ["approved_for_implementation", "rework", "blocked"]},
+    "reason": {"type": "string", "minLength": 1},
+    "permitted_next_action": {"enum": ["implement_bound_micro_spec_only", "none"]}
+  }
+}

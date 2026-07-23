@@ -19,6 +19,7 @@ from .validation import (
     validate,
 )
 from .requirement_lifecycle import RequirementLifecycleError, approve_requirement, record_review_decision, reconsider_requirement, reject_requirement
+from .micro_spec_lifecycle import MicroSpecReviewError, record_micro_spec_review
 
 
 def _emit(payload: object) -> None:
@@ -62,6 +63,14 @@ def build_parser() -> argparse.ArgumentParser:
     req_readiness.add_argument("requirement_target", help="exact target: req-<id>-r<revision>")
     req_submit = req_commands.add_parser("to-in-review", help="atomically submit a ready draft REQ for review")
     req_submit.add_argument("requirement_target", help="exact target: req-<id>-r<revision>")
+
+    micro_spec = commands.add_parser("micro-spec", help="operate on canonical Micro-SPEC artifacts")
+    micro_spec_commands = micro_spec.add_subparsers(dest="micro_spec_command", required=True)
+    micro_spec_review = micro_spec_commands.add_parser("review-decision", help="append a digest-bound Micro-SPEC review verdict")
+    micro_spec_review.add_argument("micro_spec_target", help="exact target: ms-<id>-<slice>")
+    micro_spec_review.add_argument("--authority", required=True, help="allowlisted independent review authority")
+    micro_spec_review.add_argument("--decision", required=True, choices=("approved_for_implementation", "rework", "blocked"))
+    micro_spec_review.add_argument("--reason", required=True, help="substantive review rationale")
 
     discovery = commands.add_parser("discovery", help="operate on canonical Discovery artifacts")
     discovery_commands = discovery.add_subparsers(dest="discovery_command", required=True)
@@ -144,6 +153,15 @@ def main(argv: list[str] | None = None) -> int:
             _emit({"valid": False, "blockers": [{"code": exc.code, "path": exc.path, "detail": exc.detail}]})
             return 2
         _emit({"valid": True, field: path.relative_to(root).as_posix()})
+        return 0
+
+    if args.command == "micro-spec" and args.micro_spec_command == "review-decision":
+        try:
+            path = record_micro_spec_review(root, args.micro_spec_target, args.authority, args.decision, args.reason)
+        except MicroSpecReviewError as exc:
+            _emit({"valid": False, "blockers": [{"code": exc.code, "path": exc.path, "detail": exc.detail}]})
+            return 2
+        _emit({"valid": True, "micro_spec_review_path": path.relative_to(root).as_posix()})
         return 0
 
     if args.command == "discovery" and args.discovery_command == "confirm":

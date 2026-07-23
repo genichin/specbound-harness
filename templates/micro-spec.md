@@ -12,7 +12,7 @@ selected_acceptance_criteria: [AC-<id>]
 
 # Micro-SPEC — REQ-<id> slice <slice>
 
-> **Lifecycle boundary:** This human-readable planning artifact binds one exact approved REQ snapshot and a selected subset of its acceptance criteria. It is not an approval, iteration-QC, delivery-QC, merge decision, delivery decision, or release authority.
+> **Lifecycle boundary:** This human-readable planning artifact binds one exact approved REQ snapshot and a selected subset of its acceptance criteria. It is not an approval, iteration-QC, delivery-QC, merge decision, delivery decision, or release authority. For a high-risk parent REQ, append-only `micro-spec review-decision` evidence with `approved_for_implementation` is required before iteration-QC may validate this slice.
 
 ## Objective
 

@@ -22,6 +22,7 @@ REQUIREMENT_REVIEW_SUBMISSION_RE = re.compile(r"^(req-[0-9]+)-r([1-9][0-9]*)\.re
 REQUIREMENT_REVIEW_DECISION_RE = re.compile(r"^(req-[0-9]+)-r([1-9][0-9]*)\.review-decision\.json$")
 REQUIREMENT_RECONSIDERATION_RE = re.compile(r"^(req-[0-9]+)-r([1-9][0-9]*)\.reconsideration\.json$")
 MICRO_SPEC_RE = re.compile(r"^ms-([0-9]+)-(0*[1-9][0-9]*)\.md$")
+MICRO_SPEC_REVIEW_RE = re.compile(r"^ms-([0-9]+)-(0*[1-9][0-9]*)\.review\.json$")
 ITERATION_QC_RE = re.compile(r"^iqc-([0-9]+)-(0*[1-9][0-9]*)-r([1-9][0-9]*)\.json$")
 DELIVERY_QC_RE = re.compile(r"^dqc-([0-9]+)-r([1-9][0-9]*)\.json$")
 REQUIRED_ROOTS = {
@@ -33,6 +34,7 @@ REQUIRED_ROOTS = {
     "review_submissions_root": ".specbound/review-submissions",
     "review_decisions_root": ".specbound/review-decisions",
     "reconsiderations_root": ".specbound/reconsiderations",
+    "micro_spec_reviews_root": ".specbound/micro-spec-reviews",
     "discovery_confirmations_root": ".specbound/confirmations",
     "micro_specs_root": ".specbound/micro-specs",
     "iteration_qc_root": ".specbound/iteration-qc",
@@ -99,6 +101,11 @@ REQUIRED_DISCOVERY_CONFIRMATION_FIELDS = {
     "confirmed_at",
     "decision",
     "permitted_next_action",
+}
+REQUIRED_MICRO_SPEC_REVIEW_FIELDS = {
+    "schema_version", "micro_spec_path", "micro_spec_id", "micro_spec_sha256",
+    "requirement_path", "requirement_id", "revision", "requirement_sha256", "risk",
+    "authority", "decided_at", "decision", "reason", "permitted_next_action",
 }
 REQUIRED_DISCOVERY_METADATA = {"id", "revision", "status", "title", "issue_ref", "owner", "source_refs", "risk_class"}
 REQUIRED_DISCOVERY_HEADINGS = (
@@ -226,6 +233,12 @@ def preflight(root: Path) -> Result:
         "required_discovery_confirmation_fields",
         REQUIRED_DISCOVERY_CONFIRMATION_FIELDS,
     )
+    _validate_required_field_config(
+        result,
+        policy,
+        "required_micro_spec_review_fields",
+        REQUIRED_MICRO_SPEC_REVIEW_FIELDS,
+    )
     authorities_by_risk = policy.get("discovery_confirmation_authorities_by_risk") if isinstance(policy, dict) else None
     if not isinstance(authorities_by_risk, dict) or not authorities_by_risk or not all(
         isinstance(risk_class, str)
@@ -255,6 +268,20 @@ def preflight(root: Path) -> Result:
             "policy.requirement_review_authorities_by_risk must map each non-empty risk to a non-empty list of non-empty authority strings",
         )
     delivery_qc_authorities_by_risk = policy.get("delivery_qc_authorities_by_risk") if isinstance(policy, dict) else None
+    micro_spec_review_authorities_by_risk = policy.get("micro_spec_review_authorities_by_risk") if isinstance(policy, dict) else None
+    if not isinstance(micro_spec_review_authorities_by_risk, dict) or not micro_spec_review_authorities_by_risk or not all(
+        isinstance(risk, str)
+        and risk.strip()
+        and isinstance(authorities, list)
+        and authorities
+        and all(isinstance(authority, str) and authority.strip() for authority in authorities)
+        for risk, authorities in micro_spec_review_authorities_by_risk.items()
+    ):
+        result.block(
+            "malformed_config",
+            "specbound.yaml",
+            "policy.micro_spec_review_authorities_by_risk must map each non-empty risk to a non-empty list of non-empty authority strings",
+        )
     if not isinstance(delivery_qc_authorities_by_risk, dict) or not delivery_qc_authorities_by_risk or not all(
         isinstance(risk, str)
         and risk.strip()
@@ -1237,6 +1264,75 @@ def _validate_micro_spec(root: Path, path: Path, result: Result, seen_targets: s
         result.block("incomplete_micro_spec_plan", relative, f"missing substantive sections: {', '.join(missing_sections)}")
 
 
+def _validate_micro_spec_review(root: Path, path: Path, result: Result, allowed_by_risk: dict[str, set[str]]) -> None:
+    """Validate one append-only, exact-byte Micro-SPEC review record."""
+    relative = path.relative_to(root).as_posix()
+    symlink = _first_symlink_component(root, path)
+    if symlink:
+        result.block("unsafe_artifact_path", symlink.relative_to(root).as_posix(), "Micro-SPEC review path must not contain a symlink")
+        return
+    parts = path.relative_to(root / REQUIRED_ROOTS["micro_spec_reviews_root"]).parts
+    if len(parts) != 2 or not re.fullmatch(r"req-[0-9]+", parts[0]):
+        result.block("invalid_micro_spec_review_path", relative, "expected req-<id>/ms-<id>-<slice>.review.json")
+        return
+    match = MICRO_SPEC_REVIEW_RE.fullmatch(parts[1])
+    if not match or match.group(1) != parts[0][4:]:
+        result.block("invalid_micro_spec_review_path", relative, "review directory and filename must bind the same Micro-SPEC target")
+        return
+    number, slice_text = match.groups()
+    target = f"ms-{number}-{slice_text}"
+    expected_micro_path = f"{REQUIRED_ROOTS['micro_specs_root']}/req-{number}/{target}.md"
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        result.block("malformed_micro_spec_review", relative, str(exc))
+        return
+    if not isinstance(record, dict) or set(record) != REQUIRED_MICRO_SPEC_REVIEW_FIELDS:
+        result.block("malformed_micro_spec_review", relative, "review record must contain exactly the required fields")
+        return
+    if record.get("schema_version") != 1 or isinstance(record.get("schema_version"), bool):
+        result.block("malformed_micro_spec_review", relative, "schema_version must equal integer 1")
+    micro_path = root / expected_micro_path
+    if record.get("micro_spec_path") != expected_micro_path or record.get("micro_spec_id") != target:
+        result.block("micro_spec_review_binding_mismatch", relative, "record Micro-SPEC path/id must match its canonical filename binding")
+        return
+    try:
+        micro_metadata = _frontmatter(micro_path)
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        result.block("micro_spec_review_binding_mismatch", relative, f"bound Micro-SPEC is unreadable: {exc}")
+        return
+    requirement = micro_metadata.get("requirement")
+    if not isinstance(requirement, dict):
+        result.block("micro_spec_review_binding_mismatch", relative, "bound Micro-SPEC has no valid parent REQ binding")
+        return
+    if (
+        record.get("micro_spec_sha256") != _digest(micro_path)
+        or record.get("requirement_path") != requirement.get("path")
+        or record.get("requirement_id") != requirement.get("id")
+        or record.get("revision") != requirement.get("revision")
+        or record.get("requirement_sha256") != requirement.get("sha256")
+    ):
+        result.block("micro_spec_review_binding_mismatch", relative, "record must bind exact Micro-SPEC and parent REQ snapshots")
+    risk = record.get("risk")
+    parent_path = root / requirement["path"] if isinstance(requirement.get("path"), str) and _safe_relative(requirement["path"]) else None
+    try:
+        parent_meta = _frontmatter(parent_path) if parent_path else {}
+    except (OSError, ValueError, yaml.YAMLError):
+        parent_meta = {}
+    if risk != parent_meta.get("risk"):
+        result.block("micro_spec_review_binding_mismatch", relative, "review risk must match the bound parent REQ")
+    if not isinstance(risk, str) or not isinstance(record.get("authority"), str) or record["authority"] not in allowed_by_risk.get(risk, set()):
+        result.block("invalid_micro_spec_review_authority", relative, "authority is not allowlisted for the bound parent REQ risk")
+    if not _valid_timestamp(record.get("decided_at")):
+        result.block("malformed_micro_spec_review", relative, "decided_at must be an ISO-8601 timestamp")
+    if not isinstance(record.get("reason"), str) or not record["reason"].strip() or PLACEHOLDER_RE.search(record["reason"]):
+        result.block("malformed_micro_spec_review", relative, "reason must be substantive and non-placeholder")
+    decision = record.get("decision")
+    expected_next_action = "implement_bound_micro_spec_only" if decision == "approved_for_implementation" else "none"
+    if decision not in {"approved_for_implementation", "rework", "blocked"} or record.get("permitted_next_action") != expected_next_action:
+        result.block("invalid_micro_spec_review_decision", relative, "decision must have its exact narrow permitted_next_action")
+
+
 def _validate_qc_record(root: Path, path: Path, result: Result, family: str) -> None:
     relative = path.relative_to(root).as_posix()
     root_key = f"{family}_root"
@@ -1383,9 +1479,18 @@ def _validate_iteration_qc_evidence(
         return
     try:
         parent_criteria = _requirement_acceptance_criteria(requirement_path)
-    except OSError as exc:
+        parent_metadata = _frontmatter(requirement_path)
+    except (OSError, ValueError, yaml.YAMLError) as exc:
         result.block("iteration_qc_micro_spec_mismatch", relative, f"bound Micro-SPEC parent REQ is unreadable: {exc}")
         return
+    if parent_metadata.get("risk") == "high":
+        review_path = root / REQUIRED_ROOTS["micro_spec_reviews_root"] / f"req-{requirement_path.parent.name.removeprefix('req-')}" / f"{expected_id}.review.json"
+        try:
+            review = json.loads(review_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            review = None
+        if not isinstance(review, dict) or review.get("decision") != "approved_for_implementation" or review.get("micro_spec_sha256") != _digest(micro_path):
+            result.block("missing_approved_micro_spec_review", relative, "high-risk iteration-QC requires an exact approved_for_implementation Micro-SPEC review")
     remaining = record.get("remaining_acceptance_criteria")
     micro_selected_list = micro_selected if isinstance(micro_selected, list) else []
     expected_remaining = parent_criteria - set(micro_selected_list)
@@ -2281,6 +2386,10 @@ def validate(root: Path, claim: str | None = None, requirement: str | None = Non
         risk: set(authorities)
         for risk, authorities in config["policy"]["requirement_review_authorities_by_risk"].items()
     }
+    allowed_micro_spec_review_authorities_by_risk = {
+        risk: set(authorities)
+        for risk, authorities in config["policy"]["micro_spec_review_authorities_by_risk"].items()
+    }
     requirement_root = _validate_root(root, REQUIRED_ROOTS["requirements_root"], result, "requirements")
     discovery_root = _validate_root(root, REQUIRED_ROOTS["discoveries_root"], result, "discoveries")
     confirmation_root = _validate_root(
@@ -2297,6 +2406,7 @@ def validate(root: Path, claim: str | None = None, requirement: str | None = Non
         "review submissions",
     )
     micro_spec_root = _validate_root(root, REQUIRED_ROOTS["micro_specs_root"], result, "Micro-SPECs")
+    micro_spec_review_root = _validate_root(root, REQUIRED_ROOTS["micro_spec_reviews_root"], result, "Micro-SPEC reviews")
     iteration_qc_root = _validate_root(root, REQUIRED_ROOTS["iteration_qc_root"], result, "iteration-QC")
     delivery_qc_root = _validate_root(root, REQUIRED_ROOTS["delivery_qc_root"], result, "delivery-QC")
     if requirement_root:
@@ -2337,6 +2447,9 @@ def validate(root: Path, claim: str | None = None, requirement: str | None = Non
             _validate_requirement_review_submission(root, path, result)
     if micro_spec_root:
         _validate_family_root(root, micro_spec_root, result, "micro_specs")
+    if micro_spec_review_root:
+        for path in sorted(micro_spec_review_root.rglob("*.json")):
+            _validate_micro_spec_review(root, path, result, allowed_micro_spec_review_authorities_by_risk)
     if iteration_qc_root:
         _validate_family_root(root, iteration_qc_root, result, "iteration_qc")
     if delivery_qc_root:
