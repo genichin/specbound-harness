@@ -1,0 +1,16 @@
+{
+  "authority": "independent-advanced-llm-reviewer",
+  "decided_at": "2026-07-24T01:58:35Z",
+  "decision": "approved_for_implementation",
+  "micro_spec_id": "ms-0003-009",
+  "micro_spec_path": ".specbound/micro-specs/req-0003/ms-0003-009.md",
+  "micro_spec_sha256": "a1ac2248a40303f2c71dfce2474c077380a811eb3764ee443edcb4e35d638d4d",
+  "permitted_next_action": "implement_bound_micro_spec_only",
+  "reason": "Manual-bootstrap exception explicitly authorized by the accountable user for exact Micro-SPEC SHA-256 a1ac2248a40303f2c71dfce2474c077380a811eb3764ee443edcb4e35d638d4d. This implementation/review actor overlap does not prove reviewer independence. Substantive review confirms the scope is fixture-only CG-1 evidence for AC-001 through AC-008, preserves the one-Micro-SPEC iteration-QC contract and immutable live adoption state, and excludes production publication, adoption, merge, delivery, and release. The permitted action is implementation of this exact bounded slice only.",
+  "requirement_id": "req-0003",
+  "requirement_path": "docs/requirements/req-0003/req-0003-r2.md",
+  "requirement_sha256": "2c0f5c42a68a7ded6ba8f95fca19cc657986867a928a945a9c969dfba93d28fe",
+  "revision": 2,
+  "risk": "high",
+  "schema_version": 1
+}

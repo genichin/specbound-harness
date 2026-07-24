@@ -85,6 +85,24 @@ The parent REQ is approved.
 '''
 
 
+def valid_iteration_qc_candidate(micro_spec: Path, selected: list[str] | None = None) -> str:
+    selected = selected or ["AC-001"]
+    return json.dumps(
+        {
+            "schema_version": 1,
+            "micro_spec": {
+                "path": ".specbound/micro-specs/req-0001/ms-0001-003.md",
+                "id": "ms-0001-003",
+                "sha256": sha256(micro_spec.read_bytes()).hexdigest(),
+            },
+            "selected_acceptance_criteria": selected,
+            "verification": [{"command": ".venv/bin/python -m pytest", "result": "passed", "exit_code": 0}],
+            "verdict": "verified",
+            "remaining_acceptance_criteria": [],
+        }
+    )
+
+
 def test_issuance_request_prevalidates_a_complete_micro_spec_without_creating_target(tmp_path: Path) -> None:
     fixture = copied_fixture(tmp_path)
     candidate = write_candidate(fixture, valid_micro_spec_candidate())
@@ -308,12 +326,39 @@ def test_qc_publish_requires_explicit_fixture_adoption(tmp_path: Path) -> None:
     micro = fixture / ".specbound/micro-specs/req-0001/ms-0001-003.md"
     micro.parent.mkdir()
     micro.write_text(valid_micro_spec_candidate(), encoding="utf-8")
-    candidate = write_candidate(fixture, json.dumps({"schema_version": 1, "micro_spec": {"path": ".specbound/micro-specs/req-0001/ms-0001-003.md", "id": "ms-0001-003", "sha256": sha256(micro.read_bytes()).hexdigest()}}))
+    candidate = write_candidate(fixture, valid_iteration_qc_candidate(micro))
     target = fixture / ".specbound/iteration-qc/req-0001/iqc-0001-003-r1.json"
     target.parent.mkdir()
     result = run_cli("--root", str(fixture), "issuance-request", "iteration-qc", "iqc-0001-003-r1", "--candidate-file", str(candidate), "--publish")
     assert result.returncode == 2, result.stdout
     assert "unadopted_parent" in {blocker["code"] for blocker in payload(result)["blockers"]}
+    assert not target.exists()
+
+
+def test_iteration_qc_publish_requires_exact_micro_spec_ac_set_before_fixture_mutation(tmp_path: Path) -> None:
+    fixture = copied_fixture(tmp_path)
+    micro = fixture / ".specbound/micro-specs/req-0001/ms-0001-003.md"
+    micro.parent.mkdir()
+    micro.write_text(valid_micro_spec_candidate(), encoding="utf-8")
+    digest = sha256(FIXTURE_REQUIREMENT.read_bytes()).hexdigest()
+    config = fixture / "specbound.yaml"
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "requirements: []",
+            f"requirements:\n      - path: docs/requirements/req-0001/req-0001-r1.md\n        id: req-0001\n        revision: 1\n        sha256: {digest}",
+        ),
+        encoding="utf-8",
+    )
+    candidate = write_candidate(fixture, valid_iteration_qc_candidate(micro, ["AC-001", "AC-002"]))
+    target = fixture / ".specbound/iteration-qc/req-0001/iqc-0001-003-r1.json"
+    target.parent.mkdir()
+
+    result = run_cli(
+        "--root", str(fixture), "issuance-request", "iteration-qc", "iqc-0001-003-r1", "--candidate-file", str(candidate), "--publish"
+    )
+
+    assert result.returncode == 2, result.stdout
+    assert "iteration_qc_ac_set_mismatch" in {blocker["code"] for blocker in payload(result)["blockers"]}
     assert not target.exists()
 
 

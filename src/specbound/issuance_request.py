@@ -200,6 +200,16 @@ def _json_candidate(root: Path, kind: str, target: str, candidate: str) -> list[
         if not micro_path.is_file() or sha256(micro_path.read_bytes()).hexdigest() != micro.get("sha256"):
             return [IssuanceBlocker("missing_or_mismatched_micro_spec", micro["path"], "exact canonical Micro-SPEC parent is required")]
         metadata = _frontmatter(micro_path)
+        selected = record.get("selected_acceptance_criteria")
+        expected = metadata.get("selected_acceptance_criteria")
+        if selected != expected:
+            return [
+                IssuanceBlocker(
+                    "iteration_qc_ac_set_mismatch",
+                    target,
+                    "iteration-QC selected acceptance criteria must exactly match its canonical Micro-SPEC",
+                )
+            ]
         requirement = metadata.get("requirement")
     else:
         requirement = record.get("requirement")
