@@ -313,6 +313,57 @@ def test_qc_publish_requires_explicit_fixture_adoption(tmp_path: Path) -> None:
     assert not target.exists()
 
 
+def test_atomic_fixture_publish_rejects_symlinked_target_and_preserves_external_bytes(tmp_path: Path) -> None:
+    fixture = copied_fixture(tmp_path)
+    candidate = write_candidate(fixture, valid_micro_spec_candidate())
+    target = fixture / ".specbound/micro-specs/req-0001/ms-0001-003.md"
+    target.parent.mkdir()
+    external = tmp_path / "external.md"
+    external.write_text("winner", encoding="utf-8")
+    target.symlink_to(external)
+
+    result = run_cli("--root", str(fixture), "issuance-request", "micro-spec", "ms-0001-003", "--candidate-file", str(candidate), "--publish")
+
+    assert result.returncode == 2, result.stdout
+    assert "duplicate_canonical_target" in {item["code"] for item in payload(result)["blockers"]}
+    assert external.read_text(encoding="utf-8") == "winner"
+
+
+def test_atomic_fixture_publish_rejects_intermediate_symlink(tmp_path: Path) -> None:
+    fixture = copied_fixture(tmp_path)
+    candidate = write_candidate(fixture, valid_micro_spec_candidate())
+    root = fixture / ".specbound/micro-specs"
+    root.mkdir(exist_ok=True)
+    external = tmp_path / "external"
+    external.mkdir()
+    (root / "req-0001").symlink_to(external, target_is_directory=True)
+
+    result = run_cli("--root", str(fixture), "issuance-request", "micro-spec", "ms-0001-003", "--candidate-file", str(candidate), "--publish")
+
+    assert result.returncode == 2, result.stdout
+    assert "unsafe_canonical_target_path" in {item["code"] for item in payload(result)["blockers"]}
+    assert not (external / "ms-0001-003.md").exists()
+
+
+def test_atomic_fixture_publish_allows_exactly_one_competing_writer(tmp_path: Path) -> None:
+    fixture = copied_fixture(tmp_path)
+    candidate = write_candidate(fixture, valid_micro_spec_candidate())
+    target = fixture / ".specbound/micro-specs/req-0001/ms-0001-003.md"
+    target.parent.mkdir()
+    command = [sys.executable, "-m", "specbound.cli", "--root", str(fixture), "issuance-request", "micro-spec", "ms-0001-003", "--candidate-file", str(candidate), "--publish"]
+    environment = {"PYTHONPATH": str(ROOT / "src")}
+    first = subprocess.Popen(command, cwd=ROOT, env=environment, stdout=subprocess.PIPE, text=True)
+    second = subprocess.Popen(command, cwd=ROOT, env=environment, stdout=subprocess.PIPE, text=True)
+    first_stdout, _ = first.communicate()
+    second_stdout, _ = second.communicate()
+
+    results = [(first.returncode, json.loads(first_stdout)), (second.returncode, json.loads(second_stdout))]
+    assert sorted(code for code, _ in results) == [0, 2]
+    assert target.read_text(encoding="utf-8") == valid_micro_spec_candidate()
+    loser = next(body for code, body in results if code == 2)
+    assert "duplicate_canonical_target" in {item["code"] for item in loser["blockers"]}
+
+
 def test_issuance_request_help_and_guidance_state_non_authorizing_boundary() -> None:
     help_result = run_cli("issuance-request", "--help")
     guidance = (ROOT / "templates" / "issuance-request.md").read_text(encoding="utf-8")

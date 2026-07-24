@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from hashlib import sha256
+import errno
 import json
+import os
 from pathlib import Path, PurePosixPath
 import re
 from typing import Any
@@ -247,6 +249,36 @@ def prevalidate_issuance_request(
     return IssuanceRequestResult(artifact_kind, target, tuple(blockers))
 
 
+def _exclusive_fixture_publish(root: Path, canonical_target: str, content: bytes) -> IssuanceBlocker | None:
+    """Create one canonical fixture leaf without following any canonical-root component."""
+    parts = PurePosixPath(canonical_target).parts
+    parent_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in parts[:-1]:
+            try:
+                next_fd = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
+            except FileNotFoundError:
+                return IssuanceBlocker("missing_canonical_target_directory", canonical_target, "canonical target parent directory must already exist")
+            except OSError as exc:
+                return IssuanceBlocker("unsafe_canonical_target_path", canonical_target, str(exc))
+            os.close(parent_fd)
+            parent_fd = next_fd
+        try:
+            leaf_fd = os.open(parts[-1], os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644, dir_fd=parent_fd)
+        except FileExistsError:
+            return IssuanceBlocker("duplicate_canonical_target", canonical_target, "canonical target already exists or was won by a competing publisher")
+        except OSError as exc:
+            return IssuanceBlocker("unsafe_canonical_target_path" if exc.errno in {errno.ELOOP, errno.ENOTDIR} else "publication_failed", canonical_target, str(exc))
+        try:
+            with os.fdopen(leaf_fd, "wb") as output:
+                output.write(content)
+        except OSError as exc:
+            return IssuanceBlocker("publication_failed", canonical_target, str(exc))
+    finally:
+        os.close(parent_fd)
+    return None
+
+
 def publish_issuance(root: Path, artifact_kind: str, target_identity: str, candidate_file: Path | None) -> IssuanceRequestResult:
     """Publish one validated fixture-only planning/QC artifact; no lifecycle authority is created."""
     marker = root / ".specbound/pre-adoption-fixture"
@@ -256,14 +288,12 @@ def publish_issuance(root: Path, artifact_kind: str, target_identity: str, candi
     if not result.valid:
         return result
     assert result.canonical_target is not None
-    target = root / result.canonical_target
-    if not target.parent.is_dir():
-        return IssuanceRequestResult(artifact_kind, result.canonical_target, (IssuanceBlocker("missing_canonical_target_directory", result.canonical_target, "canonical target parent directory must already exist"),))
-    if target.exists():
-        return IssuanceRequestResult(artifact_kind, result.canonical_target, (IssuanceBlocker("duplicate_canonical_target", result.canonical_target, "canonical target already exists"),))
     assert candidate_file is not None
     try:
-        target.write_text(candidate_file.read_text(encoding="utf-8"), encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
-        return IssuanceRequestResult(artifact_kind, result.canonical_target, (IssuanceBlocker("publication_failed", result.canonical_target, str(exc)),))
+        content = candidate_file.read_bytes()
+    except OSError as exc:
+        return IssuanceRequestResult(artifact_kind, result.canonical_target, (IssuanceBlocker("unreadable_candidate_content", str(candidate_file), str(exc)),))
+    blocker = _exclusive_fixture_publish(root, result.canonical_target, content)
+    if blocker:
+        return IssuanceRequestResult(artifact_kind, result.canonical_target, (blocker,))
     return IssuanceRequestResult(artifact_kind, result.canonical_target, (), operation=f"published_pre_adoption_{artifact_kind.replace('-', '_')}")
