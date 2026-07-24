@@ -20,6 +20,7 @@ from .validation import (
 )
 from .requirement_lifecycle import RequirementLifecycleError, approve_requirement, record_review_decision, reconsider_requirement, reject_requirement
 from .micro_spec_lifecycle import MicroSpecReviewError, record_micro_spec_review
+from .issuance_request import prevalidate_issuance_request
 
 
 def _emit(payload: object) -> None:
@@ -39,6 +40,14 @@ def build_parser() -> argparse.ArgumentParser:
     validate_command = commands.add_parser("validate", help="validate canonical lifecycle artifacts or a scoped adopted claim")
     validate_command.add_argument("--claim", choices=("iteration", "delivery"), help="validate one adopted evidence claim")
     validate_command.add_argument("--requirement", help="exact adopted REQ: req-<id>-r<revision> (required with --claim)")
+    issuance_request = commands.add_parser(
+        "issuance-request",
+        help="read-only pre-publication validation; does not publish, approve, adopt, merge, deliver, or release",
+        description="Read-only pre-publication validation. This command does not publish, approve, adopt, merge, deliver, or release.",
+    )
+    issuance_request.add_argument("artifact_kind", help="exact family: micro-spec, iteration-qc, or delivery-qc")
+    issuance_request.add_argument("target_identity", help="canonical family identity, never a filesystem path")
+    issuance_request.add_argument("--candidate-file", type=Path, help="complete UTF-8 candidate content to prevalidate without publication")
 
     req = commands.add_parser("req", help="operate on canonical REQ artifacts")
     req_commands = req.add_subparsers(dest="req_command", required=True)
@@ -113,6 +122,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "validate":
         result = validate(root, claim=args.claim, requirement=args.requirement)
+        _emit(result.payload())
+        return 0 if result.valid else 2
+
+    if args.command == "issuance-request":
+        result = prevalidate_issuance_request(root, args.artifact_kind, args.target_identity, args.candidate_file)
         _emit(result.payload())
         return 0 if result.valid else 2
 
