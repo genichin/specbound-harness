@@ -9,6 +9,8 @@ import sys
 
 import pytest
 
+from specbound import issuance_request
+
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "fixtures"
 FIXTURE_REQUIREMENT = FIXTURES / "valid-minimal/docs/requirements/req-0001/req-0001-r1.md"
@@ -362,6 +364,61 @@ def test_atomic_fixture_publish_allows_exactly_one_competing_writer(tmp_path: Pa
     assert target.read_text(encoding="utf-8") == valid_micro_spec_candidate()
     loser = next(body for code, body in results if code == 2)
     assert "duplicate_canonical_target" in {item["code"] for item in loser["blockers"]}
+
+
+@pytest.mark.parametrize("hook", ["_write_published_bytes", "_flush_published_output", "_final_published_digest"])
+def test_failure_atomic_publish_removes_owned_leaf_after_controlled_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, hook: str) -> None:
+    fixture = copied_fixture(tmp_path)
+    target = fixture / ".specbound/micro-specs/req-0001/ms-0001-003.md"
+    target.parent.mkdir()
+
+    def fail(*_: object, **__: object) -> None:
+        raise OSError("injected failure")
+
+    monkeypatch.setattr(issuance_request, hook, fail)
+    blocker = issuance_request._exclusive_fixture_publish(fixture, ".specbound/micro-specs/req-0001/ms-0001-003.md", b"candidate")
+
+    assert blocker is not None
+    assert blocker.code == "publication_failed"
+    assert not target.exists()
+
+
+@pytest.mark.parametrize("failure_call", [1, 2])
+def test_failure_atomic_publish_removes_owned_leaf_after_file_or_directory_fsync_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure_call: int) -> None:
+    fixture = copied_fixture(tmp_path)
+    target = fixture / ".specbound/micro-specs/req-0001/ms-0001-003.md"
+    target.parent.mkdir()
+    calls = 0
+
+    def fail_on_selected_fsync(_: int) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == failure_call:
+            raise OSError("injected fsync failure")
+
+    monkeypatch.setattr(issuance_request, "_fsync_descriptor", fail_on_selected_fsync)
+    blocker = issuance_request._exclusive_fixture_publish(fixture, ".specbound/micro-specs/req-0001/ms-0001-003.md", b"candidate")
+
+    assert blocker is not None
+    assert blocker.code == "publication_failed"
+    assert not target.exists()
+
+
+def test_failure_atomic_cleanup_does_not_remove_replaced_winner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fixture = copied_fixture(tmp_path)
+    target = fixture / ".specbound/micro-specs/req-0001/ms-0001-003.md"
+    target.parent.mkdir()
+
+    def replace_then_fail(*_: object, **__: object) -> None:
+        target.unlink()
+        target.write_bytes(b"winner")
+        raise OSError("injected post-write failure")
+
+    monkeypatch.setattr(issuance_request, "_final_published_digest", replace_then_fail)
+    blocker = issuance_request._exclusive_fixture_publish(fixture, ".specbound/micro-specs/req-0001/ms-0001-003.md", b"loser")
+
+    assert blocker is not None
+    assert target.read_bytes() == b"winner"
 
 
 def test_issuance_request_help_and_guidance_state_non_authorizing_boundary() -> None:

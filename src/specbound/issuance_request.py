@@ -249,10 +249,35 @@ def prevalidate_issuance_request(
     return IssuanceRequestResult(artifact_kind, target, tuple(blockers))
 
 
+def _write_published_bytes(output: Any, content: bytes) -> None:
+    output.write(content)
+
+
+def _flush_published_output(output: Any) -> None:
+    output.flush()
+
+
+def _fsync_descriptor(descriptor: int) -> None:
+    os.fsync(descriptor)
+
+
+def _final_published_digest(parent_fd: int, name: str) -> str:
+    descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent_fd)
+    try:
+        digest = sha256()
+        while block := os.read(descriptor, 65536):
+            digest.update(block)
+        return digest.hexdigest()
+    finally:
+        os.close(descriptor)
+
+
 def _exclusive_fixture_publish(root: Path, canonical_target: str, content: bytes) -> IssuanceBlocker | None:
-    """Create one canonical fixture leaf without following any canonical-root component."""
+    """Create one canonical fixture leaf, fsync it, and remove only an owned failed leaf."""
     parts = PurePosixPath(canonical_target).parts
     parent_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    leaf_fd: int | None = None
+    owned: tuple[int, int] | None = None
     try:
         for part in parts[:-1]:
             try:
@@ -269,12 +294,27 @@ def _exclusive_fixture_publish(root: Path, canonical_target: str, content: bytes
             return IssuanceBlocker("duplicate_canonical_target", canonical_target, "canonical target already exists or was won by a competing publisher")
         except OSError as exc:
             return IssuanceBlocker("unsafe_canonical_target_path" if exc.errno in {errno.ELOOP, errno.ENOTDIR} else "publication_failed", canonical_target, str(exc))
+        state = os.fstat(leaf_fd)
+        owned = (state.st_dev, state.st_ino)
         try:
-            with os.fdopen(leaf_fd, "wb") as output:
-                output.write(content)
+            with os.fdopen(leaf_fd, "wb", closefd=False) as output:
+                _write_published_bytes(output, content)
+                _flush_published_output(output)
+                _fsync_descriptor(output.fileno())
+            _fsync_descriptor(parent_fd)
+            _final_published_digest(parent_fd, parts[-1])
         except OSError as exc:
+            try:
+                current = os.stat(parts[-1], dir_fd=parent_fd, follow_symlinks=False)
+                if (current.st_dev, current.st_ino) == owned:
+                    os.unlink(parts[-1], dir_fd=parent_fd)
+                    _fsync_descriptor(parent_fd)
+            except OSError:
+                pass
             return IssuanceBlocker("publication_failed", canonical_target, str(exc))
     finally:
+        if leaf_fd is not None:
+            os.close(leaf_fd)
         os.close(parent_fd)
     return None
 
