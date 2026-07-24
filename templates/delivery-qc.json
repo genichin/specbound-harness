@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "requirement": {
-    "path": "docs/requirements/req-<id>/req-<id>-r<revision>.md",
+    "path": ".specbound/requirements/req-<id>/req-<id>-r<revision>.md",
     "id": "req-<id>",
     "revision": 1,
     "sha256": "<exact-approved-req-sha256>"

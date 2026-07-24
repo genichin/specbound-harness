@@ -1,0 +1,283 @@
+{
+  "schema_version": 1,
+  "kind": "repository_format_migration",
+  "migration_id": "requirements-root-v1",
+  "authorized_at": "2026-07-24T05:27:28Z",
+  "authority": "genichin",
+  "authorization_ref": "user-directed requirements-root migration",
+  "mode": "pre-release bootstrap evidence reissuance",
+  "source_root": "docs/requirements",
+  "target_root": ".specbound/requirements",
+  "transformations": [
+    {
+      "before_path": ".specbound/approvals/req-0001-r1.approval.json",
+      "before_sha256": "1960f75b2ae345fdb9c5ae9e6158ce091740d47387c21315ff42cef135b9f77f",
+      "after_path": ".specbound/approvals/req-0001-r1.approval.json",
+      "after_sha256": "6c43121dee77aed62be7d8b35232b0e70935edf1048d869ebf816a51ae0f843b"
+    },
+    {
+      "before_path": ".specbound/approvals/req-0001-r2.approval.json",
+      "before_sha256": "a26396860e363364e85c55dc4bfbf2343063ca2f31242046003dbb61ad3e8e06",
+      "after_path": ".specbound/approvals/req-0001-r2.approval.json",
+      "after_sha256": "5d32f16fcccfefdb77fcca885790942e9dd70477c0876bb0569e448913ae4d96"
+    },
+    {
+      "before_path": ".specbound/approvals/req-0002-r1.approval.json",
+      "before_sha256": "37b3df72eb6a342bb680911e5e0492d09be547363607e0c0dccfb5ae37854e6b",
+      "after_path": ".specbound/approvals/req-0002-r1.approval.json",
+      "after_sha256": "ebe2e1b35a281e70fc5159d28f23883341753d6703328e00f8ce85418dc6357a"
+    },
+    {
+      "before_path": ".specbound/approvals/req-0003-r1.approval.json",
+      "before_sha256": "140d5af3e47da864675d504d1e262b4812df35bd7132d3a9bbd44c797154aa4a",
+      "after_path": ".specbound/approvals/req-0003-r1.approval.json",
+      "after_sha256": "2cc0b20165c8374ddf9063b3c19476c8a26dc722b993e01a1566de5e7512fad3"
+    },
+    {
+      "before_path": ".specbound/approvals/req-0003-r2.approval.json",
+      "before_sha256": "a5398af43b89788923453c540a080e84e13de4bab0bc98aead5a9c36b32be2ab",
+      "after_path": ".specbound/approvals/req-0003-r2.approval.json",
+      "after_sha256": "f76e259b470214dc1c7dd60a0d5e056d0bf52ff9c57aa296710ffcdab1682ddf"
+    },
+    {
+      "before_path": ".specbound/confirmations/dcy-0002-r1.confirmation.json",
+      "before_sha256": "6da11d30eb4a5bd8c0aa845b2347110776c9207d55dff7350a367860ac5864f9",
+      "after_path": ".specbound/confirmations/dcy-0002-r1.confirmation.json",
+      "after_sha256": "c2035e841dde150211b449e4682505d73aafa695e8160ce4b7b5ea15b3bd8dd5"
+    },
+    {
+      "before_path": ".specbound/confirmations/dcy-0003-r1.confirmation.json",
+      "before_sha256": "fe8c7c256f7337809e097a6470224f6266ba3d8425761dddaa112a55b6e42f7f",
+      "after_path": ".specbound/confirmations/dcy-0003-r1.confirmation.json",
+      "after_sha256": "bb0769392940ddc3ecc1317fda25a036f45542909b2404d8c12db4eb9c49b05a"
+    },
+    {
+      "before_path": ".specbound/discoveries/dcy-0002-r1.md",
+      "before_sha256": "b142ae887086dd0f7ffb9962f7ea52c91a8ae3634894261232deb237e749c3dc",
+      "after_path": ".specbound/discoveries/dcy-0002-r1.md",
+      "after_sha256": "053527951904482112bac0fad9490a267191696100148c9edf0344efc2dbf872"
+    },
+    {
+      "before_path": ".specbound/discoveries/dcy-0003-r1.md",
+      "before_sha256": "86160557cfb010c4a499bb3846ec32c56a0ee0d16996ac12b32bf2457e92494d",
+      "after_path": ".specbound/discoveries/dcy-0003-r1.md",
+      "after_sha256": "00693b045cc159f482741635d29bb5cc710042f743450df3d111230307dd0b34"
+    },
+    {
+      "before_path": ".specbound/micro-spec-reviews/req-0003/ms-0003-002.review.json",
+      "before_sha256": "18d1c5c0b5af859f557ddd85ec5f3bb16e6a0d91edcfdfecbfddd4a4ae6a9def",
+      "after_path": ".specbound/micro-spec-reviews/req-0003/ms-0003-002.review.json",
+      "after_sha256": "9dfcd5d5a98a08da662f5cee029082babd07aa597ab8cddbf19b2edd133e7688"
+    },
+    {
+      "before_path": ".specbound/micro-spec-reviews/req-0003/ms-0003-003.review.json",
+      "before_sha256": "3b78f119718da0a1b9f95725aa66b8b775a5aa844772ca12fed2268f5774b275",
+      "after_path": ".specbound/micro-spec-reviews/req-0003/ms-0003-003.review.json",
+      "after_sha256": "07b679813e72f42ddae95ad2e2a95a5001f03942eaed8b7ea0bc7e59e3e2682d"
+    },
+    {
+      "before_path": ".specbound/micro-spec-reviews/req-0003/ms-0003-004.review.json",
+      "before_sha256": "a167c67f1e05436050498ce9c305d174fb37cee8360a879e73ffe65df9ea6c83",
+      "after_path": ".specbound/micro-spec-reviews/req-0003/ms-0003-004.review.json",
+      "after_sha256": "4536599e4a96ceee9ebe2114431fc70d5c60a402a64ea04306757f78fad68a1b"
+    },
+    {
+      "before_path": ".specbound/micro-spec-reviews/req-0003/ms-0003-005.review.json",
+      "before_sha256": "6fcfc04d5acf1e52aad74e58884588729f49fd40d3c9cbd3f235921c94c1379e",
+      "after_path": ".specbound/micro-spec-reviews/req-0003/ms-0003-005.review.json",
+      "after_sha256": "4e96a4d294fd6a9df0f3dd1f8137b447493ceec24b1019866843d49ece1ac240"
+    },
+    {
+      "before_path": ".specbound/micro-spec-reviews/req-0003/ms-0003-006.review.json",
+      "before_sha256": "0410964c0e025a5aa268e37af8220fcaa23da83633dd052a0bd9ec6d1bee3535",
+      "after_path": ".specbound/micro-spec-reviews/req-0003/ms-0003-006.review.json",
+      "after_sha256": "c9dbc831bba9dae861f40cd293595cfe484b8633a5b1f92dfefee94e6c338240"
+    },
+    {
+      "before_path": ".specbound/micro-spec-reviews/req-0003/ms-0003-007.review.json",
+      "before_sha256": "c219c23b5d003a3da0eddb8b6ee3e76f54947e74cd02066b87c4204e0e51f05e",
+      "after_path": ".specbound/micro-spec-reviews/req-0003/ms-0003-007.review.json",
+      "after_sha256": "be8893a1f2679d12a54d9047269e3b1c0e934240dee15af4fec204ff71677c08"
+    },
+    {
+      "before_path": ".specbound/micro-spec-reviews/req-0003/ms-0003-008.review.json",
+      "before_sha256": "87786dac74bb15a895441b2349157066db7640f4484007d196b736bebc0e5370",
+      "after_path": ".specbound/micro-spec-reviews/req-0003/ms-0003-008.review.json",
+      "after_sha256": "17a191423016c18b0053706705a32b3886a1cfed1bada84fb9a2a57cb7e720ef"
+    },
+    {
+      "before_path": ".specbound/micro-spec-reviews/req-0003/ms-0003-009.review.json",
+      "before_sha256": "4d643e5a94823ca0b3b9da4abb9656ee9edb74b2f3958d474a81a45e7b4518de",
+      "after_path": ".specbound/micro-spec-reviews/req-0003/ms-0003-009.review.json",
+      "after_sha256": "eacc2a0c577aa810bdbebc7ac206e2dfa292b506040070890cd21449a41c99ff"
+    },
+    {
+      "before_path": ".specbound/micro-specs/req-0001/ms-0001-001.md",
+      "before_sha256": "c621b9b9c73a8909b14a0656d33bf25ac3fa7580ae49148071a9e9356e7c84f4",
+      "after_path": ".specbound/micro-specs/req-0001/ms-0001-001.md",
+      "after_sha256": "586fff3db152880b530d5a2451151ce1f41726f9700cbd5d174fae362b1e370e"
+    },
+    {
+      "before_path": ".specbound/micro-specs/req-0001/ms-0001-002.md",
+      "before_sha256": "751c86c4a31fdd0b2643e1ee12dedd43dad702bbac9b6981271f7b5b01ba284f",
+      "after_path": ".specbound/micro-specs/req-0001/ms-0001-002.md",
+      "after_sha256": "9aa900bed85cb6c37ad22e1742ea993982c72ff692192974fc744a828eee606e"
+    },
+    {
+      "before_path": ".specbound/micro-specs/req-0001/ms-0001-003.md",
+      "before_sha256": "02e3ccc89c2cab2b990ef3992dbc180a3fd84b1f0d19b8e9cfa13dab2837d39b",
+      "after_path": ".specbound/micro-specs/req-0001/ms-0001-003.md",
+      "after_sha256": "26270efc2bc56ebc0a85746d46fcc2cb79000bd45e049f9e8b33a693f65acb37"
+    },
+    {
+      "before_path": ".specbound/micro-specs/req-0001/ms-0001-004.md",
+      "before_sha256": "1fcf012cedb0feed75071b73ca43db40f29ec5a3b6ff6cfd73ef09986fff1da3",
+      "after_path": ".specbound/micro-specs/req-0001/ms-0001-004.md",
+      "after_sha256": "35e672dc01860accc2f6787ab19cc0fb9b71f0f1254bfd171c831a8efba413d5"
+    },
+    {
+      "before_path": ".specbound/micro-specs/req-0001/ms-0001-005.md",
+      "before_sha256": "b5c0f9ea14369eeae7f29878ffcf43a06b6ddb07e2eb2b114bdaacef1e35cfb2",
+      "after_path": ".specbound/micro-specs/req-0001/ms-0001-005.md",
+      "after_sha256": "dbbcc73a017b69302875da85c92f07bac986cab3e10ef89e0de29caf1efad378"
+    },
+    {
+      "before_path": ".specbound/micro-specs/req-0001/ms-0001-006.md",
+      "before_sha256": "27cb36e811d6a1ffd5a784204cd33d91b9791a8736a5b5dfcc3fc613e3b5e007",
+      "after_path": ".specbound/micro-specs/req-0001/ms-0001-006.md",
+      "after_sha256": "1e075321a755b47940fd935a000c5c7d591da09d49f195b7e6debc03147cc11b"
+    },
+    {
+      "before_path": ".specbound/micro-specs/req-0002/ms-0002-001.md",
+      "before_sha256": "d4c9f0e12812160b4e7dae63d504c825fdcefee1780bf71b1e002d16513b1a88",
+      "after_path": ".specbound/micro-specs/req-0002/ms-0002-001.md",
+      "after_sha256": "932bc7013ccdd9dad4c6b683c5bdd140676bf0f5f0ea372343391f66ea57a6a3"
+    },
+    {
+      "before_path": ".specbound/micro-specs/req-0002/ms-0002-002.md",
+      "before_sha256": "ea680f862a7b94ca0a6f2aa9d054c2595d821b739594487871baf1c57d445b4c",
+      "after_path": ".specbound/micro-specs/req-0002/ms-0002-002.md",
+      "after_sha256": "7277166c9cd2b6ba24820d4e2428c352ac2c7676bdf2a3b99da77f8327ad2dde"
+    },
+    {
+      "before_path": ".specbound/micro-specs/req-0002/ms-0002-003.md",
+      "before_sha256": "4d96dc8af04589ed13207ebc3b57e96c6b99be76a830bf36cb14440f284399dc",
+      "after_path": ".specbound/micro-specs/req-0002/ms-0002-003.md",
+      "after_sha256": "4a0e6de09085cfa1afbae1469fd67c4ab96217c8c5afca704bbc81baf21a1744"
+    },
+    {
+      "before_path": ".specbound/micro-specs/req-0002/ms-0002-004.md",
+      "before_sha256": "c54de23f154155dc4b7de7ee295e79efee3ce9a760dfdd6b516dc76de3b97f78",
+      "after_path": ".specbound/micro-specs/req-0002/ms-0002-004.md",
+      "after_sha256": "2aa2553ffec8552910cdc2d2659173b9bab088a1740b703704ee6726d599f799"
+    },
+    {
+      "before_path": ".specbound/micro-specs/req-0003/ms-0003-001.md",
+      "before_sha256": "dcda911d5ab66704ef34575d733243189565645cfd030d46da92b4d1e6ce95db",
+      "after_path": ".specbound/micro-specs/req-0003/ms-0003-001.md",
+      "after_sha256": "2967ccc67eb691e032ed74e0c503caa4c9a393f3ecb641b7d8f70a8a9a74a98c"
+    },
+    {
+      "before_path": ".specbound/micro-specs/req-0003/ms-0003-002.md",
+      "before_sha256": "b4d835e9c1b3f68dd680d491b369346d6133186999492e065d6cc24bcdca2777",
+      "after_path": ".specbound/micro-specs/req-0003/ms-0003-002.md",
+      "after_sha256": "1f2ccbefbaae82563c81ddfcf0fcf3d7542ff6985d1e32bf6bf11bbd8ac2fe96"
+    },
+    {
+      "before_path": ".specbound/micro-specs/req-0003/ms-0003-003.md",
+      "before_sha256": "da28a5c1380a90a38a36c7f621563d3f3fb1b16cd00789bcd0892d09970a64d4",
+      "after_path": ".specbound/micro-specs/req-0003/ms-0003-003.md",
+      "after_sha256": "d302dcc315e5bfe4824571af56df58d64c7263c5acbd5875bf9582efe13b7627"
+    },
+    {
+      "before_path": ".specbound/micro-specs/req-0003/ms-0003-004.md",
+      "before_sha256": "66f43e2d7f62690054dbd605b1e8725cd606a423e4fcca357009c80ac8c69e72",
+      "after_path": ".specbound/micro-specs/req-0003/ms-0003-004.md",
+      "after_sha256": "603b6654b00d4f73004858c8eef08e8ab0e4548b24199a6d4ca08021e11db156"
+    },
+    {
+      "before_path": ".specbound/micro-specs/req-0003/ms-0003-005.md",
+      "before_sha256": "2d8cfaef838dc90b83811c0dab8e805d8f13b2ec64f7ac6d43e69c0096fd4acc",
+      "after_path": ".specbound/micro-specs/req-0003/ms-0003-005.md",
+      "after_sha256": "df34cf71f3996ad894686a075712bad55d0235ff8dc7cc2b5ea23aa28759aa26"
+    },
+    {
+      "before_path": ".specbound/micro-specs/req-0003/ms-0003-006.md",
+      "before_sha256": "c5177f196bb683bc6505fc9607f8e49b20d63d01af19634a6376e0730ae8c80c",
+      "after_path": ".specbound/micro-specs/req-0003/ms-0003-006.md",
+      "after_sha256": "de589fe2d4616ac99e50dcb4eadb2d92e39a4c76d18f4845679bb48dc0d5d411"
+    },
+    {
+      "before_path": ".specbound/micro-specs/req-0003/ms-0003-007.md",
+      "before_sha256": "d303214dab376fa2765ee7df52533d5af4f7f70ddc312b1aeac31cac3ebe078c",
+      "after_path": ".specbound/micro-specs/req-0003/ms-0003-007.md",
+      "after_sha256": "6190efb67d536393645e60d526590db1ea1ad73e8a3c37f9879a3fdfcc405283"
+    },
+    {
+      "before_path": ".specbound/micro-specs/req-0003/ms-0003-008.md",
+      "before_sha256": "0135d26cdf0a8d30d7a507f304ee32a140a5b3fc296c0fa1f2a26f3ced282baa",
+      "after_path": ".specbound/micro-specs/req-0003/ms-0003-008.md",
+      "after_sha256": "8ffac441e4dba9a255dbf4f55ad0011eb2944ece133d0b6a1e9c73f458c08984"
+    },
+    {
+      "before_path": ".specbound/micro-specs/req-0003/ms-0003-009.md",
+      "before_sha256": "a1ac2248a40303f2c71dfce2474c077380a811eb3764ee443edcb4e35d638d4d",
+      "after_path": ".specbound/micro-specs/req-0003/ms-0003-009.md",
+      "after_sha256": "00dd8d01b3dbd7280789577bb6bd2ad7fbc8b1fbabf0a311fdc343c376e38d54"
+    },
+    {
+      "before_path": ".specbound/reconsiderations/req-0003-r2.reconsideration.json",
+      "before_sha256": "b53e1db094f82e7bf3836a387ae0324285d2401f467b60b2ebe3b79eb7f27ba6",
+      "after_path": ".specbound/reconsiderations/req-0003-r2.reconsideration.json",
+      "after_sha256": "9234d80a2dd9a56a841933a9644a65646867403334fe7e5058b1dbb3f9911363"
+    },
+    {
+      "before_path": ".specbound/rejections/req-0003-r2.rejection.json",
+      "before_sha256": "d15104f3e7a9bdc80f6d05c08530ca5cfe6958b034a758d5c4d6668355a0de63",
+      "after_path": ".specbound/rejections/req-0003-r2.rejection.json",
+      "after_sha256": "1034c50bcc718cfe60720f57ebd697c51c2cec41d984b3178d14c2a1d6f60f08"
+    },
+    {
+      "before_path": "docs/requirements/req-0001/req-0001-r1.md",
+      "before_sha256": "f8c8edb5eeb3a854c1cf3410ed23adda227b03d38235067b2d45069117a4d971",
+      "after_path": ".specbound/requirements/req-0001/req-0001-r1.md",
+      "after_sha256": "de286dbc9e12e686df5e628b325020a40206199d78bf36752dbc58754ad47695"
+    },
+    {
+      "before_path": "docs/requirements/req-0001/req-0001-r2.md",
+      "before_sha256": "28e49c395740379d14a72d5d0fd003d6d6f2e42fd61f972b12c837540b6b9297",
+      "after_path": ".specbound/requirements/req-0001/req-0001-r2.md",
+      "after_sha256": "574a371361ff8079c80448704f170b290c00fefd020fa69247fb008cba4812c0"
+    },
+    {
+      "before_path": "docs/requirements/req-0002/req-0002-r1.md",
+      "before_sha256": "22dc8cfe0e762d751382d5a6afa45cf1cd4960078c404a7e6653c10f19b00f83",
+      "after_path": ".specbound/requirements/req-0002/req-0002-r1.md",
+      "after_sha256": "3301e16001657799b5efa3aa2c7a1a6f891bb444cbbc68ac4c698ce2241e15bb"
+    },
+    {
+      "before_path": "docs/requirements/req-0003/req-0003-r1.md",
+      "before_sha256": "245785a9b2508575745e134e02425bfe4f62cbabc2e45649e2df382f1549bc50",
+      "after_path": ".specbound/requirements/req-0003/req-0003-r1.md",
+      "after_sha256": "db22e7d63e9f6ce01cf77cd2962c1372967f0e60c4c701634102bf7ca77dc5fb"
+    },
+    {
+      "before_path": "docs/requirements/req-0003/req-0003-r2.md",
+      "before_sha256": "2c0f5c42a68a7ded6ba8f95fca19cc657986867a928a945a9c969dfba93d28fe",
+      "after_path": ".specbound/requirements/req-0003/req-0003-r2.md",
+      "after_sha256": "e8e3833e7e1b559bd0ed862cfd13b95a7fd2aadce92b89a9aac8df6b135fc354"
+    },
+    {
+      "before_path": ".specbound/review-decisions/req-0003-r2.review-decision.json",
+      "before_sha256": "ec13942e654e792f9c334e1f801e1ef8cc3596caa2dc35d72e444792ea4a0c68",
+      "after_path": ".specbound/review-decisions/req-0003-r2.review-decision.json",
+      "after_sha256": "bce6c9ccb48876064e702b1a5bb846f56448113736a8ede4def8e4cb516d395e"
+    },
+    {
+      "before_path": ".specbound/review-submissions/req-0003-r2.review-submission.json",
+      "before_sha256": "4068684cfc360b1b0fe69d44a423a0d853db0a04b46ce91481b49e10035d2bed",
+      "after_path": ".specbound/review-submissions/req-0003-r2.review-submission.json",
+      "after_sha256": "2962a0e7a145b3ef2afa7c7d225ec3008f7cd10baf58264aaedd78aa0156a1a8"
+    }
+  ]
+}

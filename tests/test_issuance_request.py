@@ -13,7 +13,7 @@ from specbound import issuance_request
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "fixtures"
-FIXTURE_REQUIREMENT = FIXTURES / "valid-minimal/docs/requirements/req-0001/req-0001-r1.md"
+FIXTURE_REQUIREMENT = FIXTURES / "valid-minimal/.specbound/requirements/req-0001/req-0001-r1.md"
 
 
 def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
@@ -50,7 +50,7 @@ schema_version: 1
 id: ms-0001-003
 kind: micro-spec
 requirement:
-  path: docs/requirements/req-0001/req-0001-r1.md
+  path: .specbound/requirements/req-0001/req-0001-r1.md
   id: req-0001
   revision: 1
   sha256: "{digest}"
@@ -104,7 +104,7 @@ def valid_iteration_qc_candidate(micro_spec: Path, selected: list[str] | None = 
 
 
 def test_cg1_micro_spec_reviews_bind_exact_req0003_ac_coverage() -> None:
-    requirement = ROOT / "docs/requirements/req-0003/req-0003-r2.md"
+    requirement = ROOT / ".specbound/requirements/req-0003/req-0003-r2.md"
     requirement_digest = sha256(requirement.read_bytes()).hexdigest()
     expected = {
         "002": "[AC-001, AC-002]",
@@ -229,7 +229,7 @@ def test_issuance_request_rejects_stale_micro_spec_parent_without_target_mutatio
         (
             "delivery-qc",
             "dqc-0003-r1",
-            '{"schema_version":1,"requirement":{"path":"docs/requirements/req-0003/req-0003-r2.md","id":"req-0003","revision":2,"sha256":"' + "0" * 64 + '"},"coverage":[{"acceptance_criterion":"AC-001","iteration_qc":{"path":".specbound/iteration-qc/req-0003/iqc-0003-003-r1.json","sha256":"' + "0" * 64 + '"}}],"regression_evidence":[{"command":"true","result":"passed","exit_code":0}],"authority":"repository-maintainer","residual_risk":{"unresolved_exceptions":[],"disposition":"none"},"verdict":"verified"}',
+            '{"schema_version":1,"requirement":{"path":".specbound/requirements/req-0003/req-0003-r2.md","id":"req-0003","revision":2,"sha256":"' + "0" * 64 + '"},"coverage":[{"acceptance_criterion":"AC-001","iteration_qc":{"path":".specbound/iteration-qc/req-0003/iqc-0003-003-r1.json","sha256":"' + "0" * 64 + '"}}],"regression_evidence":[{"command":"true","result":"passed","exit_code":0}],"authority":"repository-maintainer","residual_risk":{"unresolved_exceptions":[],"disposition":"none"},"verdict":"verified"}',
         ),
     ),
 )
@@ -300,13 +300,20 @@ def test_micro_spec_publish_requires_explicit_copied_fixture_marker(tmp_path: Pa
     assert not target.exists()
 
 
+def _tamper_parent_approval_digest(fixture: Path) -> None:
+    path = fixture / ".specbound/approvals/req-0001-r1.approval.json"
+    approval = json.loads(path.read_text(encoding="utf-8"))
+    approval["sha256"] = "0" * 64
+    path.write_text(json.dumps(approval), encoding="utf-8", newline="\n")
+
+
 @pytest.mark.parametrize(
     ("mutate", "expected_code"),
     (
         (lambda fixture: (fixture / ".specbound/approvals/req-0001-r1.approval.json").unlink(), "missing_parent_approval"),
         (lambda fixture: (fixture / ".specbound/approvals/req-0001-r1.approval.json").write_text("not json", encoding="utf-8"), "malformed_parent_approval"),
-        (lambda fixture: (fixture / ".specbound/approvals/req-0001-r1.approval.json").write_text((fixture / ".specbound/approvals/req-0001-r1.approval.json").read_text(encoding="utf-8").replace('"sha256": "0927', '"sha256": "0000'), encoding="utf-8"), "invalid_parent_approval_binding"),
-        (lambda fixture: (fixture / "docs/requirements/req-0001/req-0001-r1.md").write_text((fixture / "docs/requirements/req-0001/req-0001-r1.md").read_text(encoding="utf-8").replace("status: approved", "status: draft"), encoding="utf-8"), "invalid_parent_requirement"),
+        (_tamper_parent_approval_digest, "invalid_parent_approval_binding"),
+        (lambda fixture: (fixture / ".specbound/requirements/req-0001/req-0001-r1.md").write_text((fixture / ".specbound/requirements/req-0001/req-0001-r1.md").read_text(encoding="utf-8").replace("status: approved", "status: draft"), encoding="utf-8"), "invalid_parent_requirement"),
     ),
 )
 def test_micro_spec_publish_rejects_invalid_parent_or_approval_without_target_mutation(tmp_path: Path, mutate: object, expected_code: str) -> None:
@@ -330,7 +337,7 @@ def test_micro_spec_publish_rejects_a_superseded_parent_requirement_without_targ
     candidate = write_candidate(fixture, valid_micro_spec_candidate())
     target = fixture / ".specbound/micro-specs/req-0001/ms-0001-003.md"
     target.parent.mkdir()
-    parent = fixture / "docs/requirements/req-0001/req-0001-r1.md"
+    parent = fixture / ".specbound/requirements/req-0001/req-0001-r1.md"
     (parent.parent / "req-0001-r2.md").write_text(
         parent.read_text(encoding="utf-8").replace("revision: 1", "revision: 2"),
         encoding="utf-8",
@@ -369,7 +376,7 @@ def test_iteration_qc_publish_requires_exact_micro_spec_ac_set_before_fixture_mu
     config.write_text(
         config.read_text(encoding="utf-8").replace(
             "requirements: []",
-            f"requirements:\n      - path: docs/requirements/req-0001/req-0001-r1.md\n        id: req-0001\n        revision: 1\n        sha256: {digest}",
+            f"requirements:\n      - path: .specbound/requirements/req-0001/req-0001-r1.md\n        id: req-0001\n        revision: 1\n        sha256: {digest}",
         ),
         encoding="utf-8",
     )

@@ -14,7 +14,7 @@ metadata:
 
 ## Overview
 
-This repository issues REQ drafts only under `docs/requirements/` and binds each draft to an exact confirmed Discovery and its content-addressed confirmation record. The `specbound` CLI is enforcement authority; this skill is procedural guidance only.
+This repository issues REQ drafts only under `.specbound/requirements/` and binds each draft to an exact confirmed Discovery and its content-addressed confirmation record. The `specbound` CLI is enforcement authority; this skill is procedural guidance only.
 
 ## When to Use
 
@@ -48,12 +48,12 @@ A Discovery confirmation authorizes only draft issuance. It does not authorize R
 3. The command creates only:
 
 ```text
-docs/requirements/req-0002/req-0002-r1.md
+.specbound/requirements/req-0002/req-0002-r1.md
 ```
 
 It refuses noncanonical identifiers, traversal, symlinked canonical paths, invalid parent evidence, missing confirmation records, stale parent digests, over-broad parent authorization, and existing targets.
 
-4. Complete the generated document with an outcome, explicit scope, non-goals, risk/owner context, and any material open decisions. Preserve the generated parent binding exactly.
+4. Complete the generated document with a user-facing `title` and `summary`, an outcome, explicit scope, non-goals, risk/owner context, and any material open decisions. Preserve the generated parent binding exactly.
 5. For **every** AC, replace all nine completion-contract placeholders before review:
    - `observable_success`
    - `required_preconditions`
@@ -71,6 +71,8 @@ It refuses noncanonical identifiers, traversal, symlinked canonical paths, inval
 
 ```bash
 .venv/bin/python -m specbound.cli validate
+.venv/bin/python -m specbound.cli docs requirements
+.venv/bin/python -m specbound.cli docs requirements --check
 .venv/bin/python -m pytest
 ```
 

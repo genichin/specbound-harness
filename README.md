@@ -9,6 +9,7 @@ This initial slice supplies:
 - `specbound context` — discover and print repository adoption context.
 - `specbound preflight` — verify the adoption configuration and canonical roots.
 - `specbound validate` — fail-closed validation of canonical Discovery/confirmation, REQ/approval, and REQ/rejection bindings.
+- `specbound docs requirements` — regenerate the user-facing requirement list from canonical REQ metadata; `--check` fails when the projection is stale.
 - `specbound req reject` — atomic rejection of an exact in-review REQ with immutable decision evidence.
 - `specbound discovery confirm` — non-overwritable, exact-byte confirmation record creation after an explicit authority decision.
 - isolated valid/invalid fixtures and CI.
@@ -20,6 +21,8 @@ The CLI and CI are enforcement surfaces. The Hermes skill explains the workflow 
 
 The repository's human operating model for issue intake through release is defined in [Issue SDLC](docs/governance/issue-sdlc.md). It uses SPEC-driven micro-iterations: each bounded Micro-SPEC maps to approved acceptance criteria, is focusedly verified, and advances only with iteration QC evidence.
 
+The user-facing [Requirement list](docs/requirements.md) is generated from the latest revision of each canonical REQ under `.specbound/requirements/`. The generated list is a readable projection, not a second source of truth; edit REQ `title` and `summary` metadata, then regenerate it instead of editing the list directly. The one-time exact-path and digest rebinding is documented in [Canonical requirements root migration](docs/governance/requirements-root-migration.md).
+
 The reusable [Discovery template](templates/discovery.md) is the source for a draft Discovery. It is not a lifecycle instance or a confirmation/approval record.
 
 ## Local use
@@ -30,14 +33,15 @@ python3 -m venv .venv
 .venv/bin/python -m specbound.cli context
 .venv/bin/python -m specbound.cli preflight
 .venv/bin/python -m specbound.cli validate
+.venv/bin/python -m specbound.cli docs requirements --check
 .venv/bin/python -m pytest
 ```
 
-For a target repository, copy/adapt `specbound.yaml`, retain canonical Discoveries under `.specbound/discoveries/dcy-<id>-r<revision>.md` with confirmation records under `.specbound/confirmations/`, canonical requirements under `docs/requirements/`, approval records under `.specbound/approvals/`, and rejection records under `.specbound/rejections/`. The version-one artifact families are deliberately distinct: human-readable Micro-SPEC planning at `.specbound/micro-specs/req-<id>/ms-<id>-<slice>.md`, machine iteration-QC at `.specbound/iteration-qc/req-<id>/iqc-<id>-<slice>-r<revision>.json`, and machine delivery-QC at `.specbound/delivery-qc/dqc-<id>-r<revision>.json`. The current validator enforces canonical Micro-SPEC safe paths plus `schema_version: 1`, exact canonical approved-REQ path/ID/revision/SHA-256 binding, a unique selected subset of the parent REQ's current `AC-<id>` entries, and substantive planning sections. A canonical Micro-SPEC has this binding shape:
+For a target repository, copy/adapt `specbound.yaml`, retain canonical Discoveries under `.specbound/discoveries/dcy-<id>-r<revision>.md` with confirmation records under `.specbound/confirmations/`, canonical requirements under `.specbound/requirements/`, approval records under `.specbound/approvals/`, and rejection records under `.specbound/rejections/`. The version-one artifact families are deliberately distinct: human-readable Micro-SPEC planning at `.specbound/micro-specs/req-<id>/ms-<id>-<slice>.md`, machine iteration-QC at `.specbound/iteration-qc/req-<id>/iqc-<id>-<slice>-r<revision>.json`, and machine delivery-QC at `.specbound/delivery-qc/dqc-<id>-r<revision>.json`. The current validator enforces canonical Micro-SPEC safe paths plus `schema_version: 1`, exact canonical approved-REQ path/ID/revision/SHA-256 binding, a unique selected subset of the parent REQ's current `AC-<id>` entries, and substantive planning sections. A canonical Micro-SPEC has this binding shape:
 
 ```yaml
 requirement:
-  path: docs/requirements/req-<id>/req-<id>-r<revision>.md
+  path: .specbound/requirements/req-<id>/req-<id>-r<revision>.md
   id: req-<id>
   revision: <revision>
   sha256: <exact-approved-req-sha256>

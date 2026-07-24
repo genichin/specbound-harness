@@ -34,7 +34,7 @@ Do not use it as a substitute for an explicit confirmation/approval record, auth
 specbound.yaml
 .specbound/discoveries/dcy-<id>-r<revision>.md
 .specbound/confirmations/dcy-<id>-r<revision>.confirmation.json
-docs/requirements/req-<id>/req-<id>-r<revision>.md
+.specbound/requirements/req-<id>/req-<id>-r<revision>.md
 .specbound/review-submissions/req-<id>-r<revision>.review-submission.json
 .specbound/review-decisions/req-<id>-r<revision>.review-decision.json
 .specbound/rejections/req-<id>-r<revision>.rejection.json
@@ -43,6 +43,7 @@ docs/requirements/req-<id>/req-<id>-r<revision>.md
 .specbound/micro-specs/req-<id>/ms-<id>-<slice>.md
 .specbound/iteration-qc/req-<id>/iqc-<id>-<slice>-r<revision>.json
 .specbound/delivery-qc/dqc-<id>-r<revision>.json
+docs/requirements.md  # generated user-facing projection; never canonical
 ```
 
 Discovery IDs and filenames use the single lowercase `dcy-` prefix. Never place canonical lifecycle state in `temp/`.
@@ -87,6 +88,7 @@ Use the repository's reproducible interpreter:
 .venv/bin/python -m specbound.cli context
 .venv/bin/python -m specbound.cli preflight
 .venv/bin/python -m specbound.cli validate
+.venv/bin/python -m specbound.cli docs requirements --check
 .venv/bin/python -m specbound.cli discovery confirm dcy-0001-r1 --authority repository-maintainer
 .venv/bin/python -m specbound.cli req reject req-0002-r1 --authority independent-advanced-llm-reviewer --reason "<substantive review finding>"
 .venv/bin/python -m pytest
@@ -104,7 +106,7 @@ The implemented bootstrap slice validates configuration, canonical non-symlink p
 
 ```yaml
 requirement:
-  path: docs/requirements/req-<id>/req-<id>-r<revision>.md
+  path: .specbound/requirements/req-<id>/req-<id>-r<revision>.md
   id: req-<id>
   revision: <revision>
   sha256: <exact-approved-req-sha256>
@@ -136,4 +138,5 @@ Iteration-QC at `.specbound/iteration-qc/req-<id>/iqc-<id>-<slice>-r<revision>.j
 - [ ] Confirmed Discovery has a matching content-addressed confirmation record and unchanged digest.
 - [ ] Confirmation authorizes only `draft_req_only`.
 - [ ] `specbound validate` returns `valid: true` with no blockers.
+- [ ] `specbound docs requirements --check` confirms the user-facing list matches canonical REQ metadata.
 - [ ] Confirmed Discoveries and approved REQs have not been modified in place after digest binding.

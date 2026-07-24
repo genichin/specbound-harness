@@ -12,6 +12,7 @@ from .validation import (
     PLACEHOLDER_RE,
     REQUIREMENT_RE,
     RequirementRejectionError,
+    canonical_requirement_relative,
     _atomic_replace_text,
     _frontmatter,
     _load_config,
@@ -32,7 +33,7 @@ def _context(root: Path, target: str, expected_status: str) -> tuple[Path, dict[
     if not match:
         raise RequirementLifecycleError("invalid_requirement_target", target, "target must be req-<id>-r<revision>")
     requirement_id, revision_text = match.groups()
-    relative = f"docs/requirements/{requirement_id}/{target}.md"
+    relative = canonical_requirement_relative(requirement_id, revision_text)
     path = root / relative
     try:
         meta = _frontmatter(path)

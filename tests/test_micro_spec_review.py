@@ -29,13 +29,13 @@ def copied_fixture(tmp_path: Path) -> Path:
 
 
 def valid_micro_spec(root: Path) -> str:
-    digest = sha256((root / "docs/requirements/req-0001/req-0001-r1.md").read_bytes()).hexdigest()
+    digest = sha256((root / ".specbound/requirements/req-0001/req-0001-r1.md").read_bytes()).hexdigest()
     return f"""---
 schema_version: 1
 id: ms-0001-003
 kind: micro-spec
 requirement:
-  path: docs/requirements/req-0001/req-0001-r1.md
+  path: .specbound/requirements/req-0001/req-0001-r1.md
   id: req-0001
   revision: 1
   sha256: {digest}

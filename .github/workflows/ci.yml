@@ -21,6 +21,8 @@ jobs:
         run: python -m pytest
       - name: Validate bootstrap harness
         run: specbound validate
+      - name: Verify generated requirement documentation
+        run: specbound docs requirements --check
       - name: Build wheel
         run: python -m pip wheel --wheel-dir dist ".[test]"
       - name: Validate installed wheel
@@ -28,5 +30,6 @@ jobs:
           python -m venv /tmp/specbound-wheel
           /tmp/specbound-wheel/bin/pip install --no-index --find-links dist specbound
           /tmp/specbound-wheel/bin/specbound --root fixtures/valid-minimal validate
+          /tmp/specbound-wheel/bin/specbound --root . docs requirements --check
       - name: Harness validation
         run: python -m specbound.cli validate

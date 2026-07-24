@@ -35,13 +35,13 @@ def copied_fixture(tmp_path: Path) -> Path:
 
 
 def valid_micro_spec(root: Path, target: str = "ms-0001-003") -> str:
-    digest = sha256((root / "docs/requirements/req-0001/req-0001-r1.md").read_bytes()).hexdigest()
+    digest = sha256((root / ".specbound/requirements/req-0001/req-0001-r1.md").read_bytes()).hexdigest()
     return f"""---
 schema_version: 1
 id: {target}
 kind: micro-spec
 requirement:
-  path: docs/requirements/req-0001/req-0001-r1.md
+  path: .specbound/requirements/req-0001/req-0001-r1.md
   id: req-0001
   revision: 1
   sha256: {digest}
@@ -103,13 +103,13 @@ def valid_iteration_qc(root: Path) -> str:
 
 
 def valid_delivery_qc(root: Path) -> str:
-    requirement = root / "docs/requirements/req-0001/req-0001-r1.md"
+    requirement = root / ".specbound/requirements/req-0001/req-0001-r1.md"
     iteration = root / ".specbound/iteration-qc/req-0001/iqc-0001-003-r1.json"
     return json.dumps(
         {
             "schema_version": 1,
             "requirement": {
-                "path": "docs/requirements/req-0001/req-0001-r1.md",
+                "path": ".specbound/requirements/req-0001/req-0001-r1.md",
                 "id": "req-0001",
                 "revision": 1,
                 "sha256": sha256(requirement.read_bytes()).hexdigest(),
@@ -153,14 +153,14 @@ def write_valid_family_set(root: Path) -> None:
 
 
 def adopt_fixture_requirement(root: Path, digest: str | None = None) -> None:
-    requirement = root / "docs/requirements/req-0001/req-0001-r1.md"
+    requirement = root / ".specbound/requirements/req-0001/req-0001-r1.md"
     exact_digest = digest or sha256(requirement.read_bytes()).hexdigest()
     config = root / "specbound.yaml"
     config.write_text(
         config.read_text(encoding="utf-8").replace(
             "    requirements: []",
             "    requirements:\n"
-            "      - path: docs/requirements/req-0001/req-0001-r1.md\n"
+            "      - path: .specbound/requirements/req-0001/req-0001-r1.md\n"
             "        id: req-0001\n"
             "        revision: 1\n"
             f"        sha256: {exact_digest}",
@@ -243,7 +243,7 @@ def test_validate_rejects_noncanonical_or_malformed_version_one_artifacts(
     ("replacement", "code"),
     [
         ("id: ms-0001-003", "micro_spec_binding_mismatch"),
-        ("path: docs/requirements/req-0001/req-0001-r1.md", "micro_spec_binding_mismatch"),
+        ("path: .specbound/requirements/req-0001/req-0001-r1.md", "micro_spec_binding_mismatch"),
         ("sha256: ", "micro_spec_digest_mismatch"),
         ("selected_acceptance_criteria: [AC-999]", "invalid_selected_acceptance_criteria"),
         ("selected_acceptance_criteria: [AC-001, AC-001]", "invalid_selected_acceptance_criteria"),
@@ -261,9 +261,9 @@ def test_validate_rejects_invalid_micro_spec_parent_ac_or_plan(
         if replacement.startswith("id:"):
             content = content.replace(replacement, "id: ms-0001-004")
         else:
-            content = content.replace(replacement, "path: docs/requirements/req-0001/req-0001-r2.md")
+            content = content.replace(replacement, "path: .specbound/requirements/req-0001/req-0001-r2.md")
     elif code == "micro_spec_digest_mismatch":
-        digest = sha256((root / "docs/requirements/req-0001/req-0001-r1.md").read_bytes()).hexdigest()
+        digest = sha256((root / ".specbound/requirements/req-0001/req-0001-r1.md").read_bytes()).hexdigest()
         content = content.replace(f"sha256: {digest}", "sha256: '" + "0" * 64 + "'")
     elif code == "incomplete_micro_spec_plan":
         content = content.replace(replacement, "")
@@ -282,7 +282,7 @@ def test_validate_rejects_unapproved_micro_spec_parent(tmp_path: Path) -> None:
     path = root / ".specbound/micro-specs/req-0001/ms-0001-003.md"
     path.parent.mkdir(parents=True)
     path.write_text(valid_micro_spec(root), encoding="utf-8")
-    requirement = root / "docs/requirements/req-0001/req-0001-r1.md"
+    requirement = root / ".specbound/requirements/req-0001/req-0001-r1.md"
     requirement.write_text(requirement.read_text(encoding="utf-8").replace("status: approved", "status: in_review"), encoding="utf-8")
 
     result = run_cli(root, "validate")
@@ -296,7 +296,7 @@ def test_validate_requires_rollback_for_high_risk_micro_spec_parent(tmp_path: Pa
     path = root / ".specbound/micro-specs/req-0001/ms-0001-003.md"
     path.parent.mkdir(parents=True)
     path.write_text(valid_micro_spec(root), encoding="utf-8")
-    requirement = root / "docs/requirements/req-0001/req-0001-r1.md"
+    requirement = root / ".specbound/requirements/req-0001/req-0001-r1.md"
     requirement.write_text(requirement.read_text(encoding="utf-8").replace("risk: low", "risk: high"), encoding="utf-8")
 
     result = run_cli(root, "validate")
@@ -539,3 +539,21 @@ def test_preflight_rejects_unknown_adoption_schema_version(tmp_path: Path) -> No
 
     assert result.returncode == 2, result.stdout
     assert "malformed_config" in {blocker["code"] for blocker in body(result)["blockers"]}
+
+
+def test_requirements_root_migration_manifest_binds_current_artifacts() -> None:
+    manifest = json.loads(
+        (ROOT / ".specbound/migrations/requirements-root-v1.json").read_text(encoding="utf-8")
+    )
+
+    assert manifest["kind"] == "repository_format_migration"
+    assert manifest["source_root"] == "docs/requirements"
+    assert manifest["target_root"] == ".specbound/requirements"
+    after_paths: set[str] = set()
+    for transformation in manifest["transformations"]:
+        assert transformation["after_path"] not in after_paths
+        after_paths.add(transformation["after_path"])
+        assert len(transformation["before_sha256"]) == 64
+        path = ROOT / transformation["after_path"]
+        assert path.is_file(), transformation["after_path"]
+        assert sha256(path.read_bytes()).hexdigest() == transformation["after_sha256"]

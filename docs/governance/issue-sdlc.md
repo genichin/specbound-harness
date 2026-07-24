@@ -12,7 +12,7 @@ This document is the single human-readable authority for lifecycle semantics in 
 | --- | --- | --- |
 | Work intake, priority, assignment, issue status, and iteration scheduling | The team's issue tracker or Kanban system | Reference only; never duplicate its status as canonical state. |
 | Problem framing and decision record | Discovery artifact | Defines whether REQ drafting may begin. |
-| Human-reviewable requirement scope and acceptance criteria | Versioned REQ under `docs/requirements/` | Validates approved REQ path, identity, revision, and digest binding. |
+| Human-reviewable requirement scope and acceptance criteria | Versioned REQ under `.specbound/requirements/` | Validates approved REQ path, identity, revision, and digest binding. `docs/requirements.md` is only its generated user-facing index. |
 | Approval authority and approved snapshot | Approval record under `.specbound/approvals/` | Validates the exact approval binding. |
 | Bounded implementation intent for one delivery slice | Micro-SPEC and its implementation plan | Maps one iteration to approved acceptance criteria; it cannot expand the REQ. |
 | Focused verification and iteration QC evidence | The iteration's evidence and QC result | Establishes whether that slice may advance. |
@@ -62,7 +62,7 @@ A Micro-SPEC is human-reviewable Markdown; iteration-QC and delivery-QC are JSON
 
 ```yaml
 requirement:
-  path: docs/requirements/req-<id>/req-<id>-r<revision>.md
+  path: .specbound/requirements/req-<id>/req-<id>-r<revision>.md
   id: req-<id>
   revision: <revision>
   sha256: <exact-approved-req-sha256>
@@ -126,7 +126,7 @@ The bootstrap implementation currently recognizes these lifecycle artifacts:
 specbound.yaml
 .specbound/discoveries/dcy-<id>-r<revision>.md
 .specbound/confirmations/dcy-<id>-r<revision>.confirmation.json
-docs/requirements/req-<id>/req-<id>-r<revision>.md
+.specbound/requirements/req-<id>/req-<id>-r<revision>.md
 .specbound/approvals/req-<id>-r<revision>.approval.json
 ```
 

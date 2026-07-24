@@ -42,7 +42,7 @@ def test_context_discovers_fixture_root() -> None:
 
     assert result.returncode == 0, result.stderr
     body = payload(result)
-    assert body["requirements_root"] == "docs/requirements"
+    assert body["requirements_root"] == ".specbound/requirements"
     assert body["discoveries_root"] == ".specbound/discoveries"
     assert body["discovery_confirmations_root"] == ".specbound/confirmations"
     assert body["micro_specs_root"] == ".specbound/micro-specs"
@@ -220,6 +220,7 @@ def test_discovery_confirm_creates_exact_record_and_validates(tmp_path: Path) ->
     discovery_path.write_text(
         discovery_path.read_text(encoding="utf-8").replace("status: confirmed", "status: in_review", 1),
         encoding="utf-8",
+        newline="\n",
     )
     reviewed_digest = hashlib.sha256(discovery_path.read_bytes()).hexdigest()
     reviewed_body = discovery_path.read_text(encoding="utf-8").split("\n---\n", 1)[1]
@@ -368,7 +369,7 @@ def test_validate_rejects_symlinked_approval_record(tmp_path: Path) -> None:
 def test_validate_rejects_digest_mismatch(tmp_path: Path) -> None:
     fixture = tmp_path / "digest-mismatch"
     shutil.copytree(FIXTURES / "valid-minimal", fixture)
-    requirement = fixture / "docs/requirements/req-0001/req-0001-r1.md"
+    requirement = fixture / ".specbound/requirements/req-0001/req-0001-r1.md"
     requirement.write_text(requirement.read_text(encoding="utf-8") + "\nChanged after approval.\n", encoding="utf-8")
 
     result = run_cli("--root", str(fixture), "validate")
@@ -436,7 +437,7 @@ def test_validate_rejects_missing_discovery_schema_version(tmp_path: Path) -> No
 def test_validate_rejects_symlinked_requirement_record(tmp_path: Path) -> None:
     fixture = tmp_path / "symlinked-requirement"
     shutil.copytree(FIXTURES / "valid-minimal", fixture)
-    requirement = fixture / "docs/requirements/req-0001/req-0001-r1.md"
+    requirement = fixture / ".specbound/requirements/req-0001/req-0001-r1.md"
     outside = tmp_path / "outside-requirement.md"
     requirement.rename(outside)
     try:
@@ -494,8 +495,8 @@ def test_req_draft_mints_exact_parent_bound_draft(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0, result.stdout
-    draft = fixture / "docs/requirements/req-0002/req-0002-r1.md"
-    assert payload(result)["requirement_path"] == "docs/requirements/req-0002/req-0002-r1.md"
+    draft = fixture / ".specbound/requirements/req-0002/req-0002-r1.md"
+    assert payload(result)["requirement_path"] == ".specbound/requirements/req-0002/req-0002-r1.md"
     assert draft.is_file()
     text = draft.read_text(encoding="utf-8")
     assert "id: req-0002" in text
@@ -529,14 +530,14 @@ def test_req_draft_mints_exact_parent_bound_draft(tmp_path: Path) -> None:
 def test_req_draft_allows_a_preexisting_canonical_requirement_directory(tmp_path: Path) -> None:
     fixture = tmp_path / "req-draft-existing-directory"
     shutil.copytree(FIXTURES / "valid-minimal", fixture)
-    (fixture / "docs/requirements/req-0002").mkdir()
+    (fixture / ".specbound/requirements/req-0002").mkdir()
 
     result = run_cli(
         "--root", str(fixture), "req", "draft", "dcy-0001-r1", "req-0002-r1"
     )
 
     assert result.returncode == 0, result.stdout
-    assert (fixture / "docs/requirements/req-0002/req-0002-r1.md").is_file()
+    assert (fixture / ".specbound/requirements/req-0002/req-0002-r1.md").is_file()
 
 
 @pytest.mark.parametrize("target", ("../req-0002-r1", "/tmp/req-0002-r1", "req-0002-r1/extra"))
@@ -548,13 +549,13 @@ def test_req_draft_rejects_noncanonical_target_without_writing(tmp_path: Path, t
 
     assert result.returncode == 2
     assert "invalid_requirement_target" in {item["code"] for item in payload(result)["blockers"]}
-    assert not (fixture / "docs/requirements/req-0002").exists()
+    assert not (fixture / ".specbound/requirements/req-0002").exists()
 
 
 def test_req_draft_rejects_symlinked_target_directory_without_writing(tmp_path: Path) -> None:
     fixture = tmp_path / "req-draft-symlinked-target"
     shutil.copytree(FIXTURES / "valid-minimal", fixture)
-    target_directory = fixture / "docs/requirements/req-0002"
+    target_directory = fixture / ".specbound/requirements/req-0002"
     outside = tmp_path / "outside-requirement-target"
     outside.mkdir()
     try:
@@ -574,13 +575,13 @@ def test_req_draft_rejects_existing_target_without_overwrite(tmp_path: Path) -> 
     shutil.copytree(FIXTURES / "valid-minimal", fixture)
 
     first = run_cli("--root", str(fixture), "req", "draft", "dcy-0001-r1", "req-0002-r1")
-    original = (fixture / "docs/requirements/req-0002/req-0002-r1.md").read_bytes()
+    original = (fixture / ".specbound/requirements/req-0002/req-0002-r1.md").read_bytes()
     second = run_cli("--root", str(fixture), "req", "draft", "dcy-0001-r1", "req-0002-r1")
 
     assert first.returncode == 0, first.stdout
     assert second.returncode == 2
     assert "requirement_already_exists" in {item["code"] for item in payload(second)["blockers"]}
-    assert (fixture / "docs/requirements/req-0002/req-0002-r1.md").read_bytes() == original
+    assert (fixture / ".specbound/requirements/req-0002/req-0002-r1.md").read_bytes() == original
 
 
 def test_req_draft_preserves_target_created_during_publish_race(
@@ -588,7 +589,7 @@ def test_req_draft_preserves_target_created_during_publish_race(
 ) -> None:
     fixture = tmp_path / "req-draft-create-race"
     shutil.copytree(FIXTURES / "valid-minimal", fixture)
-    target = fixture / "docs/requirements/req-0002/req-0002-r1.md"
+    target = fixture / ".specbound/requirements/req-0002/req-0002-r1.md"
     original_link = validation.os.link
 
     def create_competing_target(
@@ -613,7 +614,7 @@ def test_req_draft_leaves_no_target_when_temp_draft_write_fails(
 ) -> None:
     fixture = tmp_path / "req-draft-write-failure"
     shutil.copytree(FIXTURES / "valid-minimal", fixture)
-    target = fixture / "docs/requirements/req-0002/req-0002-r1.md"
+    target = fixture / ".specbound/requirements/req-0002/req-0002-r1.md"
 
     def fail_fsync(_fd: int) -> None:
         raise OSError("simulated fsync failure")
@@ -632,7 +633,7 @@ def test_req_draft_removes_its_published_target_when_directory_sync_fails(
 ) -> None:
     fixture = tmp_path / "req-draft-directory-sync-failure"
     shutil.copytree(FIXTURES / "valid-minimal", fixture)
-    target = fixture / "docs/requirements/req-0002/req-0002-r1.md"
+    target = fixture / ".specbound/requirements/req-0002/req-0002-r1.md"
     original_fsync = validation.os.fsync
     calls = 0
 
@@ -657,7 +658,7 @@ def test_req_draft_removes_its_published_target_when_generated_validation_fails(
 ) -> None:
     fixture = tmp_path / "req-draft-generated-validation-failure"
     shutil.copytree(FIXTURES / "valid-minimal", fixture)
-    target = fixture / "docs/requirements/req-0002/req-0002-r1.md"
+    target = fixture / ".specbound/requirements/req-0002/req-0002-r1.md"
     original_validate = validation.validate
     calls = 0
 
@@ -667,7 +668,7 @@ def test_req_draft_removes_its_published_target_when_generated_validation_fails(
         if calls == 1:
             return original_validate(root)
         result = validation.Result(root)
-        result.block("simulated_generated_requirement_failure", "docs/requirements", "simulated")
+        result.block("simulated_generated_requirement_failure", ".specbound/requirements", "simulated")
         return result
 
     monkeypatch.setattr(validation, "validate", fail_after_publication)
@@ -684,7 +685,7 @@ def test_req_draft_rejects_target_parent_replaced_by_symlink_before_open(
 ) -> None:
     fixture = tmp_path / "req-draft-symlink-race"
     shutil.copytree(FIXTURES / "valid-minimal", fixture)
-    target_directory = fixture / "docs/requirements/req-0002"
+    target_directory = fixture / ".specbound/requirements/req-0002"
     outside = tmp_path / "outside-requirement-target"
     outside.mkdir()
     original_open = validation.os.open
@@ -736,7 +737,7 @@ def test_req_draft_rejects_invalid_parent_evidence(
 
     assert result.returncode == 2
     assert expected_code in {item["code"] for item in payload(result)["blockers"]}
-    assert not (fixture / "docs/requirements/req-0002/req-0002-r1.md").exists()
+    assert not (fixture / ".specbound/requirements/req-0002/req-0002-r1.md").exists()
 
 
 def test_req_draft_can_issue_draft_revision_without_mutating_historical_approval(tmp_path: Path) -> None:
@@ -747,7 +748,7 @@ def test_req_draft_can_issue_draft_revision_without_mutating_historical_approval
 
     requirement = create_requirement_draft(fixture, "dcy-0001-r1", "req-0001-r2")
 
-    assert requirement == fixture / "docs/requirements/req-0001/req-0001-r2.md"
+    assert requirement == fixture / ".specbound/requirements/req-0001/req-0001-r2.md"
     assert "status: draft" in requirement.read_text(encoding="utf-8")
     assert historical_approval.read_bytes() == original_approval
     assert validation.validate(fixture).valid
@@ -756,8 +757,8 @@ def test_req_draft_can_issue_draft_revision_without_mutating_historical_approval
 def test_validate_requires_valid_exception_for_approved_historical_revision(tmp_path: Path) -> None:
     fixture = tmp_path / "requirement-revision-policy"
     shutil.copytree(FIXTURES / "valid-minimal", fixture)
-    r1 = fixture / "docs/requirements/req-0001/req-0001-r1.md"
-    r2 = fixture / "docs/requirements/req-0001/req-0001-r2.md"
+    r1 = fixture / ".specbound/requirements/req-0001/req-0001-r1.md"
+    r2 = fixture / ".specbound/requirements/req-0001/req-0001-r2.md"
     r2.write_text(
         r1.read_text(encoding="utf-8")
         .replace("revision: 1", "revision: 2", 1),
@@ -766,7 +767,7 @@ def test_validate_requires_valid_exception_for_approved_historical_revision(tmp_
     approval_path = fixture / ".specbound/approvals/req-0001-r1.approval.json"
     approval = json.loads(approval_path.read_text(encoding="utf-8"))
     r2_approval = dict(approval)
-    r2_approval["requirement_path"] = "docs/requirements/req-0001/req-0001-r2.md"
+    r2_approval["requirement_path"] = ".specbound/requirements/req-0001/req-0001-r2.md"
     r2_approval["revision"] = 2
     r2_approval["sha256"] = validation._digest(r2)
     (fixture / ".specbound/approvals/req-0001-r2.approval.json").write_text(
@@ -984,13 +985,13 @@ def test_req_to_in_review_preserves_a_complete_pair_when_rollback_cleanup_fails(
 
 
 def _make_in_review_requirement(fixture: Path) -> Path:
-    requirement = fixture / "docs/requirements/req-0001/req-0001-r1.md"
+    requirement = fixture / ".specbound/requirements/req-0001/req-0001-r1.md"
     reviewed_text = requirement.read_text(encoding="utf-8").replace("status: approved", "status: in_review", 1)
-    requirement.write_text(reviewed_text, encoding="utf-8")
+    requirement.write_text(reviewed_text, encoding="utf-8", newline="\n")
     (fixture / ".specbound/approvals/req-0001-r1.approval.json").unlink()
     review_submission = {
         "schema_version": 1,
-        "requirement_path": "docs/requirements/req-0001/req-0001-r1.md",
+        "requirement_path": ".specbound/requirements/req-0001/req-0001-r1.md",
         "requirement_id": "req-0001",
         "revision": 1,
         "draft_sha256": hashlib.sha256(reviewed_text.replace("status: in_review", "status: draft", 1).encode()).hexdigest(),
@@ -1006,7 +1007,7 @@ def _make_in_review_requirement(fixture: Path) -> Path:
     )
     review_decision = {
         "schema_version": 1,
-        "requirement_path": "docs/requirements/req-0001/req-0001-r1.md",
+        "requirement_path": ".specbound/requirements/req-0001/req-0001-r1.md",
         "requirement_id": "req-0001",
         "revision": 1,
         "reviewed_sha256": hashlib.sha256(reviewed_text.encode()).hexdigest(),
