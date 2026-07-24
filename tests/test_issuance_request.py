@@ -103,6 +103,30 @@ def valid_iteration_qc_candidate(micro_spec: Path, selected: list[str] | None = 
     )
 
 
+def test_cg1_micro_spec_reviews_bind_exact_req0003_ac_coverage() -> None:
+    requirement = ROOT / "docs/requirements/req-0003/req-0003-r2.md"
+    requirement_digest = sha256(requirement.read_bytes()).hexdigest()
+    expected = {
+        "002": "[AC-001, AC-002]",
+        "003": "[AC-003]",
+        "004": "[AC-004]",
+        "005": "[AC-005]",
+        "006": "[AC-006]",
+        "007": "[AC-007]",
+        "008": "[AC-008]",
+        "009": "[AC-001, AC-002, AC-003, AC-004, AC-005, AC-006, AC-007, AC-008]",
+    }
+
+    for slice_id, selected in expected.items():
+        micro = ROOT / f".specbound/micro-specs/req-0003/ms-0003-{slice_id}.md"
+        review = json.loads((ROOT / f".specbound/micro-spec-reviews/req-0003/ms-0003-{slice_id}.review.json").read_text(encoding="utf-8"))
+
+        assert f"selected_acceptance_criteria: {selected}" in micro.read_text(encoding="utf-8")
+        assert review["decision"] == "approved_for_implementation"
+        assert review["requirement_sha256"] == requirement_digest
+        assert review["micro_spec_sha256"] == sha256(micro.read_bytes()).hexdigest()
+
+
 def test_issuance_request_prevalidates_a_complete_micro_spec_without_creating_target(tmp_path: Path) -> None:
     fixture = copied_fixture(tmp_path)
     candidate = write_candidate(fixture, valid_micro_spec_candidate())
