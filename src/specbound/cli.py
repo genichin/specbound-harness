@@ -20,7 +20,7 @@ from .validation import (
 )
 from .requirement_lifecycle import RequirementLifecycleError, approve_requirement, record_review_decision, reconsider_requirement, reject_requirement
 from .micro_spec_lifecycle import MicroSpecReviewError, record_micro_spec_review
-from .issuance_request import prevalidate_issuance_request, publish_micro_spec_issuance
+from .issuance_request import prevalidate_issuance_request, publish_issuance
 
 
 def _emit(payload: object) -> None:
@@ -127,10 +127,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if result.valid else 2
 
     if args.command == "issuance-request":
-        if args.publish and args.artifact_kind != "micro-spec":
-            _emit({"valid": False, "blockers": [{"code": "family_prerequisite_unmet", "path": "artifact_kind", "detail": "publish is limited to micro-spec until AC-004"}]})
-            return 2
-        result = publish_micro_spec_issuance(root, args.target_identity, args.candidate_file) if args.publish else prevalidate_issuance_request(root, args.artifact_kind, args.target_identity, args.candidate_file)
+        result = publish_issuance(root, args.artifact_kind, args.target_identity, args.candidate_file) if args.publish else prevalidate_issuance_request(root, args.artifact_kind, args.target_identity, args.candidate_file)
         _emit(result.payload())
         return 0 if result.valid else 2
 

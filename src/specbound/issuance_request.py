@@ -174,14 +174,46 @@ def _valid_micro_spec_approval(root: Path, target: str, candidate: str) -> list[
     return []
 
 
-def _json_candidate(kind: str, target: str, candidate: str) -> list[IssuanceBlocker]:
+def _json_candidate(root: Path, kind: str, target: str, candidate: str) -> list[IssuanceBlocker]:
     try:
         record = json.loads(candidate)
     except json.JSONDecodeError as exc:
         return [IssuanceBlocker("invalid_candidate_schema", target, str(exc))]
     if not isinstance(record, dict) or record.get("schema_version") != 1:
         return [IssuanceBlocker("invalid_candidate_schema", target, "candidate must be a schema_version 1 JSON object")]
-    return [IssuanceBlocker("family_prerequisite_unmet", target, f"{kind} parent/adoption graph validation is deferred until AC-004")]
+    config = yaml.safe_load((root / "specbound.yaml").read_text(encoding="utf-8"))
+    entries = config.get("policy", {}).get("control_plane_adoption", {}).get("requirements", [])
+    if kind == "iteration-qc":
+        micro = record.get("micro_spec")
+        if not isinstance(micro, dict) or not isinstance(micro.get("path"), str):
+            return [IssuanceBlocker("invalid_candidate_semantics", target, "iteration-QC requires a canonical Micro-SPEC binding")]
+        micro_path = root / micro["path"]
+        if not micro_path.is_file() or sha256(micro_path.read_bytes()).hexdigest() != micro.get("sha256"):
+            return [IssuanceBlocker("missing_or_mismatched_micro_spec", micro["path"], "exact canonical Micro-SPEC parent is required")]
+        metadata = _frontmatter(micro_path)
+        requirement = metadata.get("requirement")
+    else:
+        requirement = record.get("requirement")
+    if not isinstance(requirement, dict) or not all(key in requirement for key in ("path", "id", "revision", "sha256")):
+        return [IssuanceBlocker("invalid_candidate_semantics", target, "candidate must bind an exact canonical approved REQ")]
+    parent = root / requirement["path"]
+    if not parent.is_file() or sha256(parent.read_bytes()).hexdigest() != requirement["sha256"] or _frontmatter(parent).get("status") != "approved":
+        return [IssuanceBlocker("invalid_parent_requirement", str(requirement["path"]), "exact approved parent REQ is required")]
+    adopted = next((item for item in entries if isinstance(item, dict) and all(item.get(key) == requirement.get(key) for key in ("path", "id", "revision", "sha256"))), None)
+    if adopted is None:
+        return [IssuanceBlocker("unadopted_parent", str(requirement["path"]), "QC publication requires exact copied-fixture adoption")]
+    if kind == "delivery-qc":
+        coverage = record.get("coverage")
+        if not isinstance(coverage, list) or not coverage:
+            return [IssuanceBlocker("invalid_candidate_semantics", target, "delivery-QC requires iteration-QC coverage")]
+        for edge in coverage:
+            iteration = edge.get("iteration_qc") if isinstance(edge, dict) else None
+            if not isinstance(iteration, dict) or not isinstance(iteration.get("path"), str):
+                return [IssuanceBlocker("invalid_delivery_graph_edge", target, "delivery-QC coverage requires canonical iteration-QC edges")]
+            path = root / iteration["path"]
+            if not path.is_file() or sha256(path.read_bytes()).hexdigest() != iteration.get("sha256"):
+                return [IssuanceBlocker("missing_or_mismatched_iteration_qc", iteration["path"], "exact iteration-QC edge is required")]
+    return []
 
 
 def prevalidate_issuance_request(
@@ -209,46 +241,29 @@ def prevalidate_issuance_request(
         return IssuanceRequestResult(artifact_kind, target, (IssuanceBlocker("unreadable_candidate_content", str(candidate_file), str(exc)),))
     if not candidate.strip():
         return IssuanceRequestResult(artifact_kind, target, (IssuanceBlocker("incomplete_candidate_content", target, "candidate content must not be empty"),))
-    blockers = _micro_spec_candidate(root, target, candidate) if artifact_kind == "micro-spec" else _json_candidate(artifact_kind, target, candidate)
+    blockers = _micro_spec_candidate(root, target, candidate) if artifact_kind == "micro-spec" else _json_candidate(root, artifact_kind, target, candidate)
     if not blockers and artifact_kind == "micro-spec" and require_valid_approval:
         blockers.extend(_valid_micro_spec_approval(root, target, candidate))
     return IssuanceRequestResult(artifact_kind, target, tuple(blockers))
 
 
-def publish_micro_spec_issuance(root: Path, target_identity: str, candidate_file: Path | None) -> IssuanceRequestResult:
-    """Publish one prevalidated Micro-SPEC planning artifact; no lifecycle authority is created."""
+def publish_issuance(root: Path, artifact_kind: str, target_identity: str, candidate_file: Path | None) -> IssuanceRequestResult:
+    """Publish one validated fixture-only planning/QC artifact; no lifecycle authority is created."""
     marker = root / ".specbound/pre-adoption-fixture"
     if not marker.is_file():
-        return IssuanceRequestResult(
-            "micro-spec",
-            None,
-            (
-                IssuanceBlocker(
-                    "fixture_publication_required",
-                    ".specbound/pre-adoption-fixture",
-                    "AC-003 publication is limited to an explicitly marked copied fixture",
-                ),
-            ),
-        )
-    result = prevalidate_issuance_request(
-        root,
-        "micro-spec",
-        target_identity,
-        candidate_file,
-        require_valid_approval=True,
-    )
+        return IssuanceRequestResult(artifact_kind, None, (IssuanceBlocker("fixture_publication_required", ".specbound/pre-adoption-fixture", "publication is limited to an explicitly marked copied fixture"),))
+    result = prevalidate_issuance_request(root, artifact_kind, target_identity, candidate_file, require_valid_approval=artifact_kind == "micro-spec")
     if not result.valid:
         return result
     assert result.canonical_target is not None
     target = root / result.canonical_target
     if not target.parent.is_dir():
-        return IssuanceRequestResult("micro-spec", result.canonical_target, (IssuanceBlocker("missing_canonical_target_directory", result.canonical_target, "canonical Micro-SPEC parent directory must already exist"),))
+        return IssuanceRequestResult(artifact_kind, result.canonical_target, (IssuanceBlocker("missing_canonical_target_directory", result.canonical_target, "canonical target parent directory must already exist"),))
     if target.exists():
-        return IssuanceRequestResult("micro-spec", result.canonical_target, (IssuanceBlocker("duplicate_canonical_target", result.canonical_target, "canonical Micro-SPEC target already exists"),))
+        return IssuanceRequestResult(artifact_kind, result.canonical_target, (IssuanceBlocker("duplicate_canonical_target", result.canonical_target, "canonical target already exists"),))
     assert candidate_file is not None
     try:
-        candidate = candidate_file.read_text(encoding="utf-8")
-        target.write_text(candidate, encoding="utf-8")
+        target.write_text(candidate_file.read_text(encoding="utf-8"), encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
-        return IssuanceRequestResult("micro-spec", result.canonical_target, (IssuanceBlocker("publication_failed", result.canonical_target, str(exc)),))
-    return IssuanceRequestResult("micro-spec", result.canonical_target, (), operation="published_pre_adoption_micro_spec")
+        return IssuanceRequestResult(artifact_kind, result.canonical_target, (IssuanceBlocker("publication_failed", result.canonical_target, str(exc)),))
+    return IssuanceRequestResult(artifact_kind, result.canonical_target, (), operation=f"published_pre_adoption_{artifact_kind.replace('-', '_')}")

@@ -1,0 +1,16 @@
+{
+  "authority": "independent-advanced-llm-reviewer",
+  "decided_at": "2026-07-24T00:57:24Z",
+  "decision": "approved_for_implementation",
+  "micro_spec_id": "ms-0003-004",
+  "micro_spec_path": ".specbound/micro-specs/req-0003/ms-0003-004.md",
+  "micro_spec_sha256": "66f43e2d7f62690054dbd605b1e8725cd606a423e4fcca357009c80ac8c69e72",
+  "permitted_next_action": "implement_bound_micro_spec_only",
+  "reason": "Manual-bootstrap exception: the accountable user explicitly authorized this narrow AC-004 implementation gate pending a later Discovery for independent reviewer-agent topology; this record does not establish actual reviewer independence.",
+  "requirement_id": "req-0003",
+  "requirement_path": "docs/requirements/req-0003/req-0003-r2.md",
+  "requirement_sha256": "2c0f5c42a68a7ded6ba8f95fca19cc657986867a928a945a9c969dfba93d28fe",
+  "revision": 2,
+  "risk": "high",
+  "schema_version": 1
+}

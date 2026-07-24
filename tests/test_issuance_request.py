@@ -189,7 +189,7 @@ def test_issuance_request_rejects_stale_micro_spec_parent_without_target_mutatio
         ),
     ),
 )
-def test_issuance_request_rejects_deferred_qc_families_before_publication(
+def test_issuance_request_rejects_invalid_qc_parent_graph_before_publication(
     tmp_path: Path, kind: str, target: str, candidate: str
 ) -> None:
     fixture = copied_fixture(tmp_path)
@@ -200,7 +200,8 @@ def test_issuance_request_rejects_deferred_qc_families_before_publication(
     )
 
     assert result.returncode == 2, result.stdout
-    assert "family_prerequisite_unmet" in {blocker["code"] for blocker in payload(result)["blockers"]}
+    assert payload(result)["valid"] is False
+    assert payload(result)["blockers"]
     assert not any((fixture / ".specbound").rglob(target))
 
 
@@ -295,6 +296,20 @@ def test_micro_spec_publish_rejects_a_superseded_parent_requirement_without_targ
 
     assert result.returncode == 2, result.stdout
     assert "superseded_parent_requirement" in {blocker["code"] for blocker in payload(result)["blockers"]}
+    assert not target.exists()
+
+
+def test_qc_publish_requires_explicit_fixture_adoption(tmp_path: Path) -> None:
+    fixture = copied_fixture(tmp_path)
+    micro = fixture / ".specbound/micro-specs/req-0001/ms-0001-003.md"
+    micro.parent.mkdir()
+    micro.write_text(valid_micro_spec_candidate(), encoding="utf-8")
+    candidate = write_candidate(fixture, json.dumps({"schema_version": 1, "micro_spec": {"path": ".specbound/micro-specs/req-0001/ms-0001-003.md", "id": "ms-0001-003", "sha256": sha256(micro.read_bytes()).hexdigest()}}))
+    target = fixture / ".specbound/iteration-qc/req-0001/iqc-0001-003-r1.json"
+    target.parent.mkdir()
+    result = run_cli("--root", str(fixture), "issuance-request", "iteration-qc", "iqc-0001-003-r1", "--candidate-file", str(candidate), "--publish")
+    assert result.returncode == 2, result.stdout
+    assert "unadopted_parent" in {blocker["code"] for blocker in payload(result)["blockers"]}
     assert not target.exists()
 
 
