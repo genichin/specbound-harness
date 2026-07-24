@@ -376,6 +376,8 @@ def test_iteration_qc_publish_requires_exact_micro_spec_ac_set_before_fixture_mu
     candidate = write_candidate(fixture, valid_iteration_qc_candidate(micro, ["AC-001", "AC-002"]))
     target = fixture / ".specbound/iteration-qc/req-0001/iqc-0001-003-r1.json"
     target.parent.mkdir()
+    live_registry = ROOT / "specbound.yaml"
+    before = sha256(live_registry.read_bytes()).hexdigest()
 
     result = run_cli(
         "--root", str(fixture), "issuance-request", "iteration-qc", "iqc-0001-003-r1", "--candidate-file", str(candidate), "--publish"
@@ -384,6 +386,7 @@ def test_iteration_qc_publish_requires_exact_micro_spec_ac_set_before_fixture_mu
     assert result.returncode == 2, result.stdout
     assert "iteration_qc_ac_set_mismatch" in {blocker["code"] for blocker in payload(result)["blockers"]}
     assert not target.exists()
+    assert sha256(live_registry.read_bytes()).hexdigest() == before
 
 
 def test_atomic_fixture_publish_rejects_symlinked_target_and_preserves_external_bytes(tmp_path: Path) -> None:
