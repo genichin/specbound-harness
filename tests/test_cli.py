@@ -451,7 +451,9 @@ def test_validate_rejects_symlinked_requirement_record(tmp_path: Path) -> None:
     assert "unsafe_artifact_path" in {item["code"] for item in payload(result)["blockers"]}
 
 
-@pytest.mark.parametrize("link_path", ["docs", ".specbound/approvals"])
+@pytest.mark.parametrize(
+    "link_path", [".specbound/requirements", ".specbound/approvals"]
+)
 def test_validate_rejects_symlinked_intermediate_directory(tmp_path: Path, link_path: str) -> None:
     fixture = tmp_path / "intermediate-symlink"
     shutil.copytree(FIXTURES / "valid-minimal", fixture)
