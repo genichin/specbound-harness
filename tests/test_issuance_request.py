@@ -226,8 +226,10 @@ def test_micro_spec_publish_creates_only_a_non_claiming_target_after_exact_paren
     assert result.returncode == 0, result.stdout
     assert payload(result) == {
         "artifact_kind": "micro-spec",
+        "canonical_identity": "ms-0001-003",
         "canonical_target": ".specbound/micro-specs/req-0001/ms-0001-003.md",
         "operation": "published_pre_adoption_micro_spec",
+        "published_sha256": sha256(candidate_text.encode()).hexdigest(),
         "valid": True,
     }
     assert target.read_text(encoding="utf-8") == candidate_text

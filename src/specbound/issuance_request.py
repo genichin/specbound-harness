@@ -32,6 +32,8 @@ class IssuanceRequestResult:
     canonical_target: str | None
     blockers: tuple[IssuanceBlocker, ...]
     operation: str = "prevalidation_only"
+    canonical_identity: str | None = None
+    published_sha256: str | None = None
 
     @property
     def valid(self) -> bool:
@@ -40,12 +42,17 @@ class IssuanceRequestResult:
     def payload(self) -> dict[str, Any]:
         if not self.valid:
             return {"valid": False, "blockers": [blocker.payload() for blocker in self.blockers]}
-        return {
+        payload = {
             "valid": True,
             "operation": self.operation,
             "artifact_kind": self.artifact_kind,
             "canonical_target": self.canonical_target,
         }
+        if self.canonical_identity is not None:
+            payload["canonical_identity"] = self.canonical_identity
+        if self.published_sha256 is not None:
+            payload["published_sha256"] = self.published_sha256
+        return payload
 
 
 _KIND_PATTERNS = {
@@ -272,12 +279,13 @@ def _final_published_digest(parent_fd: int, name: str) -> str:
         os.close(descriptor)
 
 
-def _exclusive_fixture_publish(root: Path, canonical_target: str, content: bytes) -> IssuanceBlocker | None:
+def _exclusive_fixture_publish(root: Path, canonical_target: str, content: bytes) -> IssuanceBlocker | str:
     """Create one canonical fixture leaf, fsync it, and remove only an owned failed leaf."""
     parts = PurePosixPath(canonical_target).parts
     parent_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
     leaf_fd: int | None = None
     owned: tuple[int, int] | None = None
+    published_digest: str | None = None
     try:
         for part in parts[:-1]:
             try:
@@ -302,7 +310,7 @@ def _exclusive_fixture_publish(root: Path, canonical_target: str, content: bytes
                 _flush_published_output(output)
                 _fsync_descriptor(output.fileno())
             _fsync_descriptor(parent_fd)
-            _final_published_digest(parent_fd, parts[-1])
+            published_digest = _final_published_digest(parent_fd, parts[-1])
         except OSError as exc:
             try:
                 current = os.stat(parts[-1], dir_fd=parent_fd, follow_symlinks=False)
@@ -316,7 +324,8 @@ def _exclusive_fixture_publish(root: Path, canonical_target: str, content: bytes
         if leaf_fd is not None:
             os.close(leaf_fd)
         os.close(parent_fd)
-    return None
+    assert published_digest is not None
+    return published_digest
 
 
 def publish_issuance(root: Path, artifact_kind: str, target_identity: str, candidate_file: Path | None) -> IssuanceRequestResult:
@@ -333,7 +342,14 @@ def publish_issuance(root: Path, artifact_kind: str, target_identity: str, candi
         content = candidate_file.read_bytes()
     except OSError as exc:
         return IssuanceRequestResult(artifact_kind, result.canonical_target, (IssuanceBlocker("unreadable_candidate_content", str(candidate_file), str(exc)),))
-    blocker = _exclusive_fixture_publish(root, result.canonical_target, content)
-    if blocker:
-        return IssuanceRequestResult(artifact_kind, result.canonical_target, (blocker,))
-    return IssuanceRequestResult(artifact_kind, result.canonical_target, (), operation=f"published_pre_adoption_{artifact_kind.replace('-', '_')}")
+    outcome = _exclusive_fixture_publish(root, result.canonical_target, content)
+    if isinstance(outcome, IssuanceBlocker):
+        return IssuanceRequestResult(artifact_kind, result.canonical_target, (outcome,))
+    return IssuanceRequestResult(
+        artifact_kind,
+        result.canonical_target,
+        (),
+        operation=f"published_pre_adoption_{artifact_kind.replace('-', '_')}",
+        canonical_identity=target_identity,
+        published_sha256=outcome,
+    )
