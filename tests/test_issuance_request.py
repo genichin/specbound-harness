@@ -204,10 +204,104 @@ def test_issuance_request_rejects_deferred_qc_families_before_publication(
     assert not any((fixture / ".specbound").rglob(target))
 
 
+def test_micro_spec_publish_creates_only_a_non_claiming_target_after_exact_parent_approval_validation(tmp_path: Path) -> None:
+    fixture = copied_fixture(tmp_path)
+    candidate_text = valid_micro_spec_candidate()
+    candidate = write_candidate(fixture, candidate_text)
+    target = fixture / ".specbound/micro-specs/req-0001/ms-0001-003.md"
+    target.parent.mkdir()
+    before = {
+        path.relative_to(fixture): sha256(path.read_bytes()).hexdigest()
+        for path in fixture.rglob("*")
+        if path.is_file()
+    }
+
+    result = run_cli(
+        "--root", str(fixture), "issuance-request", "micro-spec", "ms-0001-003", "--candidate-file", str(candidate), "--publish"
+    )
+
+    assert result.returncode == 0, result.stdout
+    assert payload(result) == {
+        "artifact_kind": "micro-spec",
+        "canonical_target": ".specbound/micro-specs/req-0001/ms-0001-003.md",
+        "operation": "published_pre_adoption_micro_spec",
+        "valid": True,
+    }
+    assert target.read_text(encoding="utf-8") == candidate_text
+    after = {
+        path.relative_to(fixture): sha256(path.read_bytes()).hexdigest()
+        for path in fixture.rglob("*")
+        if path.is_file() and path != target
+    }
+    assert after == before
+    assert "adopt" not in target.read_text(encoding="utf-8").lower()
+
+
+def test_micro_spec_publish_requires_explicit_copied_fixture_marker(tmp_path: Path) -> None:
+    fixture = copied_fixture(tmp_path)
+    candidate = write_candidate(fixture, valid_micro_spec_candidate())
+    target = fixture / ".specbound/micro-specs/req-0001/ms-0001-003.md"
+    target.parent.mkdir()
+    (fixture / ".specbound/pre-adoption-fixture").unlink()
+
+    result = run_cli(
+        "--root", str(fixture), "issuance-request", "micro-spec", "ms-0001-003", "--candidate-file", str(candidate), "--publish"
+    )
+
+    assert result.returncode == 2, result.stdout
+    assert "fixture_publication_required" in {blocker["code"] for blocker in payload(result)["blockers"]}
+    assert not target.exists()
+
+
+@pytest.mark.parametrize(
+    ("mutate", "expected_code"),
+    (
+        (lambda fixture: (fixture / ".specbound/approvals/req-0001-r1.approval.json").unlink(), "missing_parent_approval"),
+        (lambda fixture: (fixture / ".specbound/approvals/req-0001-r1.approval.json").write_text("not json", encoding="utf-8"), "malformed_parent_approval"),
+        (lambda fixture: (fixture / ".specbound/approvals/req-0001-r1.approval.json").write_text((fixture / ".specbound/approvals/req-0001-r1.approval.json").read_text(encoding="utf-8").replace('"sha256": "0927', '"sha256": "0000'), encoding="utf-8"), "invalid_parent_approval_binding"),
+        (lambda fixture: (fixture / "docs/requirements/req-0001/req-0001-r1.md").write_text((fixture / "docs/requirements/req-0001/req-0001-r1.md").read_text(encoding="utf-8").replace("status: approved", "status: draft"), encoding="utf-8"), "invalid_parent_requirement"),
+    ),
+)
+def test_micro_spec_publish_rejects_invalid_parent_or_approval_without_target_mutation(tmp_path: Path, mutate: object, expected_code: str) -> None:
+    fixture = copied_fixture(tmp_path)
+    candidate = write_candidate(fixture, valid_micro_spec_candidate())
+    target = fixture / ".specbound/micro-specs/req-0001/ms-0001-003.md"
+    target.parent.mkdir()
+    mutate(fixture)  # type: ignore[operator]
+
+    result = run_cli(
+        "--root", str(fixture), "issuance-request", "micro-spec", "ms-0001-003", "--candidate-file", str(candidate), "--publish"
+    )
+
+    assert result.returncode == 2, result.stdout
+    assert expected_code in {blocker["code"] for blocker in payload(result)["blockers"]}
+    assert not target.exists()
+
+
+def test_micro_spec_publish_rejects_a_superseded_parent_requirement_without_target_mutation(tmp_path: Path) -> None:
+    fixture = copied_fixture(tmp_path)
+    candidate = write_candidate(fixture, valid_micro_spec_candidate())
+    target = fixture / ".specbound/micro-specs/req-0001/ms-0001-003.md"
+    target.parent.mkdir()
+    parent = fixture / "docs/requirements/req-0001/req-0001-r1.md"
+    (parent.parent / "req-0001-r2.md").write_text(
+        parent.read_text(encoding="utf-8").replace("revision: 1", "revision: 2"),
+        encoding="utf-8",
+    )
+
+    result = run_cli(
+        "--root", str(fixture), "issuance-request", "micro-spec", "ms-0001-003", "--candidate-file", str(candidate), "--publish"
+    )
+
+    assert result.returncode == 2, result.stdout
+    assert "superseded_parent_requirement" in {blocker["code"] for blocker in payload(result)["blockers"]}
+    assert not target.exists()
+
+
 def test_issuance_request_help_and_guidance_state_non_authorizing_boundary() -> None:
     help_result = run_cli("issuance-request", "--help")
     guidance = (ROOT / "templates" / "issuance-request.md").read_text(encoding="utf-8")
 
     assert help_result.returncode == 0
-    assert "pre-publication" in help_result.stdout
-    assert "does not publish, approve, adopt, merge, deliver, or release" in guidance
+    assert "pre-adoption" in help_result.stdout
+    assert "does **not** approve, adopt, merge, deliver, or release" in guidance
