@@ -1,0 +1,16 @@
+{
+  "authority": "independent-advanced-llm-reviewer",
+  "decided_at": "2026-07-24T01:38:53Z",
+  "decision": "approved_for_implementation",
+  "micro_spec_id": "ms-0003-008",
+  "micro_spec_path": ".specbound/micro-specs/req-0003/ms-0003-008.md",
+  "micro_spec_sha256": "0135d26cdf0a8d30d7a507f304ee32a140a5b3fc296c0fa1f2a26f3ced282baa",
+  "permitted_next_action": "implement_bound_micro_spec_only",
+  "reason": "Manual-bootstrap exception explicitly approved by the accountable user because reviewer-agent role separation is not yet operational. This exact digest-bound decision authorizes only AC-008 repository-local guidance and behavioral-evidence implementation; actual independence is unproven and remains an audit limitation. It authorizes no live publication, adoption, merge, delivery, or release.",
+  "requirement_id": "req-0003",
+  "requirement_path": "docs/requirements/req-0003/req-0003-r2.md",
+  "requirement_sha256": "2c0f5c42a68a7ded6ba8f95fca19cc657986867a928a945a9c969dfba93d28fe",
+  "revision": 2,
+  "risk": "high",
+  "schema_version": 1
+}

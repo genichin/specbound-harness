@@ -42,13 +42,13 @@ def build_parser() -> argparse.ArgumentParser:
     validate_command.add_argument("--requirement", help="exact adopted REQ: req-<id>-r<revision> (required with --claim)")
     issuance_request = commands.add_parser(
         "issuance-request",
-        help="prevalidate one canonical issuance request; --publish is limited to a non-authorizing pre-adoption Micro-SPEC planning artifact",
-        description="Prevalidate one canonical issuance request. Without --publish it is read-only; --publish creates only a pre-adoption Micro-SPEC planning artifact, never approval, adoption, merge, delivery, or release.",
+        help="prevalidate canonical family candidates; --publish is a non-authorizing, copied-fixture-only Micro-SPEC publication with an exact digest result",
+        description="Prevalidate a canonical family candidate from an exact identity, never a filesystem path. Without --publish it is read-only. --publish is limited to a marked copied fixture and a validated pre-adoption Micro-SPEC; it derives a safe-relative canonical target, refuses duplicates, and returns the final published SHA-256. It never approves, adopts, merges, delivers, or releases.",
     )
     issuance_request.add_argument("artifact_kind", help="exact family: micro-spec, iteration-qc, or delivery-qc")
     issuance_request.add_argument("target_identity", help="canonical family identity, never a filesystem path")
     issuance_request.add_argument("--candidate-file", type=Path, help="complete UTF-8 candidate content to prevalidate without publication")
-    issuance_request.add_argument("--publish", action="store_true", help="publish only a validated pre-adoption micro-spec planning artifact in a marked copied fixture")
+    issuance_request.add_argument("--publish", action="store_true", help="publish only a validated pre-adoption Micro-SPEC in a marked copied fixture; output includes final published SHA-256")
 
     req = commands.add_parser("req", help="operate on canonical REQ artifacts")
     req_commands = req.add_subparsers(dest="req_command", required=True)

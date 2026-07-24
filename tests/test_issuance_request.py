@@ -428,5 +428,24 @@ def test_issuance_request_help_and_guidance_state_non_authorizing_boundary() -> 
     guidance = (ROOT / "templates" / "issuance-request.md").read_text(encoding="utf-8")
 
     assert help_result.returncode == 0
-    assert "pre-adoption" in help_result.stdout
-    assert "does **not** approve, adopt, merge, deliver, or release" in guidance
+    assert "marked copied fixture" in help_result.stdout
+    assert "final published" in help_result.stdout and "SHA-256" in help_result.stdout
+    assert "QC families additionally require the exact copied-fixture adoption binding" in guidance
+    assert "refuses duplicate/competing targets" in guidance
+    assert "never mutates the live adoption registry" in guidance
+    assert "Publication is not approval, adoption, implementation completion, merge, delivery, or release" in guidance
+
+
+def test_fixture_publication_never_mutates_live_adoption_registry(tmp_path: Path) -> None:
+    fixture = copied_fixture(tmp_path)
+    candidate = write_candidate(fixture, valid_micro_spec_candidate())
+    (fixture / ".specbound/micro-specs/req-0001").mkdir()
+    live_registry = ROOT / "specbound.yaml"
+    before = sha256(live_registry.read_bytes()).hexdigest()
+
+    result = run_cli(
+        "--root", str(fixture), "issuance-request", "micro-spec", "ms-0001-003", "--candidate-file", str(candidate), "--publish"
+    )
+
+    assert result.returncode == 0, result.stdout
+    assert sha256(live_registry.read_bytes()).hexdigest() == before
