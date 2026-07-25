@@ -1,0 +1,13 @@
+{
+  "approved_at": "2026-07-24T23:06:18.420948+00:00",
+  "authority": "repository-maintainer",
+  "decision": "approved",
+  "reason": "The accountable user explicitly designated repository-maintainer as the approval authority after the exact high-risk REQ snapshot received an approval_ready review decision, passed deterministic validation, and passed Ubuntu CI.",
+  "requirement_id": "req-0004",
+  "requirement_path": ".specbound/requirements/req-0004/req-0004-r1.md",
+  "reviewed_sha256": "2e71072ca3c48715d225d57c95c4b464c808cdff73296b6c5c69399880170224",
+  "revision": 1,
+  "risk": "high",
+  "schema_version": 1,
+  "sha256": "495c04dc6c1f7b726ea7f654477bdc065c4ca67f2e5dd82797b7ad3fc723675a"
+}

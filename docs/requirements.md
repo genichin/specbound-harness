@@ -10,5 +10,6 @@ SpecBound가 관리하는 최신 요구사항을 사용자 관점에서 정리�
 | [REQ-0001 r2](../.specbound/requirements/req-0001/req-0001-r2.md) | Micro-SPEC 및 QC 증거 관리 | 승인된 요구사항과 구현·검증 증거를 정확하게 연결하고 검증합니다. | 제공됨 |
 | [REQ-0002 r1](../.specbound/requirements/req-0002/req-0002-r1.md) | REQ 초안 및 리비전 관리 | 확인된 Discovery에서 안전한 요구사항 초안을 만들고 리비전 생명주기를 관리합니다. | 제공됨 |
 | [REQ-0003 r2](../.specbound/requirements/req-0003/req-0003-r2.md) | Canonical 증거 아티팩트 안전 발급 | 검증된 Micro-SPEC과 QC 증거를 덮어쓰기 없이 원자적으로 발급합니다. | 제공됨 |
+| [REQ-0004 r1](../.specbound/requirements/req-0004/req-0004-r1.md) | Provider-neutral lifecycle agent contracts and one-shot Hermes delegation | 7개 lifecycle 역할을 최소 권한·독립 context·exact artifact binding으로 실행하고 검증하는 공통 contract와 제한된 Hermes adapter를 제공합니다. | 제공됨 |
 
 > 이 문서는 `.specbound/requirements/`의 정규 REQ 메타데이터에서 생성됩니다.

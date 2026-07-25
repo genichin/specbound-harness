@@ -1,0 +1,13 @@
+{
+  "decision": "submitted_for_review",
+  "draft_sha256": "21707a3abe6a8e73d732c4eac60f54d965aacfc9e0ced0263fdf1bf235b32878",
+  "owner": "repository-maintainer",
+  "permitted_next_action": "review_decision_only",
+  "requirement_id": "req-0004",
+  "requirement_path": ".specbound/requirements/req-0004/req-0004-r1.md",
+  "reviewed_sha256": "2e71072ca3c48715d225d57c95c4b464c808cdff73296b6c5c69399880170224",
+  "revision": 1,
+  "risk": "high",
+  "schema_version": 1,
+  "submitted_at": "2026-07-24T12:34:27.954434+00:00"
+}

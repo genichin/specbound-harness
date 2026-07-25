@@ -1,0 +1,13 @@
+{
+  "authority": "repository-maintainer",
+  "confirmed_at": "2026-07-24T20:52:16.995599+09:00",
+  "decision": "confirmed",
+  "discovery_id": "dcy-0004",
+  "discovery_path": ".specbound/discoveries/dcy-0004-r1.md",
+  "permitted_next_action": "draft_req_only",
+  "reviewed_sha256": "483d30a158dc82b4d6b2e83cc0b7fd530685004a7c45dd8cbccd8582e43c3303",
+  "revision": 1,
+  "risk_class": "high",
+  "schema_version": 1,
+  "sha256": "bdbf170e03ff5c2d805c80914a95a339bae81fbec97e30845fb75b036fe436ce"
+}

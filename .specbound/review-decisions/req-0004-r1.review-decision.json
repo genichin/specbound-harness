@@ -1,0 +1,12 @@
+{
+  "authority": "repository-maintainer",
+  "decided_at": "2026-07-24T12:41:36.910732+00:00",
+  "decision": "approval_ready",
+  "reason": "Existing-governance decision for the exact reviewed snapshot: confirmed dcy-0004-r1 scope is covered; Bootstrap advisory review resolved F-001/F-002 with no blockers; deterministic validation and Ubuntu CI run 30093743055 passed. This does not claim the unimplemented 7-role Independent Reviewer contract executed.",
+  "requirement_id": "req-0004",
+  "requirement_path": ".specbound/requirements/req-0004/req-0004-r1.md",
+  "reviewed_sha256": "2e71072ca3c48715d225d57c95c4b464c808cdff73296b6c5c69399880170224",
+  "revision": 1,
+  "risk": "high",
+  "schema_version": 1
+}
