@@ -71,6 +71,20 @@
       ],
       "commands": [],
       "reason": null
+    },
+    {
+      "slot": "no-write",
+      "status": "provided",
+      "artifacts": [
+        {
+          "path": ".specbound/requirements/req-9004/req-9004-r1.md",
+          "id": "req-9004",
+          "revision": 1,
+          "sha256": "8adea15f98b57ef9fbe39355944b3e4665d0aa0cda2d8143cac684a749411679"
+        }
+      ],
+      "commands": [],
+      "reason": null
     }
   ],
   "verdict": "pass",

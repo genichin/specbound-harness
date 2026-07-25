@@ -1,9 +1,49 @@
 schema_version: 1
 risk_order: [low, medium, high]
+evidence_applicability:
+  none: {supported: true}
+  candidate_write: {supported: true}
+  repository_mutation: {supported: true}
+  evidence_write: {supported: true}
+  authority_transition: {supported: false}
+  external_mutation: {supported: false}
+transition_crosswalk:
+  discovery-confirmation:
+    selector: discovery_confirmation_authorities_by_risk
+    writer: create_discovery_confirmation
+    risk_input: canonical_artifact_risk
+  requirement-review-decision:
+    selector: requirement_review_decision_authorities_by_risk
+    writer: record_review_decision
+    risk_input: canonical_artifact_risk
+  requirement-rejection:
+    selector: requirement_review_authorities_by_risk
+    writer: reject_requirement
+    risk_input: canonical_artifact_risk
+  requirement-reconsideration:
+    selector: requirement_reconsideration_authorities_by_risk
+    writer: reconsider_requirement
+    risk_input: canonical_artifact_risk
+  requirement-approval:
+    selector: requirement_approval_authorities_by_risk
+    writer: approve_requirement
+    risk_input: canonical_artifact_risk
+  micro-spec-review:
+    selector: micro_spec_review_authorities_by_risk
+    writer: record_micro_spec_review
+    risk_input: canonical_artifact_risk
+  delivery-qc-verification:
+    selector: delivery_qc_authorities_by_risk
+    writer: publish_issuance
+    risk_input: canonical_artifact_risk
 roles:
   - role_id: discovery-author
     task_kind: discovery-author
     task_risk_floor: low
+    evidence_requirements_by_risk:
+      low: {required: [target-binding, discovery-readiness], conditional: []}
+      medium: {required: [target-binding, discovery-readiness], conditional: []}
+      high: {required: [target-binding, discovery-readiness], conditional: []}
     required_inputs: [user-intent, repository-context, exact-target]
     allowed_path_patterns: [.specbound/discoveries/dcy-*-r*.md]
     allowed_tool_categories: [repository-read, candidate-write]
@@ -13,6 +53,9 @@ roles:
     result_references:
       producer_result_ref: forbidden
       reviewer_run_ref: forbidden
+    reference_edges:
+      producer_result_ref: null
+      reviewer_run_ref: null
     evidence_slots:
       - slot: target-binding
         requirement: required
@@ -27,6 +70,10 @@ roles:
   - role_id: requirement-author
     task_kind: requirement-author
     task_risk_floor: low
+    evidence_requirements_by_risk:
+      low: {required: [target-binding, acceptance-criteria], conditional: []}
+      medium: {required: [target-binding, acceptance-criteria], conditional: []}
+      high: {required: [target-binding, acceptance-criteria], conditional: []}
     required_inputs: [confirmed-discovery, exact-target]
     allowed_path_patterns: [.specbound/requirements/req-*/req-*-r*.md]
     allowed_tool_categories: [repository-read, candidate-write]
@@ -36,6 +83,9 @@ roles:
     result_references:
       producer_result_ref: optional
       reviewer_run_ref: forbidden
+    reference_edges:
+      producer_result_ref: {allowed_roles: [discovery-author], target_binding: exact-parent, required_verdict: pass}
+      reviewer_run_ref: null
     evidence_slots:
       - slot: target-binding
         requirement: required
@@ -50,6 +100,10 @@ roles:
   - role_id: micro-spec-author
     task_kind: micro-spec-author
     task_risk_floor: low
+    evidence_requirements_by_risk:
+      low: {required: [target-binding, selected-ac-coverage], conditional: []}
+      medium: {required: [target-binding, selected-ac-coverage], conditional: []}
+      high: {required: [target-binding, selected-ac-coverage], conditional: []}
     required_inputs: [approved-requirement, selected-acceptance-criteria, exact-target]
     allowed_path_patterns: [.specbound/micro-specs/req-*/ms-*-*.md]
     allowed_tool_categories: [repository-read, candidate-write]
@@ -59,6 +113,9 @@ roles:
     result_references:
       producer_result_ref: optional
       reviewer_run_ref: forbidden
+    reference_edges:
+      producer_result_ref: {allowed_roles: [requirement-author], target_binding: exact-parent, required_verdict: pass}
+      reviewer_run_ref: null
     evidence_slots:
       - slot: target-binding
         requirement: required
@@ -73,6 +130,10 @@ roles:
   - role_id: independent-reviewer
     task_kind: independent-reviewer
     task_risk_floor: medium
+    evidence_requirements_by_risk:
+      low: {required: [target-binding, review-findings, no-write], conditional: []}
+      medium: {required: [target-binding, review-findings, no-write], conditional: []}
+      high: {required: [target-binding, review-findings, no-write], conditional: []}
     required_inputs: [producer-result, exact-target, current-state]
     allowed_path_patterns: []
     allowed_tool_categories: [repository-read]
@@ -82,11 +143,20 @@ roles:
     result_references:
       producer_result_ref: required
       reviewer_run_ref: forbidden
+    reference_edges:
+      producer_result_ref:
+        allowed_roles: [discovery-author, requirement-author, micro-spec-author]
+        target_binding: exact-target
+        required_verdict: pass
+      reviewer_run_ref: null
     evidence_slots:
       - slot: target-binding
         requirement: required
         not_applicable_allowed: false
       - slot: review-findings
+        requirement: required
+        not_applicable_allowed: false
+      - slot: no-write
         requirement: required
         not_applicable_allowed: false
     permitted_next_actions: [request-authority-action, request-candidate-rework]
@@ -96,6 +166,16 @@ roles:
   - role_id: implementation
     task_kind: implementation
     task_risk_floor: medium
+    evidence_requirements_by_risk:
+      low:
+        required: [target-binding, test-results, rollback-inventory]
+        conditional: [negative-tests, regression-evidence, supported-ci]
+      medium:
+        required: [target-binding, test-results, negative-tests, regression-evidence, rollback-inventory]
+        conditional: [supported-ci]
+      high:
+        required: [target-binding, test-results, negative-tests, regression-evidence, rollback-inventory, supported-ci]
+        conditional: []
     required_inputs: [reviewed-micro-spec, review-record, exact-target, current-state]
     allowed_path_patterns: ['@reviewed-micro-spec-scope']
     allowed_tool_categories: [repository-read, candidate-write, test-execute, filesystem-metadata]
@@ -105,6 +185,9 @@ roles:
     result_references:
       producer_result_ref: optional
       reviewer_run_ref: required
+    reference_edges:
+      producer_result_ref: {allowed_roles: [micro-spec-author], target_binding: exact-target, required_verdict: pass}
+      reviewer_run_ref: {allowed_roles: [independent-reviewer], target_binding: exact-target, required_verdict: pass}
     evidence_slots:
       - slot: target-binding
         requirement: required
@@ -115,6 +198,15 @@ roles:
       - slot: rollback-inventory
         requirement: required
         not_applicable_allowed: false
+      - slot: negative-tests
+        requirement: optional
+        not_applicable_allowed: true
+      - slot: regression-evidence
+        requirement: optional
+        not_applicable_allowed: true
+      - slot: supported-ci
+        requirement: optional
+        not_applicable_allowed: true
     permitted_next_actions: [request-iteration-qc]
     forbidden_actions: *forbidden_actions
     forbidden_claims: *forbidden_claims
@@ -122,6 +214,10 @@ roles:
   - role_id: iteration-qc
     task_kind: iteration-qc
     task_risk_floor: medium
+    evidence_requirements_by_risk:
+      low: {required: [target-binding, focused-verification], conditional: [regression-evidence]}
+      medium: {required: [target-binding, focused-verification], conditional: [regression-evidence]}
+      high: {required: [target-binding, focused-verification, regression-evidence], conditional: []}
     required_inputs: [implementation-result, reviewed-micro-spec, exact-target, current-state]
     allowed_path_patterns: [.specbound/iteration-qc/req-*/iqc-*-*-r*.json]
     allowed_tool_categories: [repository-read, candidate-write, test-execute, filesystem-metadata]
@@ -131,6 +227,9 @@ roles:
     result_references:
       producer_result_ref: required
       reviewer_run_ref: required
+    reference_edges:
+      producer_result_ref: {allowed_roles: [implementation], target_binding: exact-target, required_verdict: pass}
+      reviewer_run_ref: {allowed_roles: [independent-reviewer], target_binding: exact-target, required_verdict: pass}
     evidence_slots:
       - slot: target-binding
         requirement: required
@@ -138,6 +237,9 @@ roles:
       - slot: focused-verification
         requirement: required
         not_applicable_allowed: false
+      - slot: regression-evidence
+        requirement: optional
+        not_applicable_allowed: true
     permitted_next_actions: [request-delivery-qc, request-rework]
     forbidden_actions: *forbidden_actions
     forbidden_claims: *forbidden_claims
@@ -145,15 +247,22 @@ roles:
   - role_id: delivery-qc
     task_kind: delivery-qc
     task_risk_floor: medium
+    evidence_requirements_by_risk:
+      low: {required: [target-binding, complete-ac-coverage, regression-evidence], conditional: []}
+      medium: {required: [target-binding, complete-ac-coverage, regression-evidence], conditional: []}
+      high: {required: [target-binding, complete-ac-coverage, regression-evidence], conditional: []}
     required_inputs: [verified-iteration-qc-set, approved-requirement, exact-target, current-state]
     allowed_path_patterns: [.specbound/delivery-qc/dqc-*-r*.json]
     allowed_tool_categories: [repository-read, candidate-write, test-execute, filesystem-metadata]
     mutation_classes: [evidence_write]
     output_kinds: [agent-result]
-    lifecycle_eligibility: [verified]
+    lifecycle_eligibility: [approved]
     result_references:
-      producer_result_ref: required
-      reviewer_run_ref: required
+      producer_result_ref: forbidden
+      reviewer_run_ref: forbidden
+    reference_edges:
+      producer_result_ref: null
+      reviewer_run_ref: null
     evidence_slots:
       - slot: target-binding
         requirement: required

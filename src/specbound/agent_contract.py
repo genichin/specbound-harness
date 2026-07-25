@@ -116,6 +116,10 @@ _EXPECTED_ROLE_CONTRACTS: dict[str, dict[str, Any]] = {
     "discovery-author": {
         "task_kind": "discovery-author",
         "task_risk_floor": "low",
+        "evidence_requirements_by_risk": {
+            risk: {"required": ["target-binding", "discovery-readiness"], "conditional": []}
+            for risk in ("low", "medium", "high")
+        },
         "required_inputs": ["user-intent", "repository-context", "exact-target"],
         "allowed_path_patterns": [".specbound/discoveries/dcy-*-r*.md"],
         "allowed_tool_categories": ["repository-read", "candidate-write"],
@@ -123,12 +127,17 @@ _EXPECTED_ROLE_CONTRACTS: dict[str, dict[str, Any]] = {
         "output_kinds": ["agent-result"],
         "lifecycle_eligibility": ["draft"],
         "result_references": {"producer_result_ref": "forbidden", "reviewer_run_ref": "forbidden"},
+        "reference_edges": {"producer_result_ref": None, "reviewer_run_ref": None},
         "evidence_slots": [("target-binding", "required", False), ("discovery-readiness", "required", False)],
         "permitted_next_actions": ["submit-candidate-for-review"],
     },
     "requirement-author": {
         "task_kind": "requirement-author",
         "task_risk_floor": "low",
+        "evidence_requirements_by_risk": {
+            risk: {"required": ["target-binding", "acceptance-criteria"], "conditional": []}
+            for risk in ("low", "medium", "high")
+        },
         "required_inputs": ["confirmed-discovery", "exact-target"],
         "allowed_path_patterns": [".specbound/requirements/req-*/req-*-r*.md"],
         "allowed_tool_categories": ["repository-read", "candidate-write"],
@@ -136,12 +145,20 @@ _EXPECTED_ROLE_CONTRACTS: dict[str, dict[str, Any]] = {
         "output_kinds": ["agent-result"],
         "lifecycle_eligibility": ["confirmed"],
         "result_references": {"producer_result_ref": "optional", "reviewer_run_ref": "forbidden"},
+        "reference_edges": {
+            "producer_result_ref": {"allowed_roles": ["discovery-author"], "target_binding": "exact-parent", "required_verdict": "pass"},
+            "reviewer_run_ref": None,
+        },
         "evidence_slots": [("target-binding", "required", False), ("acceptance-criteria", "required", False)],
         "permitted_next_actions": ["submit-candidate-for-review"],
     },
     "micro-spec-author": {
         "task_kind": "micro-spec-author",
         "task_risk_floor": "low",
+        "evidence_requirements_by_risk": {
+            risk: {"required": ["target-binding", "selected-ac-coverage"], "conditional": []}
+            for risk in ("low", "medium", "high")
+        },
         "required_inputs": ["approved-requirement", "selected-acceptance-criteria", "exact-target"],
         "allowed_path_patterns": [".specbound/micro-specs/req-*/ms-*-*.md"],
         "allowed_tool_categories": ["repository-read", "candidate-write"],
@@ -149,12 +166,20 @@ _EXPECTED_ROLE_CONTRACTS: dict[str, dict[str, Any]] = {
         "output_kinds": ["agent-result"],
         "lifecycle_eligibility": ["approved"],
         "result_references": {"producer_result_ref": "optional", "reviewer_run_ref": "forbidden"},
+        "reference_edges": {
+            "producer_result_ref": {"allowed_roles": ["requirement-author"], "target_binding": "exact-parent", "required_verdict": "pass"},
+            "reviewer_run_ref": None,
+        },
         "evidence_slots": [("target-binding", "required", False), ("selected-ac-coverage", "required", False)],
         "permitted_next_actions": ["submit-candidate-for-review"],
     },
     "independent-reviewer": {
         "task_kind": "independent-reviewer",
         "task_risk_floor": "medium",
+        "evidence_requirements_by_risk": {
+            risk: {"required": ["target-binding", "review-findings", "no-write"], "conditional": []}
+            for risk in ("low", "medium", "high")
+        },
         "required_inputs": ["producer-result", "exact-target", "current-state"],
         "allowed_path_patterns": [],
         "allowed_tool_categories": ["repository-read"],
@@ -162,12 +187,38 @@ _EXPECTED_ROLE_CONTRACTS: dict[str, dict[str, Any]] = {
         "output_kinds": ["agent-result"],
         "lifecycle_eligibility": ["in_review"],
         "result_references": {"producer_result_ref": "required", "reviewer_run_ref": "forbidden"},
-        "evidence_slots": [("target-binding", "required", False), ("review-findings", "required", False)],
+        "reference_edges": {
+            "producer_result_ref": {
+                "allowed_roles": ["discovery-author", "requirement-author", "micro-spec-author"],
+                "target_binding": "exact-target",
+                "required_verdict": "pass",
+            },
+            "reviewer_run_ref": None,
+        },
+        "evidence_slots": [
+            ("target-binding", "required", False),
+            ("review-findings", "required", False),
+            ("no-write", "required", False),
+        ],
         "permitted_next_actions": ["request-authority-action", "request-candidate-rework"],
     },
     "implementation": {
         "task_kind": "implementation",
         "task_risk_floor": "medium",
+        "evidence_requirements_by_risk": {
+            "low": {
+                "required": ["target-binding", "test-results", "rollback-inventory"],
+                "conditional": ["negative-tests", "regression-evidence", "supported-ci"],
+            },
+            "medium": {
+                "required": ["target-binding", "test-results", "negative-tests", "regression-evidence", "rollback-inventory"],
+                "conditional": ["supported-ci"],
+            },
+            "high": {
+                "required": ["target-binding", "test-results", "negative-tests", "regression-evidence", "rollback-inventory", "supported-ci"],
+                "conditional": [],
+            },
+        },
         "required_inputs": ["reviewed-micro-spec", "review-record", "exact-target", "current-state"],
         "allowed_path_patterns": ["@reviewed-micro-spec-scope"],
         "allowed_tool_categories": ["repository-read", "candidate-write", "test-execute", "filesystem-metadata"],
@@ -175,16 +226,28 @@ _EXPECTED_ROLE_CONTRACTS: dict[str, dict[str, Any]] = {
         "output_kinds": ["agent-result"],
         "lifecycle_eligibility": ["approved_for_implementation"],
         "result_references": {"producer_result_ref": "optional", "reviewer_run_ref": "required"},
+        "reference_edges": {
+            "producer_result_ref": {"allowed_roles": ["micro-spec-author"], "target_binding": "exact-target", "required_verdict": "pass"},
+            "reviewer_run_ref": {"allowed_roles": ["independent-reviewer"], "target_binding": "exact-target", "required_verdict": "pass"},
+        },
         "evidence_slots": [
             ("target-binding", "required", False),
             ("test-results", "required", False),
             ("rollback-inventory", "required", False),
+            ("negative-tests", "optional", True),
+            ("regression-evidence", "optional", True),
+            ("supported-ci", "optional", True),
         ],
         "permitted_next_actions": ["request-iteration-qc"],
     },
     "iteration-qc": {
         "task_kind": "iteration-qc",
         "task_risk_floor": "medium",
+        "evidence_requirements_by_risk": {
+            "low": {"required": ["target-binding", "focused-verification"], "conditional": ["regression-evidence"]},
+            "medium": {"required": ["target-binding", "focused-verification"], "conditional": ["regression-evidence"]},
+            "high": {"required": ["target-binding", "focused-verification", "regression-evidence"], "conditional": []},
+        },
         "required_inputs": ["implementation-result", "reviewed-micro-spec", "exact-target", "current-state"],
         "allowed_path_patterns": [".specbound/iteration-qc/req-*/iqc-*-*-r*.json"],
         "allowed_tool_categories": ["repository-read", "candidate-write", "test-execute", "filesystem-metadata"],
@@ -192,19 +255,35 @@ _EXPECTED_ROLE_CONTRACTS: dict[str, dict[str, Any]] = {
         "output_kinds": ["agent-result"],
         "lifecycle_eligibility": ["implemented"],
         "result_references": {"producer_result_ref": "required", "reviewer_run_ref": "required"},
-        "evidence_slots": [("target-binding", "required", False), ("focused-verification", "required", False)],
+        "reference_edges": {
+            "producer_result_ref": {"allowed_roles": ["implementation"], "target_binding": "exact-target", "required_verdict": "pass"},
+            "reviewer_run_ref": {"allowed_roles": ["independent-reviewer"], "target_binding": "exact-target", "required_verdict": "pass"},
+        },
+        "evidence_slots": [
+            ("target-binding", "required", False),
+            ("focused-verification", "required", False),
+            ("regression-evidence", "optional", True),
+        ],
         "permitted_next_actions": ["request-delivery-qc", "request-rework"],
     },
     "delivery-qc": {
         "task_kind": "delivery-qc",
         "task_risk_floor": "medium",
+        "evidence_requirements_by_risk": {
+            risk: {
+                "required": ["target-binding", "complete-ac-coverage", "regression-evidence"],
+                "conditional": [],
+            }
+            for risk in ("low", "medium", "high")
+        },
         "required_inputs": ["verified-iteration-qc-set", "approved-requirement", "exact-target", "current-state"],
         "allowed_path_patterns": [".specbound/delivery-qc/dqc-*-r*.json"],
         "allowed_tool_categories": ["repository-read", "candidate-write", "test-execute", "filesystem-metadata"],
         "mutation_classes": ["evidence_write"],
         "output_kinds": ["agent-result"],
-        "lifecycle_eligibility": ["verified"],
-        "result_references": {"producer_result_ref": "required", "reviewer_run_ref": "required"},
+        "lifecycle_eligibility": ["approved"],
+        "result_references": {"producer_result_ref": "forbidden", "reviewer_run_ref": "forbidden"},
+        "reference_edges": {"producer_result_ref": None, "reviewer_run_ref": None},
         "evidence_slots": [
             ("target-binding", "required", False),
             ("complete-ac-coverage", "required", False),

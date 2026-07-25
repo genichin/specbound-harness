@@ -290,6 +290,23 @@ def write_state_target(root: Path, role_id: str, state: str) -> dict:
         newline="\n",
     )
     requirement_sha = sha256(requirement.read_bytes()).hexdigest()
+    approval = root / ".specbound/approvals/req-9007-r1.approval.json"
+    approval.parent.mkdir(parents=True, exist_ok=True)
+    approval.write_text(
+        json.dumps(
+            {
+                "requirement_path": requirement_relative,
+                "requirement_id": requirement_id,
+                "revision": 1,
+                "sha256": requirement_sha,
+                "risk": "high",
+                "authority": "fixture-maintainer",
+            },
+            indent=2,
+        ) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     micro_id = "ms-9007-001"
     micro_relative = ".specbound/micro-specs/req-9007/ms-9007-001.md"
     micro = root / micro_relative
@@ -347,7 +364,7 @@ def write_state_target(root: Path, role_id: str, state: str) -> dict:
         encoding="utf-8",
         newline="\n",
     )
-    return exact_ref(root, relative, artifact_id, 1)
+    return exact_ref(root, requirement_relative, requirement_id, 1)
 
 
 def valid_request(root: Path, role_id: str) -> dict:
@@ -459,7 +476,11 @@ def test_policy_accepts_exact_provider_neutral_inventory(tmp_path: Path) -> None
 
 @pytest.mark.parametrize(
     "mutation",
-    ["missing", "duplicate", "unknown", "runtime", "path", "tool", "mutation", "output", "reference", "evidence", "forbidden"],
+    [
+        "missing", "duplicate", "unknown", "runtime", "path", "tool", "mutation", "output",
+        "reference", "reference-edge", "evidence", "evidence-applicability", "risk-order",
+        "crosswalk", "forbidden",
+    ],
 )
 def test_policy_fails_closed_for_inventory_and_widening(tmp_path: Path, mutation: str) -> None:
     policy = actual_policy()
@@ -481,8 +502,16 @@ def test_policy_fails_closed_for_inventory_and_widening(tmp_path: Path, mutation
         policy["roles"][0]["output_kinds"] = []
     elif mutation == "reference":
         policy["roles"][3]["result_references"]["producer_result_ref"] = "optional"
+    elif mutation == "reference-edge":
+        policy["roles"][4]["reference_edges"]["reviewer_run_ref"]["allowed_roles"] = ["implementation"]
     elif mutation == "evidence":
         policy["roles"][0]["evidence_slots"][0]["not_applicable_allowed"] = True
+    elif mutation == "evidence-applicability":
+        policy["evidence_applicability"]["authority_transition"]["supported"] = True
+    elif mutation == "risk-order":
+        policy["risk_order"] = ["low", "medium", "high", "critical"]
+    elif mutation == "crosswalk":
+        policy["transition_crosswalk"]["requirement-approval"]["writer"] = "attacker_writer"
     else:
         policy["roles"][0]["forbidden_actions"].append("extra-denial")
     root, _ = setup_root(tmp_path, policy)
@@ -601,18 +630,17 @@ def test_iteration_qc_rejects_self_declared_implemented_state_without_canonical_
     assert "undetermined_current_state" in {item["code"] for item in result.blockers}, result.blockers
 
 
-def test_delivery_qc_rejects_malformed_self_declared_verified_record(tmp_path: Path) -> None:
+def test_delivery_qc_targets_exact_approved_requirement_without_result_references(tmp_path: Path) -> None:
     root, _ = setup_root(tmp_path)
     payload = valid_request(root, "delivery-qc")
-    target_path = root / payload["target"]["path"]
-    record = json.loads(target_path.read_text(encoding="utf-8"))
-    record.pop("micro_spec")
-    target_path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8", newline="\n")
-    payload["target"] = exact_ref(root, payload["target"]["path"], "iqc-9007-001", 1)
 
     result = validate_role_request(root, write_json(root, "request.json", payload), POLICY_REL)
 
-    assert "undetermined_current_state" in {item["code"] for item in result.blockers}, result.blockers
+    assert payload["target"]["path"] == ".specbound/requirements/req-9007/req-9007-r1.md"
+    assert payload["current_state"] == "approved"
+    assert payload["producer_result_ref"] is None
+    assert payload["reviewer_run_ref"] is None
+    assert result.valid is True, result.blockers
 
 
 def test_implementation_cannot_write_review_submission_authority_paths(tmp_path: Path) -> None:
@@ -1144,3 +1172,107 @@ def test_policy_declares_closed_risk_order_and_exact_task_floors() -> None:
     }
     validation = validate_agent_roles_policy(ROOT, POLICY_REL)
     assert validation.valid is True, validation.blockers
+
+
+def test_policy_declares_closed_evidence_applicability_and_high_risk_requirements() -> None:
+    policy = actual_policy()
+
+    assert policy["evidence_applicability"] == {
+        "none": {"supported": True},
+        "candidate_write": {"supported": True},
+        "repository_mutation": {"supported": True},
+        "evidence_write": {"supported": True},
+        "authority_transition": {"supported": False},
+        "external_mutation": {"supported": False},
+    }
+    implementation = role_contract("implementation", policy)
+    assert implementation["evidence_requirements_by_risk"]["high"] == {
+        "required": [
+            "target-binding",
+            "test-results",
+            "negative-tests",
+            "regression-evidence",
+            "rollback-inventory",
+            "supported-ci",
+        ],
+        "conditional": [],
+    }
+
+
+def test_policy_declares_exact_existing_lifecycle_transition_crosswalk() -> None:
+    assert actual_policy()["transition_crosswalk"] == {
+        "discovery-confirmation": {
+            "selector": "discovery_confirmation_authorities_by_risk",
+            "writer": "create_discovery_confirmation",
+            "risk_input": "canonical_artifact_risk",
+        },
+        "requirement-review-decision": {
+            "selector": "requirement_review_decision_authorities_by_risk",
+            "writer": "record_review_decision",
+            "risk_input": "canonical_artifact_risk",
+        },
+        "requirement-rejection": {
+            "selector": "requirement_review_authorities_by_risk",
+            "writer": "reject_requirement",
+            "risk_input": "canonical_artifact_risk",
+        },
+        "requirement-reconsideration": {
+            "selector": "requirement_reconsideration_authorities_by_risk",
+            "writer": "reconsider_requirement",
+            "risk_input": "canonical_artifact_risk",
+        },
+        "requirement-approval": {
+            "selector": "requirement_approval_authorities_by_risk",
+            "writer": "approve_requirement",
+            "risk_input": "canonical_artifact_risk",
+        },
+        "micro-spec-review": {
+            "selector": "micro_spec_review_authorities_by_risk",
+            "writer": "record_micro_spec_review",
+            "risk_input": "canonical_artifact_risk",
+        },
+        "delivery-qc-verification": {
+            "selector": "delivery_qc_authorities_by_risk",
+            "writer": "publish_issuance",
+            "risk_input": "canonical_artifact_risk",
+        },
+    }
+
+
+def test_policy_declares_closed_consumer_reference_edges() -> None:
+    policy = actual_policy()
+    reviewer = role_contract("independent-reviewer", policy)
+    implementation = role_contract("implementation", policy)
+    iteration_qc = role_contract("iteration-qc", policy)
+    delivery_qc = role_contract("delivery-qc", policy)
+
+    assert reviewer["reference_edges"]["producer_result_ref"] == {
+        "allowed_roles": ["discovery-author", "requirement-author", "micro-spec-author"],
+        "target_binding": "exact-target",
+        "required_verdict": "pass",
+    }
+    assert implementation["reference_edges"]["reviewer_run_ref"] == {
+        "allowed_roles": ["independent-reviewer"],
+        "target_binding": "exact-target",
+        "required_verdict": "pass",
+    }
+    assert iteration_qc["reference_edges"] == {
+        "producer_result_ref": {
+            "allowed_roles": ["implementation"],
+            "target_binding": "exact-target",
+            "required_verdict": "pass",
+        },
+        "reviewer_run_ref": {
+            "allowed_roles": ["independent-reviewer"],
+            "target_binding": "exact-target",
+            "required_verdict": "pass",
+        },
+    }
+    assert delivery_qc["result_references"] == {
+        "producer_result_ref": "forbidden",
+        "reviewer_run_ref": "forbidden",
+    }
+    assert delivery_qc["reference_edges"] == {
+        "producer_result_ref": None,
+        "reviewer_run_ref": None,
+    }
