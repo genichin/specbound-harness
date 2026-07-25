@@ -70,9 +70,8 @@
     "resultRef": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "result_id", "role_id", "execution_id", "context_id", "sha256"],
+      "required": ["result_id", "role_id", "execution_id", "context_id", "sha256"],
       "properties": {
-        "path": {"$ref": "#/$defs/safePath"},
         "result_id": {"type": "string", "minLength": 1},
         "role_id": {"$ref": "#/$defs/roleId"},
         "execution_id": {"type": "string", "minLength": 1},

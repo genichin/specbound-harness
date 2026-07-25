@@ -10,16 +10,15 @@
     "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
     "id": "ms-9005-001",
     "revision": null,
-    "sha256": "d27fd3e39c98d1632cb389f0c5e50079933aa3e53dbd9d10e852b5cfb56505c6"
+    "sha256": "377b38aaf142c7210fcc5e80e0e3d47a684568425c38b15e7e42c23ad1ca30e8"
   },
   "producer_result_ref": null,
   "reviewer_run_ref": {
-    "path": ".specbound/agent-results/independent-reviewer/result-independent-reviewer.json",
     "result_id": "result-independent-reviewer",
     "role_id": "independent-reviewer",
     "execution_id": "execution-independent-reviewer",
     "context_id": "context-independent-reviewer",
-    "sha256": "cb63f7c79e84d2182c3242c73623ff46bd4a7246bcf517ecc87b9bfd732416a6"
+    "sha256": "0dd28adf6f26daa10f456c3bc7e46e2f74feec6fa2faac109d84e8020ad2eb4d"
   },
   "authority_type": "none",
   "authority_action_id": null,
@@ -32,7 +31,7 @@
         "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
         "id": "ms-9005-001",
         "revision": null,
-        "sha256": "d27fd3e39c98d1632cb389f0c5e50079933aa3e53dbd9d10e852b5cfb56505c6"
+        "sha256": "377b38aaf142c7210fcc5e80e0e3d47a684568425c38b15e7e42c23ad1ca30e8"
       }
     ]
   },
@@ -58,13 +57,13 @@
           "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
           "id": "ms-9005-001",
           "revision": null,
-          "sha256": "d27fd3e39c98d1632cb389f0c5e50079933aa3e53dbd9d10e852b5cfb56505c6"
+          "sha256": "377b38aaf142c7210fcc5e80e0e3d47a684568425c38b15e7e42c23ad1ca30e8"
         },
         {
           "path": "src/fixture_impl.py",
           "id": "fixture_impl",
           "revision": null,
-          "sha256": "c66732d4b0f88725b147602bed81dad9d1459efaa4dc4bb25db0cb385d0ee36e"
+          "sha256": "1e8526dce23b1e9ab2b49e0c59cdbe3e13641af8687ff57ce07616c98fdeb02b"
         }
       ],
       "commands": [],
@@ -78,7 +77,7 @@
           "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
           "id": "ms-9005-001",
           "revision": null,
-          "sha256": "d27fd3e39c98d1632cb389f0c5e50079933aa3e53dbd9d10e852b5cfb56505c6"
+          "sha256": "377b38aaf142c7210fcc5e80e0e3d47a684568425c38b15e7e42c23ad1ca30e8"
         }
       ],
       "commands": [
@@ -98,7 +97,7 @@
           "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
           "id": "ms-9005-001",
           "revision": null,
-          "sha256": "d27fd3e39c98d1632cb389f0c5e50079933aa3e53dbd9d10e852b5cfb56505c6"
+          "sha256": "377b38aaf142c7210fcc5e80e0e3d47a684568425c38b15e7e42c23ad1ca30e8"
         }
       ],
       "commands": [],

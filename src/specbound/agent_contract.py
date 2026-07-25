@@ -99,9 +99,8 @@ _AGENT_REQUEST_SCHEMA: dict[str, Any] = {
         "resultRef": {
             "type": "object",
             "additionalProperties": False,
-            "required": ["path", "result_id", "role_id", "execution_id", "context_id", "sha256"],
+            "required": ["result_id", "role_id", "execution_id", "context_id", "sha256"],
             "properties": {
-                "path": {"$ref": "#/$defs/safePath"},
                 "result_id": {"type": "string", "minLength": 1},
                 "role_id": {"$ref": "#/$defs/roleId"},
                 "execution_id": {"type": "string", "minLength": 1},
@@ -349,26 +348,10 @@ def _reference_valid(requirement: str, value: object) -> bool:
 
 
 def _verify_result_reference(root: Path, reference: dict[str, Any] | None, result: AgentContractResult, field_name: str) -> bool:
+    """Accept the exact closed reference envelope; cross-result resolution is deferred by ms-0004-001."""
+
     if reference is None:
         return False
-    relative = reference["path"]
-    try:
-        path = _safe_repository_path(root, relative)
-        raw = path.read_bytes()
-        artifact = json.loads(raw.decode("utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
-        result.block("invalid_result_reference", relative, f"{field_name} cannot resolve an exact result artifact: {exc}")
-        return False
-    if not isinstance(artifact, dict) or artifact.get("schema_version") != 1:
-        result.block("invalid_result_reference", relative, f"{field_name} target must be a schema-version-1 result artifact")
-        return False
-    if reference["sha256"] != sha256(raw).hexdigest():
-        result.block("invalid_result_reference", relative, f"{field_name} sha256 does not match current result bytes")
-        return False
-    for key in ("result_id", "role_id", "execution_id", "context_id"):
-        if artifact.get(key) != reference[key]:
-            result.block("invalid_result_reference", relative, f"{field_name} {key} does not match the referenced result")
-            return False
     return True
 
 
@@ -435,13 +418,28 @@ def _micro_spec_review_state(root: Path, target: dict[str, Any]) -> str | None:
     try:
         review_path = _safe_repository_path(root, review_relative)
         review = _read_json_object(review_path, "Micro-SPEC review")
-        from .validation import Result as RepositoryResult, _load_config, _validate_micro_spec_review
+        from .validation import Result as RepositoryResult, _load_config, _validate_micro_spec_review, _validate_requirement
 
         config = _load_config(root)
         raw_allowed = config["policy"]["micro_spec_review_authorities_by_risk"]
         allowed = {risk: set(authorities) for risk, authorities in raw_allowed.items()}
         validation = RepositoryResult(root)
         _validate_micro_spec_review(root, review_path, validation, allowed)
+        parent_path = _safe_repository_path(root, review["requirement_path"])
+        parent_metadata = _artifact_metadata(parent_path)
+        if (
+            parent_metadata.get("id") != review["requirement_id"]
+            or parent_metadata.get("revision") != review["revision"]
+            or parent_metadata.get("status") != "approved"
+            or sha256(parent_path.read_bytes()).hexdigest() != review["requirement_sha256"]
+        ):
+            return None
+        _validate_requirement(
+            root,
+            parent_path,
+            validation,
+            {review["requirement_id"]: review["revision"]},
+        )
     except (KeyError, OSError, ValueError):
         return None
     if validation.valid and review.get("decision") == "approved_for_implementation":
@@ -480,6 +478,16 @@ def _canonical_state_record_matches(root: Path, target: dict[str, Any], state: s
             "reviewed_sha256",
         ),
     }
+    topology_patterns = {
+        "draft": ".specbound/discoveries/dcy-*-r*.md",
+        "confirmed": ".specbound/discoveries/dcy-*-r*.md",
+        "approved": ".specbound/requirements/req-*/req-*-r*.md",
+        "in_review": ".specbound/requirements/req-*/req-*-r*.md",
+        "implemented": ".specbound/micro-specs/req-*/ms-*-*.md",
+        "verified": ".specbound/iteration-qc/req-*/iqc-*-*-r*.json",
+    }
+    if not _path_matches(relative, topology_patterns[state]):
+        return False
     candidate = candidates.get(state)
     if candidate is None:
         return state in {"draft", "implemented", "verified"}
@@ -490,7 +498,7 @@ def _canonical_state_record_matches(root: Path, target: dict[str, Any], state: s
     except (OSError, ValueError):
         return False
     expected_decision = {"confirmed": "confirmed", "in_review": "submitted_for_review"}.get(state)
-    return (
+    shallow_binding_matches = (
         record.get(path_field) == relative
         and record.get(digest_field) == target["sha256"]
         and record.get("revision") == target["revision"]
@@ -501,6 +509,32 @@ def _canonical_state_record_matches(root: Path, target: dict[str, Any], state: s
         )
         and (expected_decision is None or record.get("decision") == expected_decision)
     )
+    if not shallow_binding_matches:
+        return False
+    try:
+        from .validation import (
+            Result as RepositoryResult,
+            _load_config,
+            _validate_discovery_confirmation,
+            _validate_requirement,
+            _validate_requirement_review_submission,
+        )
+
+        validation = RepositoryResult(root)
+        if state == "confirmed":
+            config = _load_config(root)
+            raw_allowed = config["policy"]["discovery_confirmation_authorities_by_risk"]
+            allowed = {risk: set(authorities) for risk, authorities in raw_allowed.items()}
+            _validate_discovery_confirmation(root, record_path, validation, allowed)
+        elif state == "approved":
+            _validate_requirement(root, _safe_repository_path(root, relative), validation, {target["id"]: target["revision"]})
+        else:
+            target_path = _safe_repository_path(root, relative)
+            _validate_requirement(root, target_path, validation, {})
+            _validate_requirement_review_submission(root, record_path, validation)
+    except (KeyError, OSError, TypeError, ValueError):
+        return False
+    return validation.valid
 
 
 def _derive_current_state(
@@ -514,6 +548,14 @@ def _derive_current_state(
     if not target["path"].startswith(".specbound/"):
         return None
     review_state = _micro_spec_review_state(root, target)
+    if (
+        review_state == "approved_for_implementation"
+        and role_id == "iteration-qc"
+        and producer_reference_valid
+        and producer_reference is not None
+        and producer_reference["role_id"] == "implementation"
+    ):
+        return "implemented"
     if review_state:
         return review_state
     metadata = _artifact_metadata(path)
@@ -658,11 +700,26 @@ def _reviewed_micro_spec_paths(root: Path, target_path: str) -> list[tuple[str, 
         if value.startswith("schemas/"):
             scoped.append((f"src/specbound/{value}", is_directory))
             scoped.append(("src/specbound/schemas/__init__.py", False))
+    if "valid/invalid fixture config" in match.group(1):
+        scoped.extend(
+            (path, False)
+            for path in (
+                "fixtures/valid-minimal/specbound.yaml",
+                "fixtures/valid-minimal/.specbound/policies/agent-roles.yaml",
+                "fixtures/invalid-unsafe-path/specbound.yaml",
+                "fixtures/invalid-unsafe-path/.specbound/policies/agent-roles.yaml",
+            )
+        )
     return scoped
 
 
 def _path_matches(path: str, pattern: str) -> bool:
-    return fnmatchcase(path, pattern)
+    path_parts = PurePosixPath(path).parts
+    pattern_parts = PurePosixPath(pattern).parts
+    return len(path_parts) == len(pattern_parts) and all(
+        fnmatchcase(path_part, pattern_part)
+        for path_part, pattern_part in zip(path_parts, pattern_parts, strict=True)
+    )
 
 
 def _changed_path_allowed(root: Path, path: str, role: dict[str, Any], target_path: str) -> bool:

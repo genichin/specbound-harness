@@ -6,7 +6,7 @@
     "path": ".specbound/micro-specs/req-9006/ms-9006-001.md",
     "id": "ms-9006-001",
     "revision": null,
-    "sha256": "94286957e71459cfc9fab66b4f974fdc8094360477148f68e1028de3184ac659"
+    "sha256": "87fcf8c7410e56dc182cd43270837e0deebc0e54438a02cfc4571f6c1b2f7a39"
   },
   "current_state": "implemented",
   "inputs": {
@@ -36,19 +36,17 @@
     ]
   },
   "producer_result_ref": {
-    "path": ".specbound/agent-results/implementation/result-implementation.json",
     "result_id": "result-implementation",
     "role_id": "implementation",
     "execution_id": "execution-implementation",
     "context_id": "context-implementation",
-    "sha256": "b4223189b3504cd354638a0c62a90772cf02eb5013c7f456ee376592d01f9828"
+    "sha256": "aa05c0f66f3e47cfcad2cda41e8a09f12da0ca0684caf9a3169ec79e10fd3c8f"
   },
   "reviewer_run_ref": {
-    "path": ".specbound/agent-results/independent-reviewer/result-independent-reviewer.json",
     "result_id": "result-independent-reviewer",
     "role_id": "independent-reviewer",
     "execution_id": "execution-independent-reviewer",
     "context_id": "context-independent-reviewer",
-    "sha256": "cb63f7c79e84d2182c3242c73623ff46bd4a7246bcf517ecc87b9bfd732416a6"
+    "sha256": "0dd28adf6f26daa10f456c3bc7e46e2f74feec6fa2faac109d84e8020ad2eb4d"
   }
 }

@@ -1,0 +1,8 @@
+{
+  "requirement_path": ".specbound/requirements/req-9006/req-9006-r1.md",
+  "requirement_id": "req-9006",
+  "revision": 1,
+  "sha256": "d1292c059b77fa28c9a2b05ba5799f62bcfe90a1486abd7f8b0cdb27c4344b84",
+  "risk": "high",
+  "authority": "fixture-maintainer"
+}

@@ -6,7 +6,7 @@
     "path": ".specbound/requirements/req-9004/req-9004-r1.md",
     "id": "req-9004",
     "revision": 1,
-    "sha256": "80c0e6fde176592935c54aba698cc47a96b4a236c2c7abeb1ffbcef1bc832e5e"
+    "sha256": "8adea15f98b57ef9fbe39355944b3e4665d0aa0cda2d8143cac684a749411679"
   },
   "current_state": "in_review",
   "inputs": {
@@ -30,12 +30,11 @@
     ]
   },
   "producer_result_ref": {
-    "path": ".specbound/agent-results/implementation/result-implementation.json",
     "result_id": "result-implementation",
     "role_id": "implementation",
     "execution_id": "execution-implementation",
     "context_id": "context-implementation",
-    "sha256": "b4223189b3504cd354638a0c62a90772cf02eb5013c7f456ee376592d01f9828"
+    "sha256": "aa05c0f66f3e47cfcad2cda41e8a09f12da0ca0684caf9a3169ec79e10fd3c8f"
   },
   "reviewer_run_ref": null
 }

@@ -66,11 +66,13 @@ def setup_root(tmp_path: Path, policy: dict | None = None) -> tuple[Path, Path]:
     root = tmp_path / "repo"
     policy_path = root / POLICY_REL
     policy_path.parent.mkdir(parents=True)
-    policy_path.write_text(yaml.safe_dump(policy or actual_policy(), sort_keys=False), encoding="utf-8")
+    policy_path.write_text(yaml.safe_dump(policy or actual_policy(), sort_keys=False), encoding="utf-8", newline="\n")
     (root / "specbound.yaml").write_text(
         "version: 1\npolicy:\n  agent_contract:\n    enabled: true\n    roles_path: .specbound/policies/agent-roles.yaml\n"
-        "  micro_spec_review_authorities_by_risk:\n    high: [fixture-maintainer]\n",
+        "  micro_spec_review_authorities_by_risk:\n    high: [fixture-maintainer]\n"
+        "  discovery_confirmation_authorities_by_risk:\n    high: [fixture-maintainer]\n",
         encoding="utf-8",
+        newline="\n",
     )
     return root, policy_path
 
@@ -81,7 +83,6 @@ def role_contract(role_id: str, policy: dict | None = None) -> dict:
 
 
 def result_reference(root: Path, role_id: str = "implementation") -> dict:
-    relative = f".specbound/agent-results/{role_id}/result-{role_id}.json"
     artifact = {
         "schema_version": 1,
         "result_id": f"result-{role_id}",
@@ -89,13 +90,10 @@ def result_reference(root: Path, role_id: str = "implementation") -> dict:
         "execution_id": f"execution-{role_id}",
         "context_id": f"context-{role_id}",
     }
-    path = root / relative
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    serialized = json.dumps(artifact, indent=2, sort_keys=True).encode("utf-8") + b"\n"
     return {
-        "path": relative,
         **{key: artifact[key] for key in ("result_id", "role_id", "execution_id", "context_id")},
-        "sha256": sha256(path.read_bytes()).hexdigest(),
+        "sha256": sha256(serialized).hexdigest(),
     }
 
 
@@ -115,12 +113,51 @@ def write_state_target(root: Path, role_id: str, state: str) -> dict:
         relative = f".specbound/discoveries/{artifact_id}-r1.md"
         target = root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(f"---\nid: {artifact_id}\nrevision: 1\nstatus: {state}\nrisk_class: high\n---\n\n# Discovery\n", encoding="utf-8")
+        discovery_body = "\n".join(
+            f"{heading}\n\nSubstantive fixture evidence for {artifact_id}.\n"
+            for heading in (
+                "## 1. User intent",
+                "## 2. Problem and target users",
+                "## 3. Desired outcome and success signals",
+                "## 6. Scope",
+                "## 7. Non-goals",
+                "## 9. Risks, constraints, and dependencies",
+                "## 11. Open questions",
+                "## 12. Recommendation",
+                "## 12a. REQ drafting readiness",
+                "## 13. Proposed next authorized action",
+            )
+        )
+        target.write_text(
+            f"---\nid: {artifact_id}\nrevision: 1\nstatus: {state}\nrisk_class: high\n---\n\n# Discovery\n\n{discovery_body}",
+            encoding="utf-8",
+            newline="\n",
+        )
         ref = exact_ref(root, relative, artifact_id, 1)
         if state == "confirmed":
             record = root / f".specbound/confirmations/{artifact_id}-r1.confirmation.json"
             record.parent.mkdir(parents=True, exist_ok=True)
-            record.write_text(json.dumps({"discovery_path": relative, "discovery_id": artifact_id, "revision": 1, "sha256": ref["sha256"], "decision": "confirmed"}, indent=2) + "\n", encoding="utf-8")
+            in_review = target.read_text(encoding="utf-8").replace("status: confirmed", "status: in_review")
+            record.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "discovery_path": relative,
+                        "discovery_id": artifact_id,
+                        "revision": 1,
+                        "reviewed_sha256": sha256(in_review.encode("utf-8")).hexdigest(),
+                        "sha256": ref["sha256"],
+                        "risk_class": "high",
+                        "authority": "fixture-maintainer",
+                        "confirmed_at": "2026-01-01T00:00:00Z",
+                        "decision": "confirmed",
+                        "permitted_next_action": "draft_req_only",
+                    },
+                    indent=2,
+                ) + "\n",
+                encoding="utf-8",
+                newline="\n",
+            )
         return ref
 
     if role_id in {"micro-spec-author", "independent-reviewer"}:
@@ -129,16 +166,54 @@ def write_state_target(root: Path, role_id: str, state: str) -> dict:
         relative = f".specbound/requirements/{artifact_id}/{artifact_id}-r1.md"
         target = root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(f"---\nid: {artifact_id}\nrevision: 1\nstatus: {state}\nrisk: high\n---\n\n# Requirement\n", encoding="utf-8")
+        target.write_text(
+            f"---\nid: {artifact_id}\nrevision: 1\nstatus: {state}\nrisk: high\nowner: fixture-owner\n---\n\n# Requirement\n",
+            encoding="utf-8",
+            newline="\n",
+        )
         ref = exact_ref(root, relative, artifact_id, 1)
         if state == "approved":
             record = root / f".specbound/approvals/{artifact_id}-r1.approval.json"
             record.parent.mkdir(parents=True, exist_ok=True)
-            record.write_text(json.dumps({"requirement_path": relative, "requirement_id": artifact_id, "revision": 1, "sha256": ref["sha256"]}, indent=2) + "\n", encoding="utf-8")
+            record.write_text(
+                json.dumps(
+                    {
+                        "requirement_path": relative,
+                        "requirement_id": artifact_id,
+                        "revision": 1,
+                        "sha256": ref["sha256"],
+                        "risk": "high",
+                        "authority": "fixture-maintainer",
+                    },
+                    indent=2,
+                ) + "\n",
+                encoding="utf-8",
+                newline="\n",
+            )
         else:
             record = root / f".specbound/review-submissions/{artifact_id}-r1.review-submission.json"
             record.parent.mkdir(parents=True, exist_ok=True)
-            record.write_text(json.dumps({"requirement_path": relative, "requirement_id": artifact_id, "revision": 1, "reviewed_sha256": ref["sha256"], "decision": "submitted_for_review"}, indent=2) + "\n", encoding="utf-8")
+            draft = target.read_text(encoding="utf-8").replace("status: in_review", "status: draft")
+            record.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "requirement_path": relative,
+                        "requirement_id": artifact_id,
+                        "revision": 1,
+                        "draft_sha256": sha256(draft.encode("utf-8")).hexdigest(),
+                        "reviewed_sha256": ref["sha256"],
+                        "risk": "high",
+                        "owner": "fixture-owner",
+                        "submitted_at": "2026-01-01T00:00:00Z",
+                        "decision": "submitted_for_review",
+                        "permitted_next_action": "review_decision_only",
+                    },
+                    indent=2,
+                ) + "\n",
+                encoding="utf-8",
+                newline="\n",
+            )
         return ref
 
     if role_id in {"implementation", "iteration-qc"}:
@@ -148,8 +223,29 @@ def write_state_target(root: Path, role_id: str, state: str) -> dict:
         requirement_relative = f".specbound/requirements/{requirement_id}/{requirement_id}-r1.md"
         requirement = root / requirement_relative
         requirement.parent.mkdir(parents=True, exist_ok=True)
-        requirement.write_text(f"---\nid: {requirement_id}\nrevision: 1\nstatus: approved\nrisk: high\n---\n\n# Requirement\n", encoding="utf-8")
+        requirement.write_text(
+            f"---\nid: {requirement_id}\nrevision: 1\nstatus: approved\nrisk: high\nowner: fixture-owner\n---\n\n# Requirement\n",
+            encoding="utf-8",
+            newline="\n",
+        )
         requirement_sha = sha256(requirement.read_bytes()).hexdigest()
+        approval = root / f".specbound/approvals/{requirement_id}-r1.approval.json"
+        approval.parent.mkdir(parents=True, exist_ok=True)
+        approval.write_text(
+            json.dumps(
+                {
+                    "requirement_path": requirement_relative,
+                    "requirement_id": requirement_id,
+                    "revision": 1,
+                    "sha256": requirement_sha,
+                    "risk": "high",
+                    "authority": "fixture-maintainer",
+                },
+                indent=2,
+            ) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
         relative = f".specbound/micro-specs/{requirement_id}/{micro_id}.md"
         target = root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -158,9 +254,10 @@ def write_state_target(root: Path, role_id: str, state: str) -> dict:
             f"state: {state}\nrisk: high\nrequirement:\n  path: {requirement_relative}\n  id: {requirement_id}\n  revision: 1\n  sha256: {requirement_sha}\n---\n\n"
             "# Reviewed fixture Micro-SPEC\n\n## Scope\n\n### Code paths\n\n- `src/fixture_impl.py`\n\n### Impact radius\n\nFixture only.\n",
             encoding="utf-8",
+            newline="\n",
         )
         ref = exact_ref(root, relative, micro_id, None)
-        if role_id == "implementation":
+        if role_id in {"implementation", "iteration-qc"}:
             review = root / f".specbound/micro-spec-reviews/{requirement_id}/{micro_id}.review.json"
             review.parent.mkdir(parents=True, exist_ok=True)
             review.write_text(
@@ -170,13 +267,14 @@ def write_state_target(root: Path, role_id: str, state: str) -> dict:
                         "micro_spec_sha256": ref["sha256"], "requirement_path": requirement_relative,
                         "requirement_id": requirement_id, "revision": 1, "requirement_sha256": requirement_sha,
                         "risk": "high", "authority": "fixture-maintainer", "decided_at": "2026-01-01T00:00:00Z",
-                        "decision": state, "reason": "Exact fixture review permits only this bound implementation.",
+                        "decision": "approved_for_implementation", "reason": "Exact fixture review permits only this bound implementation.",
                         "permitted_next_action": "implement_bound_micro_spec_only",
                     },
                     indent=2,
                     sort_keys=True,
                 ) + "\n",
                 encoding="utf-8",
+                newline="\n",
             )
         return ref
 
@@ -184,7 +282,7 @@ def write_state_target(root: Path, role_id: str, state: str) -> dict:
     relative = ".specbound/iteration-qc/req-9007/iqc-9007-001-r1.json"
     target = root / relative
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps({"schema_version": 1, "id": artifact_id, "revision": 1, "verdict": state, "risk": "high"}, indent=2) + "\n", encoding="utf-8")
+    target.write_text(json.dumps({"schema_version": 1, "id": artifact_id, "revision": 1, "verdict": state, "risk": "high"}, indent=2) + "\n", encoding="utf-8", newline="\n")
     return exact_ref(root, relative, artifact_id, 1)
 
 
@@ -220,12 +318,12 @@ def write_changed_artifact(root: Path, role_id: str) -> dict | None:
     path = root / relative
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.suffix == ".json":
-        path.write_text(json.dumps({"id": artifact_id, "revision": revision}, indent=2) + "\n", encoding="utf-8")
+        path.write_text(json.dumps({"id": artifact_id, "revision": revision}, indent=2) + "\n", encoding="utf-8", newline="\n")
     elif path.suffix == ".md":
         revision_line = f"revision: {revision}\n" if revision is not None else ""
-        path.write_text(f"---\nid: {artifact_id}\n{revision_line}---\n\n# Candidate\n", encoding="utf-8")
+        path.write_text(f"---\nid: {artifact_id}\n{revision_line}---\n\n# Candidate\n", encoding="utf-8", newline="\n")
     else:
-        path.write_text("fixture = True\n", encoding="utf-8")
+        path.write_text("fixture = True\n", encoding="utf-8", newline="\n")
     return exact_ref(root, relative, artifact_id, revision)
 
 
@@ -284,7 +382,7 @@ def valid_result(root: Path, role_id: str) -> dict:
 def write_json(root: Path, relative: str, payload: dict) -> Path:
     path = root / relative
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8", newline="\n")
     return path
 
 
@@ -365,7 +463,7 @@ def test_role_request_derives_confirmed_state_from_exact_canonical_record(tmp_pa
     confirmation_path = root / ".specbound/confirmations/dcy-0001-r1.confirmation.json"
     confirmation = json.loads(confirmation_path.read_text(encoding="utf-8"))
     confirmation["sha256"] = "0" * 64
-    confirmation_path.write_text(json.dumps(confirmation, indent=2) + "\n", encoding="utf-8")
+    confirmation_path.write_text(json.dumps(confirmation, indent=2) + "\n", encoding="utf-8", newline="\n")
     rejected = validate_role_request(root, request_path, POLICY_REL)
     assert "undetermined_current_state" in {item["code"] for item in rejected.blockers}
 
@@ -377,11 +475,54 @@ def test_implementation_requires_a_fully_valid_canonical_micro_spec_review(tmp_p
     review_path = root / f".specbound/micro-spec-reviews/{parts[2]}/{Path(parts[3]).stem}.review.json"
     review = json.loads(review_path.read_text(encoding="utf-8"))
     review.pop("authority")
-    review_path.write_text(json.dumps(review, indent=2) + "\n", encoding="utf-8")
+    review_path.write_text(json.dumps(review, indent=2) + "\n", encoding="utf-8", newline="\n")
 
     result = validate_role_request(root, write_json(root, "request.json", payload), POLICY_REL)
 
     assert "undetermined_current_state" in {item["code"] for item in result.blockers}
+
+
+@pytest.mark.parametrize(
+    ("role_id", "record_relative", "required_field"),
+    [
+        ("requirement-author", ".specbound/confirmations/dcy-9002-r1.confirmation.json", "authority"),
+        ("micro-spec-author", ".specbound/approvals/req-9003-r1.approval.json", "risk"),
+        ("independent-reviewer", ".specbound/review-submissions/req-9004-r1.review-submission.json", "submitted_at"),
+    ],
+)
+def test_role_request_rejects_incomplete_canonical_state_record(
+    tmp_path: Path,
+    role_id: str,
+    record_relative: str,
+    required_field: str,
+) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, role_id)
+    record_path = root / record_relative
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    record.pop(required_field)
+    record_path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8", newline="\n")
+
+    result = validate_role_request(root, write_json(root, "request.json", payload), POLICY_REL)
+
+    assert "undetermined_current_state" in {item["code"] for item in result.blockers}, result.blockers
+
+
+def test_role_request_rejects_review_when_parent_requirement_bytes_are_stale(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, "implementation")
+    target_text = (root / payload["target"]["path"]).read_text(encoding="utf-8")
+    target_metadata = yaml.safe_load(target_text.split("---\n", 2)[1])
+    parent = root / target_metadata["requirement"]["path"]
+    parent.write_text(
+        parent.read_text(encoding="utf-8").replace("status: approved", "status: draft"),
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    result = validate_role_request(root, write_json(root, "request.json", payload), POLICY_REL)
+
+    assert "undetermined_current_state" in {item["code"] for item in result.blockers}, result.blockers
 
 
 def test_implementation_cannot_write_review_submission_authority_paths(tmp_path: Path) -> None:
@@ -393,7 +534,7 @@ def test_implementation_cannot_write_review_submission_authority_paths(tmp_path:
     result_payload = valid_result(root, "implementation")
     forged = root / ".specbound/review-submissions/forged.json"
     forged.parent.mkdir(parents=True, exist_ok=True)
-    forged.write_text("{}\n", encoding="utf-8")
+    forged.write_text("{}\n", encoding="utf-8", newline="\n")
     forged_ref = exact_ref(root, ".specbound/review-submissions/forged.json", "forged", None)
     result_payload["changed_paths"].append(forged_ref["path"])
     result_payload["evidence"][0]["artifacts"].append(forged_ref)
@@ -417,7 +558,7 @@ def test_implementation_cannot_write_review_submission_authority_paths(tmp_path:
         ("output", "capability_escalation"),
         ("action", "capability_escalation"),
         ("required-reference", "invalid_result_reference"),
-        ("stale-reference", "invalid_result_reference"),
+        ("extra-reference-field", "malformed_role_request"),
         ("extra-field", "malformed_role_request"),
         ("absolute-path", "malformed_role_request"),
         ("traversal", "malformed_role_request"),
@@ -445,8 +586,8 @@ def test_role_request_rejects_spoofing_and_escalation(tmp_path: Path, scenario: 
         payload["requested_capabilities"][field].append("forbidden-capability")
     elif scenario == "required-reference":
         payload["reviewer_run_ref"] = None
-    elif scenario == "stale-reference":
-        payload["reviewer_run_ref"]["sha256"] = "0" * 64
+    elif scenario == "extra-reference-field":
+        payload["reviewer_run_ref"]["path"] = ".specbound/agent-results/independent-reviewer/result-independent-reviewer.json"
     elif scenario == "extra-field":
         payload["runtime"] = "forbidden"
     elif scenario == "absolute-path":
@@ -501,7 +642,7 @@ def test_each_role_request_rejects_forbidden_capability_without_mutation(
 def test_role_request_rejects_nested_suffix_pattern_and_runtime_specific_input(tmp_path: Path) -> None:
     root, _ = setup_root(tmp_path)
     nested = valid_request(root, "discovery-author")
-    nested["requested_capabilities"]["paths"] = ["nested/.specbound/discoveries/dcy-9100-r1.md"]
+    nested["requested_capabilities"]["paths"] = [".specbound/discoveries/dcy-9100/nested-r1.md"]
     runtime_specific = valid_request(root, "requirement-author")
     runtime_specific["inputs"]["confirmed-discovery"] = "openai-runtime-reference"
 
@@ -531,7 +672,7 @@ def test_agent_result_accepts_exact_contract_for_each_role(tmp_path: Path, role_
         ("stale-target", "target_digest_mismatch"),
         ("target-identity", "target_identity_mismatch"),
         ("required-reference", "invalid_result_reference"),
-        ("stale-reference", "invalid_result_reference"),
+        ("extra-reference-field", "malformed_agent_result"),
         ("provenance", "invalid_context_provenance"),
         ("missing-target-provenance", "missing_target_provenance"),
         ("tool", "capability_escalation"),
@@ -564,8 +705,8 @@ def test_agent_result_fails_closed_without_mutation(tmp_path: Path, scenario: st
         payload["target"]["revision"] = 1
     elif scenario == "required-reference":
         payload["reviewer_run_ref"] = None
-    elif scenario == "stale-reference":
-        payload["reviewer_run_ref"]["sha256"] = "0" * 64
+    elif scenario == "extra-reference-field":
+        payload["reviewer_run_ref"]["path"] = ".specbound/agent-results/independent-reviewer/result-independent-reviewer.json"
     elif scenario == "provenance":
         payload["context_provenance"]["producer_transcript_inherited"] = True
     elif scenario == "missing-target-provenance":
@@ -576,7 +717,7 @@ def test_agent_result_fails_closed_without_mutation(tmp_path: Path, scenario: st
         payload["mutation_class"] = "evidence_write"
     elif scenario == "outside-path":
         outside = root / "outside.py"
-        outside.write_text("outside = True\n", encoding="utf-8")
+        outside.write_text("outside = True\n", encoding="utf-8", newline="\n")
         outside_ref = exact_ref(root, "outside.py", "outside", None)
         payload["changed_paths"] = ["outside.py"]
         payload["evidence"][0]["artifacts"].append(outside_ref)
@@ -604,7 +745,7 @@ def test_agent_result_fails_closed_without_mutation(tmp_path: Path, scenario: st
         payload["model_alias"] = "openai-reviewer"
     elif scenario == "target-risk":
         target_path = root / payload["target"]["path"]
-        target_path.write_text(target_path.read_text(encoding="utf-8").replace("risk: high", "risk: low"), encoding="utf-8")
+        target_path.write_text(target_path.read_text(encoding="utf-8").replace("risk: high", "risk: low"), encoding="utf-8", newline="\n")
         updated_target = exact_ref(root, payload["target"]["path"], payload["target"]["id"], None)
         payload["target"] = updated_target
         payload["context_provenance"]["input_artifacts"] = [updated_target]
@@ -614,7 +755,7 @@ def test_agent_result_fails_closed_without_mutation(tmp_path: Path, scenario: st
         review_path = root / f".specbound/micro-spec-reviews/{parts[2]}/{Path(parts[3]).stem}.review.json"
         review = json.loads(review_path.read_text(encoding="utf-8"))
         review["micro_spec_sha256"] = updated_target["sha256"]
-        review_path.write_text(json.dumps(review, indent=2) + "\n", encoding="utf-8")
+        review_path.write_text(json.dumps(review, indent=2) + "\n", encoding="utf-8", newline="\n")
     elif scenario == "reviewer-role":
         payload["reviewer_run_ref"]["role_id"] = "delivery-qc"
     elif scenario == "normalized-changed-path":
@@ -642,7 +783,7 @@ def test_each_role_result_rejects_forbidden_boundary_without_mutation(
     if scenario == "path":
         authority = root / ".specbound/approvals/unauthorized.json"
         authority.parent.mkdir(parents=True, exist_ok=True)
-        authority.write_text("{}\n", encoding="utf-8")
+        authority.write_text("{}\n", encoding="utf-8", newline="\n")
         authority_ref = exact_ref(root, ".specbound/approvals/unauthorized.json", "unauthorized", None)
         payload["changed_paths"] = [authority_ref["path"]]
         payload["evidence"][0]["artifacts"].append(authority_ref)
@@ -667,7 +808,7 @@ def test_independent_reviewer_must_report_no_changed_paths(tmp_path: Path) -> No
     root, _ = setup_root(tmp_path)
     payload = valid_result(root, "independent-reviewer")
     changed = root / "review.txt"
-    changed.write_text("forbidden\n", encoding="utf-8")
+    changed.write_text("forbidden\n", encoding="utf-8", newline="\n")
     payload["changed_paths"] = ["review.txt"]
     payload["evidence"][0]["artifacts"].append(exact_ref(root, "review.txt", "review", None))
     result = validate_agent_result(root, write_json(root, "result.json", payload), POLICY_REL)
@@ -695,7 +836,7 @@ def test_symlink_target_and_changed_path_fail_closed_when_supported(tmp_path: Pa
     root, _ = setup_root(tmp_path)
     payload = valid_request(root, "discovery-author")
     external = tmp_path / "external.md"
-    external.write_text("external\n", encoding="utf-8")
+    external.write_text("external\n", encoding="utf-8", newline="\n")
     link = root / "targets/link.md"
     try:
         link.symlink_to(external)
@@ -711,7 +852,7 @@ def test_symlinked_changed_path_fails_closed_when_supported(tmp_path: Path) -> N
     payload = valid_result(root, "implementation")
     changed = root / "src/fixture_impl.py"
     real = root / "src/real_impl.py"
-    real.write_text(changed.read_text(encoding="utf-8"), encoding="utf-8")
+    real.write_text(changed.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
     changed.unlink()
     try:
         changed.symlink_to(real)
@@ -749,7 +890,7 @@ def test_root_validate_checks_enabled_policy_and_disabled_adopter_stays_compatib
     config = yaml.safe_load((disabled / "specbound.yaml").read_text(encoding="utf-8"))
     config["policy"].pop("agent_contract")
     shutil.rmtree(disabled / ".specbound/policies")
-    (disabled / "specbound.yaml").write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    (disabled / "specbound.yaml").write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8", newline="\n")
     disabled_run = run_cli(disabled, "validate")
     assert disabled_run.returncode == 0, disabled_run.stdout
     assert json.loads(disabled_run.stdout)["checked_agent_roles"] == 0
@@ -770,7 +911,7 @@ def test_repository_schema_cannot_override_packaged_core_contract(tmp_path: Path
     schemas.mkdir()
     local_schema = json.loads((ROOT / "schemas/agent-result.schema.json").read_text(encoding="utf-8"))
     local_schema["additionalProperties"] = True
-    (schemas / "agent-result.schema.json").write_text(json.dumps(local_schema), encoding="utf-8")
+    (schemas / "agent-result.schema.json").write_text(json.dumps(local_schema), encoding="utf-8", newline="\n")
 
     result = validate_agent_result(root, write_json(root, "result.json", payload), POLICY_REL)
 
@@ -785,6 +926,10 @@ def test_implementation_scope_comes_from_exact_reviewed_micro_spec_scope() -> No
     assert ("src/specbound/agent_contract.py", False) in scoped
     assert ("fixtures/agent-contract", True) in scoped
     assert ("src/specbound/schemas/agent-result.schema.json", False) in scoped
+    assert ("fixtures/valid-minimal/specbound.yaml", False) in scoped
+    assert ("fixtures/valid-minimal/.specbound/policies/agent-roles.yaml", False) in scoped
+    assert ("fixtures/invalid-unsafe-path/specbound.yaml", False) in scoped
+    assert ("fixtures/invalid-unsafe-path/.specbound/policies/agent-roles.yaml", False) in scoped
     assert _changed_path_allowed(ROOT, "src/specbound/agent_contract.py", role, target)
     assert _changed_path_allowed(ROOT, "fixtures/agent-contract/positive/implementation.result.json", role, target)
     assert not _changed_path_allowed(ROOT, "src/specbound/agent_contract.py/escape", role, target)
@@ -828,3 +973,14 @@ def test_adoption_template_remains_preflight_valid(tmp_path: Path) -> None:
     completed = run_cli(root, "preflight")
 
     assert completed.returncode == 0, completed.stdout
+
+
+def test_agent_contract_fixture_bytes_are_cross_platform_stable_lf() -> None:
+    text_suffixes = {".json", ".md", ".py", ".yaml", ".yml"}
+    crlf_paths = [
+        path.relative_to(AGENT_FIXTURE).as_posix()
+        for path in AGENT_FIXTURE.rglob("*")
+        if path.is_file() and path.suffix in text_suffixes and b"\r\n" in path.read_bytes()
+    ]
+
+    assert crlf_paths == []
