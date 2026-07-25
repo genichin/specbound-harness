@@ -42,7 +42,7 @@ AUTHORITY_PATH_PREFIXES = (
     ".specbound/micro-spec-reviews/",
 )
 RUNTIME_TERMS = ("openai", "anthropic", "claude", "gemini", "hermes", "provider", "vendor", "runtime", "profile", "delegate_task")
-COMMAND_EVIDENCE_SLOTS = frozenset({"test-results", "focused-verification", "regression-evidence"})
+COMMAND_EVIDENCE_SLOTS = frozenset({"test-results", "focused-verification", "negative-tests", "regression-evidence", "supported-ci"})
 
 _AGENT_REQUEST_SCHEMA: dict[str, Any] = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -454,6 +454,77 @@ def _reference_valid(requirement: str, value: object) -> bool:
     return value is None
 
 
+def _validate_reference_result_intrinsics(
+    payload: dict[str, Any],
+    role_contract: dict[str, Any],
+    effective_risk: str,
+) -> None:
+    for field_name, requirement in role_contract["result_references"].items():
+        reference = payload[field_name]
+        if requirement == "required" and reference is None:
+            raise ValueError(f"reference result is missing required {field_name}")
+        if requirement == "forbidden" and reference is not None:
+            raise ValueError(f"reference result carries forbidden {field_name}")
+        if reference is not None:
+            allowed_roles = role_contract["reference_edges"][field_name]["allowed_roles"]
+            if reference["role_id"] not in allowed_roles:
+                raise ValueError(f"reference result {field_name} role is outside the declared handoff edge")
+
+    configured_slots = {
+        slot_name: {"requirement": requirement, "not_applicable_allowed": not_applicable_allowed}
+        for slot_name, requirement, not_applicable_allowed in role_contract["evidence_slots"]
+    }
+    evidence_by_slot: dict[str, dict[str, Any]] = {}
+    all_commands: list[dict[str, Any]] = []
+    for evidence in payload["evidence"]:
+        slot_name = evidence["slot"]
+        if slot_name in evidence_by_slot:
+            raise ValueError(f"reference result repeats evidence slot {slot_name}")
+        if slot_name not in configured_slots:
+            raise ValueError(f"reference result uses unknown evidence slot {slot_name}")
+        evidence_by_slot[slot_name] = evidence
+        for command in evidence["commands"]:
+            if (command["result"] == "passed") != (command["exit_code"] == 0):
+                raise ValueError("reference result evidence command and exit code conflict")
+        all_commands.extend(evidence["commands"])
+
+    applicability = role_contract["evidence_requirements_by_risk"][effective_risk]
+    required_slots = set(applicability["required"])
+    conditional_slots = set(applicability["conditional"])
+    for slot_name in required_slots | conditional_slots:
+        evidence = evidence_by_slot.get(slot_name)
+        if evidence is None:
+            raise ValueError(f"reference result evidence slot {slot_name} is not explicitly resolved")
+        slot_policy = configured_slots[slot_name]
+        if evidence["status"] == "not_applicable":
+            reason = (evidence.get("reason") or "").strip().lower().rstrip(".")
+            blanket_reason = (
+                len(reason) < 20
+                or reason in {"not applicable", "not applicable here", "simply not applicable", "this evidence is not applicable here"}
+                or "simply not applicable" in reason
+                or reason.startswith("n/a")
+            )
+            if (
+                blanket_reason
+                or slot_name in required_slots
+                or not slot_policy["not_applicable_allowed"]
+            ):
+                raise ValueError(f"reference result has invalid not_applicable evidence for {slot_name}")
+        if evidence["status"] == "provided" and slot_name in COMMAND_EVIDENCE_SLOTS and not evidence["commands"]:
+            raise ValueError(f"reference result evidence slot {slot_name} lacks a command")
+
+    action = payload["permitted_next_action"]
+    if payload["verdict"] == "pass":
+        if action not in role_contract["permitted_next_actions"] or (isinstance(action, str) and "rework" in action):
+            raise ValueError("passing reference result has an invalid next action")
+        if any(command["result"] != "passed" or command["exit_code"] != 0 for command in all_commands):
+            raise ValueError("passing reference result contains failed command evidence")
+        if any(finding["severity"] in {"high", "critical"} for finding in payload["findings"]):
+            raise ValueError("passing reference result retains a high-severity finding")
+    elif action is not None and (action not in role_contract["permitted_next_actions"] or "rework" not in action):
+        raise ValueError("non-passing reference result advances the lifecycle")
+
+
 def _load_reference_result_index(
     root: Path,
     relative_files: list[str],
@@ -502,6 +573,62 @@ def _load_reference_result_index(
                 raise ValueError("reference result execution identity differs from its plan")
             if payload["planned_context_id"] != payload["context_id"]:
                 raise ValueError("reference result context identity differs from its plan")
+            provenance = payload["context_provenance"]
+            if (
+                provenance["fresh_context"] is not True
+                or provenance["producer_transcript_inherited"] is not False
+                or provenance["session_memory_inherited"] is not False
+            ):
+                raise ValueError("reference result must prove a fresh isolated context")
+            if payload["target"] not in provenance["input_artifacts"]:
+                raise ValueError("reference result provenance must include its exact target")
+            role_contract = _EXPECTED_ROLE_CONTRACTS.get(payload["role_id"])
+            if role_contract is None:
+                raise ValueError("reference result role is outside the closed role inventory")
+            target_path = _safe_repository_path(root, payload["target"]["path"])
+            risk_outcome = AgentContractResult()
+            canonical_target_risk = _canonical_artifact_risk(root, target_path, risk_outcome)
+            effective_risk = _effective_task_risk(canonical_target_risk, role_contract["task_risk_floor"])
+            if not risk_outcome.valid:
+                raise ValueError("reference result target risk lineage is invalid")
+            if payload["target_risk"] != canonical_target_risk or payload["effective_task_risk"] != effective_risk:
+                raise ValueError("reference result risk declaration differs from canonical risk")
+            _validate_reference_result_intrinsics(payload, role_contract, effective_risk)
+            evidence_outcome = AgentContractResult()
+            evidence_artifact_paths: set[str] = set()
+            target_binding_proven = False
+            for evidence in payload["evidence"]:
+                for artifact in evidence["artifacts"]:
+                    _verify_artifact_ref(root, artifact, evidence_outcome, "reference_evidence_artifact")
+                    evidence_artifact_paths.add(artifact["path"])
+                    if evidence["slot"] == "target-binding" and artifact == payload["target"]:
+                        target_binding_proven = True
+            if not evidence_outcome.valid:
+                raise ValueError("reference result contains invalid exact evidence artifacts")
+            if not target_binding_proven:
+                raise ValueError("reference result target-binding evidence omits the exact target")
+            if not set(payload["changed_paths"]).issubset(evidence_artifact_paths):
+                raise ValueError("reference result changed paths lack exact artifact evidence")
+            if payload["authority_type"] != "none" or payload["authority_action_id"] is not None:
+                raise ValueError("reference result must remain non-authorizing")
+            if set(payload["claims"]).intersection(REQUIRED_FORBIDDEN_CLAIMS):
+                raise ValueError("reference result carries a forbidden authority claim")
+            if not set(payload["tool_categories"]).issubset(set(role_contract["allowed_tool_categories"])):
+                raise ValueError("reference result uses tools outside its role contract")
+            if payload["mutation_class"] not in role_contract["mutation_classes"]:
+                raise ValueError("reference result mutation is outside its role contract")
+            if payload["output_kind"] not in role_contract["output_kinds"]:
+                raise ValueError("reference result output is outside its role contract")
+            if payload["mutation_class"] == "none" and payload["changed_paths"]:
+                raise ValueError("read-only reference result cannot declare changed paths")
+            if payload["verdict"] == "pass" and payload["mutation_class"] != "none" and not payload["changed_paths"]:
+                raise ValueError("passing mutating reference result must declare changed paths")
+            for changed_path in payload["changed_paths"]:
+                if changed_path.startswith(AUTHORITY_PATH_PREFIXES):
+                    raise ValueError("reference result declares an authority-owned changed path")
+                _safe_repository_path(root, changed_path)
+                if not _changed_path_allowed(root, changed_path, role_contract, payload["target"]["path"]):
+                    raise ValueError("reference result changed path is outside its role contract")
             result_id = payload["result_id"]
             if result_id in index:
                 raise ValueError(f"duplicate reference result ID: {result_id}")
@@ -512,6 +639,68 @@ def _load_reference_result_index(
             }
         except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
             result.block("invalid_reference_result_file", relative, str(exc))
+    for indexed in index.values():
+        payload = indexed["payload"]
+        role_contract = _EXPECTED_ROLE_CONTRACTS[payload["role_id"]]
+        provenance_artifacts = payload["context_provenance"]["input_artifacts"]
+        reference_provenance: list[dict[str, Any]] = []
+        for field_name, requirement in role_contract["result_references"].items():
+            reference = payload[field_name]
+            if reference is None:
+                continue
+            nested = index.get(reference["result_id"])
+            if nested is None:
+                result.block(
+                    "invalid_reference_result_file",
+                    indexed["path"],
+                    f"referenced result requires explicit transitive bytes for {field_name}",
+                )
+                continue
+            nested_payload = nested["payload"]
+            expected = {
+                "result_id": nested_payload["result_id"],
+                "role_id": nested_payload["role_id"],
+                "execution_id": nested_payload["execution_id"],
+                "context_id": nested_payload["context_id"],
+                "sha256": nested["sha256"],
+            }
+            edge = role_contract["reference_edges"][field_name]
+            if (
+                reference != expected
+                or nested_payload["role_id"] not in edge["allowed_roles"]
+                or nested_payload["target"] != payload["target"]
+                or nested_payload["verdict"] != edge["required_verdict"]
+            ):
+                result.block(
+                    "invalid_reference_result_file",
+                    indexed["path"],
+                    f"transitive {field_name} does not satisfy its exact handoff edge",
+                )
+                continue
+            expected_provenance = {
+                "path": nested["path"],
+                "id": nested_payload["result_id"],
+                "revision": None,
+                "sha256": nested["sha256"],
+            }
+            reference_provenance.append(expected_provenance)
+            if expected_provenance not in provenance_artifacts:
+                result.block(
+                    "invalid_reference_result_file",
+                    indexed["path"],
+                    f"transitive {field_name} is absent from exact context provenance",
+                )
+        provenance_outcome = AgentContractResult()
+        for artifact in provenance_artifacts:
+            if artifact == payload["target"] or artifact in reference_provenance:
+                continue
+            _verify_artifact_ref(root, artifact, provenance_outcome, "reference_input_artifact")
+        if not provenance_outcome.valid:
+            result.block(
+                "invalid_reference_result_file",
+                indexed["path"],
+                "reference result contains invalid extra context provenance",
+            )
     return index
 
 
@@ -545,7 +734,17 @@ def _verify_result_reference(
         result.block("reference_result_mismatch", field_name, "reference envelope differs from the explicit result bytes")
         return False
     if used_reference_ids is not None:
-        used_reference_ids.add(reference["result_id"])
+        pending = [payload]
+        while pending:
+            current = pending.pop()
+            current_id = current["result_id"]
+            if current_id in used_reference_ids:
+                continue
+            used_reference_ids.add(current_id)
+            for nested_field in ("producer_result_ref", "reviewer_run_ref"):
+                nested_reference = current[nested_field]
+                if nested_reference is not None and nested_reference["result_id"] in reference_index:
+                    pending.append(reference_index[nested_reference["result_id"]]["payload"])
     return True
 
 
@@ -570,36 +769,120 @@ def _artifact_metadata(path: Path) -> dict[str, Any]:
     return _frontmatter(path)
 
 
-def _canonical_artifact_risk(root: Path, target_path: Path, seen: set[Path] | None = None) -> str:
-    """Derive closed Artifact Risk from exact canonical ancestry; unresolved lineage fails high."""
+def _canonical_artifact_risk(
+    root: Path,
+    target_path: Path,
+    outcome: AgentContractResult | None = None,
+    seen: set[Path] | None = None,
+) -> str:
+    """Derive Artifact Risk from exact canonical ancestry and block unresolved or downgraded lineage."""
 
-    resolved = target_path.resolve()
+    def fail(code: str, detail: str) -> str:
+        if outcome is not None:
+            try:
+                relative = target_path.relative_to(root).as_posix()
+            except ValueError:
+                relative = str(target_path)
+            outcome.block(code, relative, detail)
+        return "high"
+
+    try:
+        resolved = target_path.resolve(strict=True)
+    except OSError:
+        return fail("invalid_artifact_lineage", "canonical risk target cannot be resolved")
     visited = set() if seen is None else set(seen)
     if resolved in visited:
-        return "high"
+        return fail("cyclic_artifact_lineage", "canonical risk ancestry contains a cycle")
     visited.add(resolved)
-    metadata = _artifact_metadata(target_path)
+    try:
+        metadata = _artifact_metadata(target_path)
+    except (OSError, UnicodeError, yaml.YAMLError, ValueError):
+        return fail("malformed_artifact_lineage", "canonical risk metadata cannot be parsed")
     recorded = metadata.get("risk", metadata.get("risk_class"))
-    risks = [recorded] if recorded in RISK_ORDER else []
-    parent_bindings = [
-        metadata.get(name)
-        for name in ("parent_discovery", "requirement", "micro_spec")
-        if isinstance(metadata.get(name), dict)
-    ]
-    for binding in parent_bindings:
-        relative = binding.get("path")
+    if recorded not in RISK_ORDER:
+        return fail("invalid_artifact_risk", f"canonical artifact risk must be one of {RISK_ORDER}")
+
+    try:
+        relative = target_path.relative_to(root).as_posix()
+    except ValueError:
+        return fail("invalid_artifact_lineage", "canonical risk target is outside the repository")
+    required_parent = None
+    if relative.startswith(".specbound/requirements/"):
+        required_parent = "parent_discovery"
+    elif relative.startswith(".specbound/micro-specs/"):
+        required_parent = "requirement"
+
+    parent_names = ("parent_discovery", "requirement", "micro_spec")
+    declared = [name for name in parent_names if name in metadata]
+    if required_parent is not None and required_parent not in declared:
+        return fail("missing_artifact_lineage", f"canonical {required_parent} binding is required")
+
+    risks = [recorded]
+    for name in declared:
+        binding = metadata.get(name)
+        if not isinstance(binding, dict):
+            return fail("invalid_artifact_lineage", f"{name} binding must be an object")
+        relative_parent = binding.get("path")
         digest = binding.get("sha256")
-        if not isinstance(relative, str) or not isinstance(digest, str):
-            return "high"
+        if not isinstance(relative_parent, str) or not isinstance(digest, str):
+            return fail("invalid_artifact_lineage", f"{name} binding requires path and sha256")
         try:
-            parent_path = _safe_repository_path(root, relative)
-            if parent_path.resolve() in visited or sha256(parent_path.read_bytes()).hexdigest() != digest:
-                return "high"
+            parent_path = _safe_repository_path(root, relative_parent)
+            if parent_path.resolve() in visited:
+                return fail("cyclic_artifact_lineage", "canonical risk ancestry contains a cycle")
+            if sha256(parent_path.read_bytes()).hexdigest() != digest:
+                return fail("stale_artifact_lineage", f"{name} digest differs from canonical parent bytes")
         except (OSError, ValueError):
-            return "high"
-        risks.append(_canonical_artifact_risk(root, parent_path, visited))
-    if not risks:
-        return "high"
+            return fail("invalid_artifact_lineage", f"{name} path cannot be resolved safely")
+        try:
+            parent_metadata = _artifact_metadata(parent_path)
+        except (OSError, UnicodeError, yaml.YAMLError, ValueError):
+            return fail("malformed_artifact_lineage", f"{name} parent metadata cannot be parsed")
+        required_binding_keys = {"id", "revision"} if name in {"parent_discovery", "requirement"} else {"id"}
+        if any(key not in binding for key in required_binding_keys):
+            return fail("invalid_artifact_lineage", f"{name} binding is missing exact identity fields")
+        if binding.get("id") != parent_metadata.get("id") or (
+            "revision" in required_binding_keys and binding.get("revision") != parent_metadata.get("revision")
+        ):
+            return fail("artifact_lineage_identity_mismatch", f"{name} identity differs from canonical parent bytes")
+        confirmed_parent_risk: str | None = None
+        if name == "parent_discovery":
+            expected_confirmation = f".specbound/confirmations/{Path(relative_parent).stem}.confirmation.json"
+            if binding.get("confirmation_path") != expected_confirmation:
+                return fail(
+                    "artifact_lineage_identity_mismatch",
+                    "parent Discovery binding must name its exact canonical confirmation record",
+                )
+            state_outcome = outcome if outcome is not None else AgentContractResult()
+            state_target = {
+                "path": relative_parent,
+                "id": parent_metadata.get("id"),
+                "revision": parent_metadata.get("revision"),
+                "sha256": digest,
+            }
+            if not _canonical_state_record_matches(root, state_target, "confirmed", state_outcome):
+                return "high"
+            try:
+                confirmation = _read_json_object(
+                    _safe_repository_path(root, expected_confirmation),
+                    "Discovery confirmation",
+                )
+            except (OSError, UnicodeError, ValueError):
+                return fail("missing_confirmed_record", "canonical Discovery confirmation is missing or unreadable")
+            confirmed_parent_risk = confirmation.get("risk_class")
+            if confirmed_parent_risk not in RISK_ORDER:
+                return fail("invalid_artifact_risk", "confirmed Discovery risk must use the closed risk order")
+        parent_risk = _canonical_artifact_risk(root, parent_path, outcome, visited)
+        if confirmed_parent_risk is not None:
+            if parent_risk != confirmed_parent_risk:
+                return fail(
+                    "conflicting_artifact_risk",
+                    "confirmed Discovery snapshot risk differs from its exact confirmation-bound risk",
+                )
+            parent_risk = confirmed_parent_risk
+        risks.append(parent_risk)
+        if RISK_ORDER.index(recorded) < RISK_ORDER.index(parent_risk):
+            fail("artifact_risk_downgrade", f"child risk {recorded!r} is below parent risk {parent_risk!r}")
     return RISK_ORDER[max(RISK_ORDER.index(risk) for risk in risks)]
 
 
@@ -641,7 +924,11 @@ def _verify_artifact_ref(
     return path
 
 
-def _micro_spec_review_state(root: Path, target: dict[str, Any]) -> str | None:
+def _micro_spec_review_state(
+    root: Path,
+    target: dict[str, Any],
+    outcome: AgentContractResult | None = None,
+) -> str | None:
     parts = PurePosixPath(target["path"]).parts
     if len(parts) != 4 or parts[:2] != (".specbound", "micro-specs"):
         return None
@@ -664,6 +951,8 @@ def _micro_spec_review_state(root: Path, target: dict[str, Any]) -> str | None:
             or parent_metadata.get("status") != "approved"
             or sha256(parent_path.read_bytes()).hexdigest() != review["requirement_sha256"]
         ):
+            if outcome is not None:
+                outcome.block("stale_micro_spec_review_parent", review_relative, "Micro-SPEC review parent requirement binding is stale or mismatched")
             return None
         _validate_requirement(
             root,
@@ -671,15 +960,34 @@ def _micro_spec_review_state(root: Path, target: dict[str, Any]) -> str | None:
             validation,
             {review["requirement_id"]: review["revision"]},
         )
-    except (KeyError, OSError, ValueError):
+    except (KeyError, OSError, ValueError) as exc:
+        if outcome is not None:
+            outcome.block("missing_or_malformed_micro_spec_review", review_relative, f"Micro-SPEC review cannot be resolved: {exc}")
         return None
-    if validation.valid and review.get("decision") == "approved_for_implementation":
+    if not validation.valid:
+        if outcome is not None:
+            for blocker in validation.blockers:
+                outcome.block(f"lifecycle_{blocker['code']}", blocker["path"], blocker["detail"])
+        return None
+    if review.get("decision") == "approved_for_implementation":
         return "approved_for_implementation"
+    if outcome is not None:
+        outcome.block("conflicting_micro_spec_review", review_relative, "Micro-SPEC review decision is not approved_for_implementation")
     return None
 
 
-def _canonical_state_record_matches(root: Path, target: dict[str, Any], state: str) -> bool:
+def _canonical_state_record_matches(
+    root: Path,
+    target: dict[str, Any],
+    state: str,
+    outcome: AgentContractResult | None = None,
+) -> bool:
     relative = target["path"]
+
+    def fail(code: str, detail: str) -> bool:
+        if outcome is not None:
+            outcome.block(code, relative, detail)
+        return False
     expected_roots = {
         "draft": ".specbound/discoveries/",
         "confirmed": ".specbound/discoveries/",
@@ -690,7 +998,7 @@ def _canonical_state_record_matches(root: Path, target: dict[str, Any], state: s
     }
     expected_root = expected_roots.get(state)
     if expected_root is None or not relative.startswith(expected_root):
-        return False
+        return fail("invalid_lifecycle_target_family", f"state {state!r} is incompatible with the target family")
     stem = Path(relative).stem
     candidates: dict[str, tuple[str, str, str]] = {
         "confirmed": (
@@ -718,7 +1026,7 @@ def _canonical_state_record_matches(root: Path, target: dict[str, Any], state: s
         "verified": ".specbound/iteration-qc/req-*/iqc-*-*-r*.json",
     }
     if not _path_matches(relative, topology_patterns[state]):
-        return False
+        return fail("invalid_lifecycle_target_topology", f"target path is not canonical for state {state!r}")
     candidate = candidates.get(state)
     if candidate is None:
         if state == "draft":
@@ -743,21 +1051,17 @@ def _canonical_state_record_matches(root: Path, target: dict[str, Any], state: s
         record_path = _safe_repository_path(root, record_relative)
         record = _read_json_object(record_path, f"{state} state record")
     except (OSError, ValueError):
-        return False
+        return fail(f"missing_{state}_record", f"canonical {state} record is missing or unreadable")
     expected_decision = {"confirmed": "confirmed", "in_review": "submitted_for_review"}.get(state)
-    shallow_binding_matches = (
-        record.get(path_field) == relative
-        and record.get(digest_field) == target["sha256"]
-        and record.get("revision") == target["revision"]
-        and (
-            record.get("discovery_id") == target["id"]
-            if state == "confirmed"
-            else record.get("requirement_id") == target["id"]
-        )
-        and (expected_decision is None or record.get("decision") == expected_decision)
-    )
-    if not shallow_binding_matches:
-        return False
+    if record.get(path_field) != relative:
+        return fail(f"{state}_record_path_mismatch", f"canonical {state} record targets different artifact bytes")
+    if record.get(digest_field) != target["sha256"]:
+        return fail(f"stale_{state}_record", f"canonical {state} record digest differs from the exact target")
+    expected_identity = record.get("discovery_id") if state == "confirmed" else record.get("requirement_id")
+    if expected_identity != target["id"] or record.get("revision") != target["revision"]:
+        return fail(f"{state}_record_identity_mismatch", f"canonical {state} record identity differs from the target")
+    if expected_decision is not None and record.get("decision") != expected_decision:
+        return fail(f"conflicting_{state}_record", f"canonical {state} record carries a conflicting decision")
     try:
         from .validation import (
             Result as RepositoryResult,
@@ -774,13 +1078,31 @@ def _canonical_state_record_matches(root: Path, target: dict[str, Any], state: s
             allowed = {risk: set(authorities) for risk, authorities in raw_allowed.items()}
             _validate_discovery_confirmation(root, record_path, validation, allowed)
         elif state == "approved":
-            _validate_requirement(root, _safe_repository_path(root, relative), validation, {target["id"]: target["revision"]})
+            requirement_path = _safe_repository_path(root, relative)
+            _validate_requirement(root, requirement_path, validation, {target["id"]: target["revision"]})
+            config = _load_config(root)
+            allowed_by_risk = config["policy"]["requirement_approval_authorities_by_risk"]
+            approval_risk = record.get("risk")
+            allowed_authorities = allowed_by_risk.get(approval_risk, []) if isinstance(allowed_by_risk, dict) else []
+            if record.get("authority") not in allowed_authorities:
+                validation.block(
+                    "unauthorized_approval_authority",
+                    record_relative,
+                    "approval authority is not allowed for the canonical Artifact Risk",
+                )
         else:
             target_path = _safe_repository_path(root, relative)
             _validate_requirement(root, target_path, validation, {})
             _validate_requirement_review_submission(root, record_path, validation)
-    except (KeyError, OSError, TypeError, ValueError):
-        return False
+    except (KeyError, OSError, TypeError, ValueError) as exc:
+        return fail(f"invalid_{state}_record", f"canonical {state} record validation failed: {exc}")
+    if not validation.valid and outcome is not None:
+        for blocker in validation.blockers:
+            outcome.block(
+                f"lifecycle_{blocker['code']}",
+                blocker.get("path", relative),
+                blocker.get("detail", f"canonical {state} record failed validation"),
+            )
     return validation.valid
 
 
@@ -791,10 +1113,13 @@ def _derive_current_state(
     role_id: str,
     producer_reference_valid: bool,
     producer_reference: dict[str, Any] | None,
+    outcome: AgentContractResult | None = None,
 ) -> str | None:
     if not target["path"].startswith(".specbound/"):
         return None
-    review_state = _micro_spec_review_state(root, target)
+    review_state = _micro_spec_review_state(root, target, outcome)
+    if target["path"].startswith(".specbound/micro-specs/") and review_state is None:
+        return None
     if (
         review_state == "approved_for_implementation"
         and role_id == "iteration-qc"
@@ -809,7 +1134,7 @@ def _derive_current_state(
     for field_name in ("status", "state", "decision", "verdict"):
         value = metadata.get(field_name)
         if isinstance(value, str) and value:
-            if not _canonical_state_record_matches(root, target, value):
+            if not _canonical_state_record_matches(root, target, value, outcome):
                 return None
             if value == "implemented" and (
                 role_id != "iteration-qc"
@@ -950,7 +1275,7 @@ def validate_role_request(
 
     target_path = _verify_artifact_ref(root, request["target"], result, "target")
     if target_path is not None:
-        target_risk = _canonical_artifact_risk(root, target_path)
+        target_risk = _canonical_artifact_risk(root, target_path, result)
         effective_task_risk = _effective_task_risk(target_risk, role["task_risk_floor"])
         result.derived_target_risk = target_risk
         result.derived_effective_task_risk = effective_task_risk
@@ -958,6 +1283,7 @@ def validate_role_request(
             result.block("target_risk_spoofing", request["target"]["path"], f"caller claimed {request['target_risk']!r}; repository risk is {target_risk!r}")
         if request["effective_task_risk"] != effective_task_risk:
             result.block("effective_task_risk_spoofing", request["target"]["path"], f"caller claimed {request['effective_task_risk']!r}; derived task risk is {effective_task_risk!r}")
+        state_blocker_count = len(result.blockers)
         derived_state = _derive_current_state(
             root,
             request["target"],
@@ -965,9 +1291,11 @@ def validate_role_request(
             role["role_id"],
             reference_validity["producer_result_ref"],
             request["producer_result_ref"],
+            result,
         )
         if derived_state is None:
-            result.block("undetermined_current_state", request["target"]["path"], "repository target has no deterministic lifecycle state")
+            if len(result.blockers) == state_blocker_count:
+                result.block("undetermined_current_state", request["target"]["path"], "repository target has no deterministic lifecycle state")
         else:
             result.derived_current_state = derived_state
             if request["current_state"] != derived_state:
@@ -993,9 +1321,20 @@ def validate_role_request(
         result.block("unexpected_verified_iqc_set", str(request_path), "only delivery-qc may declare a verified Iteration-QC set")
 
     capabilities = request["requested_capabilities"]
+    supported_mutations = {mutation for configured_role in policy["roles"] for mutation in configured_role["mutation_classes"]}
+    for mutation in capabilities["mutation_classes"]:
+        if mutation in {"authority_transition", "external_mutation"}:
+            result.block(
+                f"unsupported_{mutation}",
+                str(request_path),
+                "agent-role requests never authorize canonical authority or external mutations",
+            )
+        elif mutation not in supported_mutations:
+            result.block("unknown_mutation_class", str(request_path), f"unknown mutation class: {mutation}")
+        elif mutation not in role["mutation_classes"]:
+            result.block("capability_escalation", str(request_path), f"requested mutation class exceeds the {role['role_id']} policy")
     for requested_name, policy_name in (
         ("tool_categories", "allowed_tool_categories"),
-        ("mutation_classes", "mutation_classes"),
         ("output_kinds", "output_kinds"),
         ("actions", "permitted_next_actions"),
     ):
@@ -1041,7 +1380,8 @@ def _reviewed_micro_spec_paths(root: Path, target_path: str) -> list[tuple[str, 
         if value.startswith("schemas/"):
             scoped.append((f"src/specbound/{value}", is_directory))
             scoped.append(("src/specbound/schemas/__init__.py", False))
-    if "valid/invalid fixture config" in match.group(1):
+    scope_text = match.group(1)
+    if "valid/invalid fixture config" in scope_text:
         scoped.extend(
             (path, False)
             for path in (
@@ -1051,6 +1391,16 @@ def _reviewed_micro_spec_paths(root: Path, target_path: str) -> list[tuple[str, 
                 "fixtures/invalid-unsafe-path/.specbound/policies/agent-roles.yaml",
             )
         )
+    if "three repository policy copies" in scope_text:
+        scoped.extend(
+            (path, False)
+            for path in (
+                "fixtures/valid-minimal/.specbound/policies/agent-roles.yaml",
+                "fixtures/invalid-unsafe-path/.specbound/policies/agent-roles.yaml",
+            )
+        )
+    if "installed wheel" in scope_text:
+        scoped.append((".github/workflows/ci.yml", False))
     return scoped
 
 
@@ -1102,7 +1452,9 @@ def _delivery_qc_iqc_provenance(
     iqc_refs = [
         artifact
         for artifact in input_artifacts
-        if artifact["path"].startswith(".specbound/iteration-qc/")
+        if isinstance(artifact, dict)
+        and isinstance(artifact.get("path"), str)
+        and artifact["path"].startswith(".specbound/iteration-qc/")
     ]
     if not iqc_refs:
         outcome.block("missing_verified_iqc_set", target["path"], "delivery-qc requires at least one exact canonical IQC provenance artifact")
@@ -1118,8 +1470,25 @@ def _delivery_qc_iqc_provenance(
     seen_micro_specs: set[tuple[str, str, str]] = set()
     for artifact in iqc_refs:
         try:
-            iqc_path = _safe_repository_path(root, artifact["path"])
+            iqc_path = _verify_artifact_ref(root, artifact, outcome, "delivery-qc-iqc")
+            if iqc_path is None:
+                continue
+            from .validation import Result as RepositoryResult, _validate_qc_record
+
+            validation = RepositoryResult(root)
+            _validate_qc_record(root, iqc_path, validation, "iteration_qc")
+            if not validation.valid:
+                for blocker in validation.blockers:
+                    outcome.block(blocker["code"], blocker["path"], blocker["detail"])
+                continue
             iqc = _read_json_object(iqc_path, "iteration-QC evidence")
+            expected_iqc_keys = {
+                "schema_version", "micro_spec", "selected_acceptance_criteria",
+                "remaining_acceptance_criteria", "verification", "verdict",
+            }
+            if set(iqc) != expected_iqc_keys:
+                outcome.block("invalid_iqc_provenance", artifact["path"], "IQC record must use the exact closed canonical field set")
+                continue
             if iqc.get("verdict") != "verified":
                 outcome.block("unverified_iqc", artifact["path"], "delivery-qc provenance contains a non-verified IQC")
                 continue
@@ -1132,6 +1501,7 @@ def _delivery_qc_iqc_provenance(
                 outcome.block("stale_iqc_ancestry", artifact["path"], "IQC Micro-SPEC digest is stale")
                 continue
             micro_metadata = _artifact_metadata(micro_path)
+            _canonical_artifact_risk(root, micro_path, outcome)
             if micro_metadata.get("id") != micro_ref["id"]:
                 outcome.block("iqc_identity_mismatch", artifact["path"], "IQC Micro-SPEC identity does not match exact bytes")
                 continue
@@ -1289,6 +1659,7 @@ def validate_agent_result(
     derived_effective_task_risk = "high"
     target_path = _verify_artifact_ref(root, payload["target"], outcome, "target")
     if target_path is not None:
+        state_blocker_count = len(outcome.blockers)
         state = _derive_current_state(
             root,
             payload["target"],
@@ -1296,11 +1667,15 @@ def validate_agent_result(
             role["role_id"],
             reference_validity["producer_result_ref"],
             payload["producer_result_ref"],
+            outcome,
         )
         outcome.derived_current_state = state
-        if state is None or state not in role["lifecycle_eligibility"]:
+        if state is None:
+            if len(outcome.blockers) == state_blocker_count:
+                outcome.block("result_state_mismatch", payload["target"]["path"], f"repository state {state!r} is not eligible for {role['role_id']}")
+        elif state not in role["lifecycle_eligibility"]:
             outcome.block("result_state_mismatch", payload["target"]["path"], f"repository state {state!r} is not eligible for {role['role_id']}")
-        target_risk = _canonical_artifact_risk(root, target_path)
+        target_risk = _canonical_artifact_risk(root, target_path, outcome)
         derived_effective_task_risk = _effective_task_risk(target_risk, role["task_risk_floor"])
         outcome.derived_target_risk = target_risk
         outcome.derived_effective_task_risk = derived_effective_task_risk
@@ -1394,13 +1769,26 @@ def validate_agent_result(
     for slot_name, slot_policy in configured_slots.items():
         evidence = evidence_by_slot.get(slot_name)
         if evidence is None:
-            if slot_name in required_slots:
-                outcome.block("missing_evidence_slot", str(result_path), f"required evidence slot {slot_name} is missing")
+            if slot_name in required_slots or slot_name in conditional_slots:
+                applicability = "required" if slot_name in required_slots else "conditional"
+                outcome.block(
+                    "missing_evidence_slot",
+                    str(result_path),
+                    f"{applicability} evidence slot {slot_name} must be explicitly resolved",
+                )
             continue
-        if evidence["status"] == "not_applicable" and (
-            slot_name in required_slots or slot_name not in conditional_slots or not slot_policy["not_applicable_allowed"]
-        ):
-            outcome.block("invalid_not_applicable_evidence", str(result_path), f"slot {slot_name} cannot be not_applicable")
+        if evidence["status"] == "not_applicable":
+            reason = (evidence.get("reason") or "").strip().lower().rstrip(".")
+            blanket_reason = (
+                len(reason) < 20
+                or reason in {"not applicable", "not applicable here", "simply not applicable", "this evidence is not applicable here"}
+                or "simply not applicable" in reason
+                or reason.startswith("n/a")
+            )
+            if blanket_reason:
+                outcome.block("blanket_not_applicable_evidence", str(result_path), f"slot {slot_name} requires a concrete task-specific reason")
+            if slot_name in required_slots or slot_name not in conditional_slots or not slot_policy["not_applicable_allowed"]:
+                outcome.block("invalid_not_applicable_evidence", str(result_path), f"slot {slot_name} cannot be not_applicable")
         if evidence["status"] == "provided" and slot_name in COMMAND_EVIDENCE_SLOTS and not evidence["commands"]:
             outcome.block("missing_command_evidence", str(result_path), f"evidence slot {slot_name} requires a recorded command")
         if slot_name == "no-write" and (
@@ -1413,8 +1801,8 @@ def validate_agent_result(
 
     action = payload["permitted_next_action"]
     if payload["verdict"] == "pass":
-        if action not in role["permitted_next_actions"]:
-            outcome.block("invalid_permitted_next_action", str(result_path), "passing result requires a role-permitted next action")
+        if action not in role["permitted_next_actions"] or (isinstance(action, str) and "rework" in action):
+            outcome.block("invalid_permitted_next_action", str(result_path), "passing result requires a non-rework role-permitted next action")
         if any(command["result"] != "passed" or command["exit_code"] != 0 for command in all_commands):
             outcome.block("invalid_pass_verdict", str(result_path), "pass requires every reported command to pass with exit code zero")
         if any(finding["severity"] in {"high", "critical"} for finding in payload["findings"]):

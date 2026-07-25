@@ -12,7 +12,7 @@
     "path": ".specbound/micro-specs/req-9006/ms-9006-001.md",
     "id": "ms-9006-001",
     "revision": null,
-    "sha256": "87fcf8c7410e56dc182cd43270837e0deebc0e54438a02cfc4571f6c1b2f7a39"
+    "sha256": "2b13b1d0c6056a39a559c62e6069ca7b387140eb919f15388fee9669f2251ab2"
   },
   "producer_result_ref": null,
   "reviewer_run_ref": {
@@ -20,7 +20,7 @@
     "role_id": "independent-reviewer",
     "execution_id": "execution-independent-reviewer",
     "context_id": "context-independent-reviewer",
-    "sha256": "719417f1005d8174dbbdca28a9c086465f60b648e9e94ef45fa8715ba6e2b152"
+    "sha256": "7870280a83fd30311b281057d0d5cd2807853cd91455a0440f7cb194b72d70ba"
   },
   "authority_type": "none",
   "authority_action_id": null,
@@ -33,7 +33,13 @@
         "path": ".specbound/micro-specs/req-9006/ms-9006-001.md",
         "id": "ms-9006-001",
         "revision": null,
-        "sha256": "87fcf8c7410e56dc182cd43270837e0deebc0e54438a02cfc4571f6c1b2f7a39"
+        "sha256": "2b13b1d0c6056a39a559c62e6069ca7b387140eb919f15388fee9669f2251ab2"
+      },
+      {
+        "path": "reference-results/iteration-qc-reviewer_run_ref.json",
+        "id": "result-independent-reviewer",
+        "revision": null,
+        "sha256": "7870280a83fd30311b281057d0d5cd2807853cd91455a0440f7cb194b72d70ba"
       }
     ]
   },
@@ -45,8 +51,10 @@
     "test-execute",
     "filesystem-metadata"
   ],
-  "mutation_class": "none",
-  "changed_paths": [],
+  "mutation_class": "repository_mutation",
+  "changed_paths": [
+    "src/fixture_impl.py"
+  ],
   "output_kind": "agent-result",
   "evidence": [
     {
@@ -57,7 +65,13 @@
           "path": ".specbound/micro-specs/req-9006/ms-9006-001.md",
           "id": "ms-9006-001",
           "revision": null,
-          "sha256": "87fcf8c7410e56dc182cd43270837e0deebc0e54438a02cfc4571f6c1b2f7a39"
+          "sha256": "2b13b1d0c6056a39a559c62e6069ca7b387140eb919f15388fee9669f2251ab2"
+        },
+        {
+          "path": "src/fixture_impl.py",
+          "id": "fixture_impl",
+          "revision": null,
+          "sha256": "1e8526dce23b1e9ab2b49e0c59cdbe3e13641af8687ff57ce07616c98fdeb02b"
         }
       ],
       "commands": [],
@@ -71,7 +85,7 @@
           "path": ".specbound/micro-specs/req-9006/ms-9006-001.md",
           "id": "ms-9006-001",
           "revision": null,
-          "sha256": "87fcf8c7410e56dc182cd43270837e0deebc0e54438a02cfc4571f6c1b2f7a39"
+          "sha256": "2b13b1d0c6056a39a559c62e6069ca7b387140eb919f15388fee9669f2251ab2"
         }
       ],
       "commands": [
@@ -91,7 +105,7 @@
           "path": ".specbound/micro-specs/req-9006/ms-9006-001.md",
           "id": "ms-9006-001",
           "revision": null,
-          "sha256": "87fcf8c7410e56dc182cd43270837e0deebc0e54438a02cfc4571f6c1b2f7a39"
+          "sha256": "2b13b1d0c6056a39a559c62e6069ca7b387140eb919f15388fee9669f2251ab2"
         }
       ],
       "commands": [],
@@ -105,7 +119,7 @@
           "path": ".specbound/micro-specs/req-9006/ms-9006-001.md",
           "id": "ms-9006-001",
           "revision": null,
-          "sha256": "87fcf8c7410e56dc182cd43270837e0deebc0e54438a02cfc4571f6c1b2f7a39"
+          "sha256": "2b13b1d0c6056a39a559c62e6069ca7b387140eb919f15388fee9669f2251ab2"
         }
       ],
       "commands": [
@@ -125,7 +139,7 @@
           "path": ".specbound/micro-specs/req-9006/ms-9006-001.md",
           "id": "ms-9006-001",
           "revision": null,
-          "sha256": "87fcf8c7410e56dc182cd43270837e0deebc0e54438a02cfc4571f6c1b2f7a39"
+          "sha256": "2b13b1d0c6056a39a559c62e6069ca7b387140eb919f15388fee9669f2251ab2"
         }
       ],
       "commands": [
@@ -145,7 +159,7 @@
           "path": ".specbound/micro-specs/req-9006/ms-9006-001.md",
           "id": "ms-9006-001",
           "revision": null,
-          "sha256": "87fcf8c7410e56dc182cd43270837e0deebc0e54438a02cfc4571f6c1b2f7a39"
+          "sha256": "2b13b1d0c6056a39a559c62e6069ca7b387140eb919f15388fee9669f2251ab2"
         }
       ],
       "commands": [

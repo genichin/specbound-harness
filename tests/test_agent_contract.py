@@ -11,8 +11,10 @@ import sys
 
 import pytest
 import yaml
+import specbound.agent_contract as agent_contract
 
 from specbound.agent_contract import (
+    AgentContractResult,
     ROLE_IDS,
     _changed_path_allowed,
     _canonical_artifact_risk,
@@ -72,7 +74,8 @@ def setup_root(tmp_path: Path, policy: dict | None = None) -> tuple[Path, Path]:
     (root / "specbound.yaml").write_text(
         "version: 1\npolicy:\n  agent_contract:\n    enabled: true\n    roles_path: .specbound/policies/agent-roles.yaml\n"
         "  micro_spec_review_authorities_by_risk:\n    high: [fixture-maintainer]\n"
-        "  discovery_confirmation_authorities_by_risk:\n    high: [fixture-maintainer]\n",
+        "  discovery_confirmation_authorities_by_risk:\n    high: [fixture-maintainer]\n"
+        "  requirement_approval_authorities_by_risk:\n    high: [fixture-maintainer]\n",
         encoding="utf-8",
         newline="\n",
     )
@@ -108,24 +111,78 @@ def exact_ref(root: Path, relative: str, artifact_id: str, revision: int | None)
     }
 
 
-def write_reference_result_file(root: Path, role_id: str, target: dict, relative: str) -> tuple[str, dict]:
+def write_reference_result_file(
+    root: Path,
+    role_id: str,
+    target: dict,
+    relative: str,
+    *,
+    prefix: str | None = None,
+    materialized: dict[str, tuple[str, dict]] | None = None,
+    relative_files: list[str] | None = None,
+) -> tuple[str, dict]:
+    if prefix is None:
+        name = Path(relative).stem
+        prefix = name.split("-producer_result_ref", 1)[0].split("-reviewer_run_ref", 1)[0]
+    if materialized is None:
+        materialized = {}
+    if relative_files is None:
+        relative_files = []
+    existing = materialized.get(role_id)
+    if existing is not None:
+        return existing
     payload = valid_result(root, role_id)
+    changed_artifacts = {
+        artifact["path"]: artifact
+        for evidence in payload["evidence"]
+        for artifact in evidence["artifacts"]
+        if artifact["path"] in payload["changed_paths"]
+    }
     payload["target"] = target
     payload["context_provenance"]["input_artifacts"] = [target]
     for evidence in payload["evidence"]:
-        evidence["artifacts"] = [target]
+        evidence["artifacts"] = [target, *changed_artifacts.values()]
+    for field_name in ("producer_result_ref", "reviewer_run_ref"):
+        nested_reference = payload[field_name]
+        if nested_reference is None:
+            continue
+        nested_role = nested_reference["role_id"]
+        nested_relative, exact_nested = write_reference_result_file(
+            root,
+            nested_role,
+            target,
+            f"reference-results/{prefix}-transitive-{nested_role}.json",
+            prefix=prefix,
+            materialized=materialized,
+            relative_files=relative_files,
+        )
+        payload[field_name] = exact_nested
+        payload["context_provenance"]["input_artifacts"].append(
+            {
+                "path": nested_relative,
+                "id": exact_nested["result_id"],
+                "revision": None,
+                "sha256": exact_nested["sha256"],
+            }
+        )
     path = write_json(root, relative, payload)
-    return relative, {
+    exact = {
         "result_id": payload["result_id"],
         "role_id": payload["role_id"],
         "execution_id": payload["execution_id"],
         "context_id": payload["context_id"],
         "sha256": sha256(path.read_bytes()).hexdigest(),
     }
+    materialized[role_id] = (relative, exact)
+    relative_files.append(relative)
+    return relative, exact
 
 
 def bind_explicit_reference_results(root: Path, request: dict) -> list[str]:
     relative_files: list[str] = []
+    materialized: dict[str, tuple[str, dict]] = {}
+    direct_files: list[str] = []
+    prefix = request["role_id"]
     for field_name in ("producer_result_ref", "reviewer_run_ref"):
         reference = request[field_name]
         if reference is None:
@@ -134,9 +191,13 @@ def bind_explicit_reference_results(root: Path, request: dict) -> list[str]:
             root,
             reference["role_id"],
             request["target"],
-            f"reference-results/{request['role_id']}-{field_name}.json",
+            f"reference-results/{prefix}-{field_name}.json",
+            prefix=prefix,
+            materialized=materialized,
+            relative_files=relative_files,
         )
         request[field_name] = exact_reference
+        direct_files.append(relative)
         if "context_provenance" in request:
             request["context_provenance"]["input_artifacts"].append(
                 {
@@ -146,8 +207,63 @@ def bind_explicit_reference_results(root: Path, request: dict) -> list[str]:
                     "sha256": exact_reference["sha256"],
                 }
             )
-        relative_files.append(relative)
-    return relative_files
+    return [*direct_files, *(path for path in relative_files if path not in direct_files)]
+
+
+def reference_result_path(root: Path, relative_files: list[str], result_id: str) -> tuple[str, Path]:
+    for relative in relative_files:
+        path = root / relative
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if payload["result_id"] == result_id:
+            return relative, path
+    raise AssertionError(f"missing explicit reference result {result_id}")
+
+
+def refresh_iteration_reference_graph(root: Path, payload: dict, relative_files: list[str]) -> None:
+    reviewer_relative, reviewer_path = reference_result_path(
+        root, relative_files, payload["reviewer_run_ref"]["result_id"]
+    )
+    reviewer = json.loads(reviewer_path.read_text(encoding="utf-8"))
+    reviewer_envelope = {
+        "result_id": reviewer["result_id"],
+        "role_id": reviewer["role_id"],
+        "execution_id": reviewer["execution_id"],
+        "context_id": reviewer["context_id"],
+        "sha256": sha256(reviewer_path.read_bytes()).hexdigest(),
+    }
+    producer_relative, producer_path = reference_result_path(
+        root, relative_files, payload["producer_result_ref"]["result_id"]
+    )
+    producer = json.loads(producer_path.read_text(encoding="utf-8"))
+    producer["reviewer_run_ref"] = reviewer_envelope
+    nested_provenance = next(
+        item
+        for item in producer["context_provenance"]["input_artifacts"]
+        if item["id"] == reviewer_envelope["result_id"] and item["revision"] is None
+    )
+    nested_provenance.update(
+        {"path": reviewer_relative, "sha256": reviewer_envelope["sha256"]}
+    )
+    producer_path = write_json(root, producer_relative, producer)
+    producer_envelope = {
+        "result_id": producer["result_id"],
+        "role_id": producer["role_id"],
+        "execution_id": producer["execution_id"],
+        "context_id": producer["context_id"],
+        "sha256": sha256(producer_path.read_bytes()).hexdigest(),
+    }
+    payload["reviewer_run_ref"] = reviewer_envelope
+    payload["producer_result_ref"] = producer_envelope
+    for envelope, relative in (
+        (reviewer_envelope, reviewer_relative),
+        (producer_envelope, producer_relative),
+    ):
+        provenance = next(
+            item
+            for item in payload["context_provenance"]["input_artifacts"]
+            if item["id"] == envelope["result_id"] and item["revision"] is None
+        )
+        provenance.update({"path": relative, "sha256": envelope["sha256"]})
 
 
 def write_state_target(root: Path, role_id: str, state: str) -> dict:
@@ -205,13 +321,18 @@ def write_state_target(root: Path, role_id: str, state: str) -> dict:
         return ref
 
     if role_id in {"micro-spec-author", "independent-reviewer"}:
+        parent_discovery = write_state_target(root, "requirement-author", "confirmed")
         number = "9003" if role_id == "micro-spec-author" else "9004"
         artifact_id = f"req-{number}"
         relative = f".specbound/requirements/{artifact_id}/{artifact_id}-r1.md"
         target = root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(
-            f"---\nid: {artifact_id}\nrevision: 1\nstatus: {state}\nrisk: high\nowner: fixture-owner\n---\n\n# Requirement\n",
+            f"---\nid: {artifact_id}\nrevision: 1\nstatus: {state}\nrisk: high\nowner: fixture-owner\n"
+            f"parent_discovery:\n  id: {parent_discovery['id']}\n  revision: {parent_discovery['revision']}\n"
+            f"  path: {parent_discovery['path']}\n  sha256: {parent_discovery['sha256']}\n"
+            f"  confirmation_path: .specbound/confirmations/{parent_discovery['id']}-r{parent_discovery['revision']}.confirmation.json\n"
+            "---\n\n# Requirement\n",
             encoding="utf-8",
             newline="\n",
         )
@@ -261,6 +382,7 @@ def write_state_target(root: Path, role_id: str, state: str) -> dict:
         return ref
 
     if role_id in {"implementation", "iteration-qc"}:
+        parent_discovery = write_state_target(root, "requirement-author", "confirmed")
         number = "9005" if role_id == "implementation" else "9006"
         requirement_id = f"req-{number}"
         micro_id = f"ms-{number}-001"
@@ -268,7 +390,11 @@ def write_state_target(root: Path, role_id: str, state: str) -> dict:
         requirement = root / requirement_relative
         requirement.parent.mkdir(parents=True, exist_ok=True)
         requirement.write_text(
-            f"---\nid: {requirement_id}\nrevision: 1\nstatus: approved\nrisk: high\nowner: fixture-owner\n---\n\n# Requirement\n",
+            f"---\nid: {requirement_id}\nrevision: 1\nstatus: approved\nrisk: high\nowner: fixture-owner\n"
+            f"parent_discovery:\n  id: {parent_discovery['id']}\n  revision: {parent_discovery['revision']}\n"
+            f"  path: {parent_discovery['path']}\n  sha256: {parent_discovery['sha256']}\n"
+            f"  confirmation_path: .specbound/confirmations/{parent_discovery['id']}-r{parent_discovery['revision']}.confirmation.json\n"
+            "---\n\n# Requirement\n",
             encoding="utf-8",
             newline="\n",
         )
@@ -322,13 +448,17 @@ def write_state_target(root: Path, role_id: str, state: str) -> dict:
             )
         return ref
 
+    parent_discovery = write_state_target(root, "requirement-author", "confirmed")
     requirement_id = "req-9007"
     requirement_relative = ".specbound/requirements/req-9007/req-9007-r1.md"
     requirement = root / requirement_relative
     requirement.parent.mkdir(parents=True, exist_ok=True)
     requirement.write_text(
-        "---\nid: req-9007\nrevision: 1\nstatus: approved\nrisk: high\nowner: fixture-owner\n---\n\n"
-        "# Requirement\n\n## Acceptance criteria\n\n### AC-001 — Implement slice\n\nEvidence.\n",
+        "---\nid: req-9007\nrevision: 1\nstatus: approved\nrisk: high\nowner: fixture-owner\n"
+        f"parent_discovery:\n  id: {parent_discovery['id']}\n  revision: {parent_discovery['revision']}\n"
+        f"  path: {parent_discovery['path']}\n  sha256: {parent_discovery['sha256']}\n"
+        f"  confirmation_path: .specbound/confirmations/{parent_discovery['id']}-r{parent_discovery['revision']}.confirmation.json\n"
+        "---\n\n# Requirement\n\n## Acceptance criteria\n\n### AC-001 — Implement slice\n\nEvidence.\n",
         encoding="utf-8",
         newline="\n",
     )
@@ -494,7 +624,7 @@ def valid_result(root: Path, role_id: str) -> dict:
                 "slot": slot_policy["slot"],
                 "status": "provided",
                 "artifacts": slot_artifacts,
-                "commands": [{"command": "fixture-check", "result": "passed", "exit_code": 0}] if slot_policy["slot"] in {"test-results", "focused-verification", "regression-evidence"} else [],
+                "commands": [{"command": "fixture-check", "result": "passed", "exit_code": 0}] if slot_policy["slot"] in {"test-results", "focused-verification", "negative-tests", "regression-evidence", "supported-ci"} else [],
                 "reason": None,
             }
         )
@@ -686,7 +816,112 @@ def test_canonical_risk_inherits_high_parent_and_rejects_child_downgrade(tmp_pat
         newline="\n",
     )
 
-    assert _canonical_artifact_risk(root, micro) == "high"
+    outcome = AgentContractResult()
+    assert _canonical_artifact_risk(root, micro, outcome) == "high"
+    assert "artifact_risk_downgrade" in {blocker["code"] for blocker in outcome.blockers}
+    assert outcome.payload()["permitted_next_action"] == "none"
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_code"),
+    [
+        ("missing-risk", "invalid_artifact_risk"),
+        ("unknown-risk", "invalid_artifact_risk"),
+        ("missing-parent", "missing_artifact_lineage"),
+        ("stale-parent", "stale_artifact_lineage"),
+        ("wrong-parent-identity", "artifact_lineage_identity_mismatch"),
+        ("malformed-parent", "malformed_artifact_lineage"),
+    ],
+)
+def test_canonical_risk_lineage_failures_block_advisory_actions(
+    tmp_path: Path, case: str, expected_code: str
+) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    target = root / ".specbound/discoveries/dcy-risk-r1.md"
+    target.parent.mkdir(parents=True)
+    if case in {"missing-risk", "unknown-risk"}:
+        risk_line = "" if case == "missing-risk" else "risk_class: critical\n"
+        target.write_text(f"---\nid: dcy-risk\nrevision: 1\n{risk_line}---\n", encoding="utf-8", newline="\n")
+    elif case == "missing-parent":
+        target = root / ".specbound/requirements/req-risk/req-risk-r1.md"
+        target.parent.mkdir(parents=True)
+        target.write_text("---\nid: req-risk\nrevision: 1\nrisk: low\n---\n", encoding="utf-8", newline="\n")
+    else:
+        parent = root / ".specbound/requirements/req-risk/req-risk-r1.md"
+        parent.parent.mkdir(parents=True)
+        parent.write_text(
+            "---\nid: req-risk\nrevision: 1\nrisk: high\nparent_discovery: [malformed\n---\n"
+            if case == "malformed-parent"
+            else "---\nid: req-risk\nrevision: 1\nrisk: high\n---\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        target = root / ".specbound/micro-specs/req-risk/ms-risk-001.md"
+        target.parent.mkdir(parents=True)
+        digest = "0" * 64 if case == "stale-parent" else sha256(parent.read_bytes()).hexdigest()
+        parent_id = "req-other" if case == "wrong-parent-identity" else "req-risk"
+        target.write_text(
+            "---\nid: ms-risk-001\nkind: micro-spec\nrisk: high\n"
+            f"requirement:\n  path: .specbound/requirements/req-risk/req-risk-r1.md\n  id: {parent_id}\n  revision: 1\n  sha256: '{digest}'\n---\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+
+    outcome = AgentContractResult()
+    assert _canonical_artifact_risk(root, target, outcome) == "high"
+    assert expected_code in {blocker["code"] for blocker in outcome.blockers}, outcome.blockers
+    assert outcome.payload()["advisory_state"] == "blocked"
+    assert outcome.payload()["permitted_next_action"] == "none"
+
+
+def test_downstream_risk_requires_exact_confirmed_parent_evidence(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, "micro-spec-author")
+    requirement = yaml.safe_load((root / payload["target"]["path"]).read_text(encoding="utf-8").split("---\n", 2)[1])
+    confirmation_path = root / requirement["parent_discovery"]["confirmation_path"]
+    confirmation_path.unlink()
+
+    result = validate_role_request(root, write_json(root, "request.json", payload), POLICY_REL)
+
+    assert "missing_confirmed_record" in {blocker["code"] for blocker in result.blockers}, result.blockers
+    assert result.payload()["permitted_next_action"] == "none"
+
+
+def test_downstream_risk_rejects_unauthorized_parent_approval(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, "micro-spec-author")
+    target = payload["target"]
+    approval_path = root / f".specbound/approvals/{target['id']}-r{target['revision']}.approval.json"
+    approval = json.loads(approval_path.read_text(encoding="utf-8"))
+    approval["authority"] = "unauthorized-agent"
+    approval_path.write_text(json.dumps(approval, indent=2) + "\n", encoding="utf-8", newline="\n")
+
+    result = validate_role_request(root, write_json(root, "request.json", payload), POLICY_REL)
+
+    assert "lifecycle_unauthorized_approval_authority" in {blocker["code"] for blocker in result.blockers}, result.blockers
+    assert result.payload()["permitted_next_action"] == "none"
+
+
+def test_downstream_risk_requires_exact_approved_parent_evidence(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, "implementation")
+    micro_spec = yaml.safe_load((root / payload["target"]["path"]).read_text(encoding="utf-8").split("---\n", 2)[1])
+    requirement = micro_spec["requirement"]
+    approval_path = root / f".specbound/approvals/{requirement['id']}-r{requirement['revision']}.approval.json"
+    approval_path.unlink()
+    reference_result_files = bind_explicit_reference_results(root, payload)
+
+    result = validate_role_request(
+        root,
+        write_json(root, "request.json", payload),
+        POLICY_REL,
+        reference_result_files=reference_result_files,
+    )
+
+    codes = {blocker["code"] for blocker in result.blockers}
+    assert "lifecycle_missing_approval" in codes, result.blockers
+    assert result.payload()["permitted_next_action"] == "none"
 
 
 @pytest.mark.parametrize("role_id", sorted(ROLE_IDS))
@@ -713,11 +948,13 @@ def test_role_request_requires_pre_execution_identity(tmp_path: Path, missing_fi
 def test_role_request_resolves_explicit_reference_result_file(tmp_path: Path) -> None:
     root, _ = setup_root(tmp_path)
     payload = valid_request(root, "implementation")
+    relative_files: list[str] = []
     relative, reference = write_reference_result_file(
         root,
         "independent-reviewer",
         payload["target"],
         "reference-results/reviewer.result.json",
+        relative_files=relative_files,
     )
     payload["reviewer_run_ref"] = reference
 
@@ -725,10 +962,133 @@ def test_role_request_resolves_explicit_reference_result_file(tmp_path: Path) ->
         root,
         write_json(root, "request.json", payload),
         POLICY_REL,
-        reference_result_files=[relative],
+        reference_result_files=[relative, *(path for path in relative_files if path != relative)],
     )
 
     assert result.valid is True, result.blockers
+
+
+def test_role_request_rejects_semantically_forbidden_reference_result_claim(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, "implementation")
+    files = bind_explicit_reference_results(root, payload)
+    reference_path = root / files[0]
+    referenced = json.loads(reference_path.read_text(encoding="utf-8"))
+    referenced["claims"] = ["approval"]
+    reference_path.write_text(json.dumps(referenced, indent=2) + "\n", encoding="utf-8", newline="\n")
+    payload["reviewer_run_ref"]["sha256"] = sha256(reference_path.read_bytes()).hexdigest()
+
+    result = validate_role_request(
+        root,
+        write_json(root, "request.json", payload),
+        POLICY_REL,
+        reference_result_files=files,
+    )
+
+    assert "invalid_reference_result_file" in {blocker["code"] for blocker in result.blockers}, result.blockers
+    assert result.payload()["permitted_next_action"] == "none"
+
+
+def test_role_request_rejects_reference_result_with_inherited_context(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, "implementation")
+    files = bind_explicit_reference_results(root, payload)
+    reference_path = root / files[0]
+    referenced = json.loads(reference_path.read_text(encoding="utf-8"))
+    referenced["context_provenance"]["fresh_context"] = False
+    referenced["context_provenance"]["producer_transcript_inherited"] = True
+    reference_path.write_text(json.dumps(referenced, indent=2) + "\n", encoding="utf-8", newline="\n")
+    payload["reviewer_run_ref"]["sha256"] = sha256(reference_path.read_bytes()).hexdigest()
+
+    result = validate_role_request(
+        root,
+        write_json(root, "request.json", payload),
+        POLICY_REL,
+        reference_result_files=files,
+    )
+
+    assert "invalid_reference_result_file" in {blocker["code"] for blocker in result.blockers}, result.blockers
+    assert result.payload()["permitted_next_action"] == "none"
+
+
+def test_role_request_rejects_reference_result_outside_its_role_contract(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, "implementation")
+    files = bind_explicit_reference_results(root, payload)
+    reference_path = root / files[0]
+    referenced = json.loads(reference_path.read_text(encoding="utf-8"))
+    referenced["mutation_class"] = "candidate_write"
+    referenced["changed_paths"] = ["src/fixture_impl.py"]
+    reference_path.write_text(json.dumps(referenced, indent=2) + "\n", encoding="utf-8", newline="\n")
+    payload["reviewer_run_ref"]["sha256"] = sha256(reference_path.read_bytes()).hexdigest()
+
+    result = validate_role_request(
+        root,
+        write_json(root, "request.json", payload),
+        POLICY_REL,
+        reference_result_files=files,
+    )
+
+    assert "invalid_reference_result_file" in {blocker["code"] for blocker in result.blockers}, result.blockers
+    assert result.payload()["permitted_next_action"] == "none"
+
+
+def test_role_request_rejects_reference_result_changed_path_outside_role_scope(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, "iteration-qc")
+    files = bind_explicit_reference_results(root, payload)
+    reference_path = root / files[0]
+    referenced = json.loads(reference_path.read_text(encoding="utf-8"))
+    referenced["changed_paths"] = [".specbound/approvals/req-forbidden-r1.approval.json"]
+    reference_path.write_text(json.dumps(referenced, indent=2) + "\n", encoding="utf-8", newline="\n")
+    payload["producer_result_ref"]["sha256"] = sha256(reference_path.read_bytes()).hexdigest()
+
+    result = validate_role_request(
+        root,
+        write_json(root, "request.json", payload),
+        POLICY_REL,
+        reference_result_files=files,
+    )
+
+    assert "invalid_reference_result_file" in {blocker["code"] for blocker in result.blockers}, result.blockers
+    assert result.payload()["permitted_next_action"] == "none"
+
+
+@pytest.mark.parametrize(
+    "case",
+    ["missing-required-reviewer-edge", "failed-command-with-pass-verdict", "forged-transitive-envelope"],
+)
+def test_role_request_rejects_intrinsically_invalid_reference_result(tmp_path: Path, case: str) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, "iteration-qc")
+    files = bind_explicit_reference_results(root, payload)
+    producer_relative = next(relative for relative in files if "producer" in Path(relative).name)
+    producer_path = root / producer_relative
+    producer = json.loads(producer_path.read_text(encoding="utf-8"))
+    if case == "missing-required-reviewer-edge":
+        producer["reviewer_run_ref"] = None
+    elif case == "failed-command-with-pass-verdict":
+        command = next(
+            command
+            for evidence in producer["evidence"]
+            if evidence["slot"] == "test-results"
+            for command in evidence["commands"]
+        )
+        command.update({"result": "failed", "exit_code": 1})
+    else:
+        producer["reviewer_run_ref"]["sha256"] = "0" * 64
+    producer_path.write_text(json.dumps(producer, indent=2) + "\n", encoding="utf-8", newline="\n")
+    payload["producer_result_ref"]["sha256"] = sha256(producer_path.read_bytes()).hexdigest()
+
+    result = validate_role_request(
+        root,
+        write_json(root, "request.json", payload),
+        POLICY_REL,
+        reference_result_files=files,
+    )
+
+    assert "invalid_reference_result_file" in {blocker["code"] for blocker in result.blockers}, result.blockers
+    assert result.payload()["permitted_next_action"] == "none"
 
 
 def test_role_request_rejects_reference_without_explicit_result_file(tmp_path: Path) -> None:
@@ -996,7 +1356,8 @@ def test_role_request_derives_confirmed_state_from_exact_canonical_record(tmp_pa
     confirmation["sha256"] = "0" * 64
     confirmation_path.write_text(json.dumps(confirmation, indent=2) + "\n", encoding="utf-8", newline="\n")
     rejected = validate_role_request(root, request_path, POLICY_REL)
-    assert "undetermined_current_state" in {item["code"] for item in rejected.blockers}
+    assert "stale_confirmed_record" in {item["code"] for item in rejected.blockers}
+    assert "undetermined_current_state" not in {item["code"] for item in rejected.blockers}
 
 
 def test_implementation_requires_a_fully_valid_canonical_micro_spec_review(tmp_path: Path) -> None:
@@ -1010,15 +1371,17 @@ def test_implementation_requires_a_fully_valid_canonical_micro_spec_review(tmp_p
 
     result = validate_role_request(root, write_json(root, "request.json", payload), POLICY_REL)
 
-    assert "undetermined_current_state" in {item["code"] for item in result.blockers}
+    codes = {item["code"] for item in result.blockers}
+    assert any("micro_spec_review" in code for code in codes), result.blockers
+    assert "undetermined_current_state" not in codes
 
 
 @pytest.mark.parametrize(
-    ("role_id", "record_relative", "required_field"),
+    ("role_id", "record_relative", "required_field", "expected_code"),
     [
-        ("requirement-author", ".specbound/confirmations/dcy-9002-r1.confirmation.json", "authority"),
-        ("micro-spec-author", ".specbound/approvals/req-9003-r1.approval.json", "risk"),
-        ("independent-reviewer", ".specbound/review-submissions/req-9004-r1.review-submission.json", "submitted_at"),
+        ("requirement-author", ".specbound/confirmations/dcy-9002-r1.confirmation.json", "authority", "lifecycle_malformed_discovery_confirmation"),
+        ("micro-spec-author", ".specbound/approvals/req-9003-r1.approval.json", "risk", "lifecycle_malformed_approval"),
+        ("independent-reviewer", ".specbound/review-submissions/req-9004-r1.review-submission.json", "submitted_at", "lifecycle_malformed_review_submission"),
     ],
 )
 def test_role_request_rejects_incomplete_canonical_state_record(
@@ -1026,6 +1389,7 @@ def test_role_request_rejects_incomplete_canonical_state_record(
     role_id: str,
     record_relative: str,
     required_field: str,
+    expected_code: str,
 ) -> None:
     root, _ = setup_root(tmp_path)
     payload = valid_request(root, role_id)
@@ -1036,7 +1400,9 @@ def test_role_request_rejects_incomplete_canonical_state_record(
 
     result = validate_role_request(root, write_json(root, "request.json", payload), POLICY_REL)
 
-    assert "undetermined_current_state" in {item["code"] for item in result.blockers}, result.blockers
+    codes = {item["code"] for item in result.blockers}
+    assert expected_code in codes, result.blockers
+    assert "undetermined_current_state" not in codes
 
 
 def test_role_request_rejects_review_when_parent_requirement_bytes_are_stale(tmp_path: Path) -> None:
@@ -1053,7 +1419,9 @@ def test_role_request_rejects_review_when_parent_requirement_bytes_are_stale(tmp
 
     result = validate_role_request(root, write_json(root, "request.json", payload), POLICY_REL)
 
-    assert "undetermined_current_state" in {item["code"] for item in result.blockers}, result.blockers
+    codes = {item["code"] for item in result.blockers}
+    assert codes.intersection({"stale_artifact_lineage", "stale_micro_spec_review_parent"}), result.blockers
+    assert "undetermined_current_state" not in codes
 
 
 def test_iteration_qc_rejects_self_declared_implemented_state_without_canonical_review(tmp_path: Path) -> None:
@@ -1065,7 +1433,9 @@ def test_iteration_qc_rejects_self_declared_implemented_state_without_canonical_
 
     result = validate_role_request(root, write_json(root, "request.json", payload), POLICY_REL)
 
-    assert "undetermined_current_state" in {item["code"] for item in result.blockers}, result.blockers
+    codes = {item["code"] for item in result.blockers}
+    assert "missing_or_malformed_micro_spec_review" in codes, result.blockers
+    assert "undetermined_current_state" not in codes
 
 
 def test_delivery_qc_targets_exact_approved_requirement_without_result_references(tmp_path: Path) -> None:
@@ -1120,7 +1490,7 @@ def test_implementation_cannot_write_review_submission_authority_paths(tmp_path:
         ("undeclared-input", "undeclared_role_input"),
         ("path", "capability_escalation"),
         ("tool", "capability_escalation"),
-        ("mutation", "capability_escalation"),
+        ("mutation", "unknown_mutation_class"),
         ("output", "capability_escalation"),
         ("action", "capability_escalation"),
         ("required-reference", "invalid_result_reference"),
@@ -1177,6 +1547,30 @@ def test_role_request_rejects_spoofing_and_escalation(tmp_path: Path, scenario: 
     after = repository_snapshot(root)
     assert expected_code in {item["code"] for item in result.blockers}, result.blockers
     assert after == before
+
+
+@pytest.mark.parametrize(
+    ("mutation_class", "expected_code"),
+    [
+        ("authority_transition", "unsupported_authority_transition"),
+        ("external_mutation", "unsupported_external_mutation"),
+        ("unregistered_mutation", "unknown_mutation_class"),
+    ],
+)
+def test_role_request_reports_distinct_unsupported_mutation_blockers(
+    tmp_path: Path, mutation_class: str, expected_code: str
+) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, "implementation")
+    payload["requested_capabilities"]["mutation_classes"] = [mutation_class]
+    request_path = write_json(root, "request.json", payload)
+    before = repository_snapshot(root)
+
+    result = validate_role_request(root, request_path, POLICY_REL)
+
+    assert expected_code in {blocker["code"] for blocker in result.blockers}, result.blockers
+    assert result.payload()["permitted_next_action"] == "none"
+    assert repository_snapshot(root) == before
 
 
 @pytest.mark.parametrize("role_id", sorted(ROLE_IDS))
@@ -1282,6 +1676,80 @@ def test_high_risk_implementation_requires_every_evidence_slot(tmp_path: Path, m
     assert "missing_evidence_slot" in {blocker["code"] for blocker in result.blockers}, result.blockers
 
 
+def test_conditional_evidence_slot_must_be_explicitly_resolved(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_result(root, "implementation")
+    payload["target_risk"] = "medium"
+    payload["effective_task_risk"] = "medium"
+    payload["evidence"] = [item for item in payload["evidence"] if item["slot"] != "supported-ci"]
+    reference_result_files = bind_explicit_reference_results(root, payload)
+    monkeypatch.setattr(agent_contract, "_canonical_artifact_risk", lambda *_args, **_kwargs: "medium")
+
+    result = validate_agent_result(
+        root,
+        write_json(root, "result.json", payload),
+        POLICY_REL,
+        reference_result_files=reference_result_files,
+    )
+
+    assert "missing_evidence_slot" in {blocker["code"] for blocker in result.blockers}, result.blockers
+    assert result.payload()["permitted_next_action"] == "none"
+
+
+@pytest.mark.parametrize("slot_name", ["negative-tests", "supported-ci"])
+def test_high_risk_command_evidence_cannot_be_substantively_empty(tmp_path: Path, slot_name: str) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_result(root, "implementation")
+    reference_result_files = bind_explicit_reference_results(root, payload)
+    slot = next(item for item in payload["evidence"] if item["slot"] == slot_name)
+    slot["commands"] = []
+
+    result = validate_agent_result(
+        root,
+        write_json(root, "result.json", payload),
+        POLICY_REL,
+        reference_result_files=reference_result_files,
+    )
+
+    assert "missing_command_evidence" in {blocker["code"] for blocker in result.blockers}, result.blockers
+
+
+def test_blanket_not_applicable_reason_is_rejected(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_result(root, "implementation")
+    reference_result_files = bind_explicit_reference_results(root, payload)
+    slot = next(item for item in payload["evidence"] if item["slot"] == "supported-ci")
+    slot.update({"status": "not_applicable", "artifacts": [], "commands": [], "reason": "This evidence is simply not applicable here."})
+
+    result = validate_agent_result(
+        root,
+        write_json(root, "result.json", payload),
+        POLICY_REL,
+        reference_result_files=reference_result_files,
+    )
+
+    assert "blanket_not_applicable_evidence" in {blocker["code"] for blocker in result.blockers}, result.blockers
+    assert result.payload()["permitted_next_action"] == "none"
+
+
+def test_pass_result_cannot_serialize_rework_as_permitted_next_action(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_result(root, "iteration-qc")
+    reference_result_files = bind_explicit_reference_results(root, payload)
+    payload["permitted_next_action"] = "request-rework"
+
+    result = validate_agent_result(
+        root,
+        write_json(root, "result.json", payload),
+        POLICY_REL,
+        reference_result_files=reference_result_files,
+    )
+
+    assert "invalid_permitted_next_action" in {blocker["code"] for blocker in result.blockers}, result.blockers
+    assert result.payload()["advisory_state"] == "blocked"
+    assert result.payload()["permitted_next_action"] == "none"
+
+
 def test_independent_reviewer_no_write_evidence_rejects_commands(tmp_path: Path) -> None:
     root, _ = setup_root(tmp_path)
     payload = valid_result(root, "independent-reviewer")
@@ -1324,6 +1792,32 @@ def test_delivery_qc_rejects_unverified_iqc(tmp_path: Path) -> None:
     assert "unverified_iqc" in {blocker["code"] for blocker in result.blockers}, result.blockers
 
 
+@pytest.mark.parametrize("case", ["malformed-fields", "noncanonical-copy"])
+def test_delivery_qc_requires_canonical_iqc_records(tmp_path: Path, case: str) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_result(root, "delivery-qc")
+    iqc_ref = payload["context_provenance"]["input_artifacts"][1]
+    iqc_path = root / iqc_ref["path"]
+    if case == "malformed-fields":
+        iqc = json.loads(iqc_path.read_text(encoding="utf-8"))
+        for field in ("schema_version", "verification", "remaining_acceptance_criteria"):
+            iqc.pop(field)
+        iqc_path.write_text(json.dumps(iqc, indent=2) + "\n", encoding="utf-8", newline="\n")
+    else:
+        copied = root / ".specbound/iteration-qc/noncanonical-copy.json"
+        copied.parent.mkdir(parents=True, exist_ok=True)
+        copied.write_bytes(iqc_path.read_bytes())
+        iqc_ref.update(exact_ref(root, ".specbound/iteration-qc/noncanonical-copy.json", "iqc-9007-001", 1))
+        iqc_path = copied
+    iqc_ref["sha256"] = sha256(iqc_path.read_bytes()).hexdigest()
+
+    result = validate_agent_result(root, write_json(root, "result.json", payload), POLICY_REL)
+
+    codes = {blocker["code"] for blocker in result.blockers}
+    assert codes.intersection({"malformed_iteration_qc", "malformed_iteration_qc_evidence", "invalid_iteration_qc_path", "invalid_iqc_provenance"}), result.blockers
+    assert result.payload()["permitted_next_action"] == "none"
+
+
 def test_delivery_qc_rejects_cross_requirement_iqc(tmp_path: Path) -> None:
     root, _ = setup_root(tmp_path)
     payload = valid_result(root, "delivery-qc")
@@ -1339,7 +1833,9 @@ def test_delivery_qc_rejects_cross_requirement_iqc(tmp_path: Path) -> None:
 
     result = validate_agent_result(root, write_json(root, "result.json", payload), POLICY_REL)
 
-    assert "cross_requirement_iqc" in {blocker["code"] for blocker in result.blockers}, result.blockers
+    codes = {blocker["code"] for blocker in result.blockers}
+    assert codes.intersection({"cross_requirement_iqc", "missing_approved_micro_spec_review"}), result.blockers
+    assert result.payload()["permitted_next_action"] == "none"
 
 
 def test_delivery_qc_rejects_duplicate_iqc_coverage(tmp_path: Path) -> None:
@@ -1439,19 +1935,14 @@ def test_agent_result_rejects_producer_reviewer_identity_overlap(tmp_path: Path)
     payload = valid_result(root, "iteration-qc")
     reference_result_files = bind_explicit_reference_results(root, payload)
     producer = payload["producer_result_ref"]
-    reviewer_relative = next(path for path in reference_result_files if path.endswith("reviewer_run_ref.json"))
-    reviewer_path = root / reviewer_relative
+    reviewer_relative, reviewer_path = reference_result_path(
+        root, reference_result_files, payload["reviewer_run_ref"]["result_id"]
+    )
     reviewer = json.loads(reviewer_path.read_text(encoding="utf-8"))
     reviewer["planned_execution_id"] = producer["execution_id"]
     reviewer["execution_id"] = producer["execution_id"]
-    reviewer_path = write_json(root, reviewer_relative, reviewer)
-    payload["reviewer_run_ref"] = {
-        "result_id": reviewer["result_id"],
-        "role_id": reviewer["role_id"],
-        "execution_id": reviewer["execution_id"],
-        "context_id": reviewer["context_id"],
-        "sha256": sha256(reviewer_path.read_bytes()).hexdigest(),
-    }
+    write_json(root, reviewer_relative, reviewer)
+    refresh_iteration_reference_graph(root, payload, reference_result_files)
 
     result = validate_agent_result(
         root,
@@ -1467,15 +1958,12 @@ def test_agent_result_allows_same_model_with_distinct_fresh_identities(tmp_path:
     root, _ = setup_root(tmp_path)
     payload = valid_result(root, "iteration-qc")
     reference_result_files = bind_explicit_reference_results(root, payload)
-    for field_name, relative in zip(("producer_result_ref", "reviewer_run_ref"), reference_result_files, strict=True):
-        path = root / relative
+    for field_name in ("producer_result_ref", "reviewer_run_ref"):
+        relative, path = reference_result_path(root, reference_result_files, payload[field_name]["result_id"])
         referenced = json.loads(path.read_text(encoding="utf-8"))
         referenced["model_alias"] = payload["model_alias"]
-        path = write_json(root, relative, referenced)
-        digest = sha256(path.read_bytes()).hexdigest()
-        payload[field_name]["sha256"] = digest
-        provenance = next(item for item in payload["context_provenance"]["input_artifacts"] if item["path"] == relative)
-        provenance["sha256"] = digest
+        write_json(root, relative, referenced)
+    refresh_iteration_reference_graph(root, payload, reference_result_files)
 
     result = validate_agent_result(
         root,
@@ -1515,6 +2003,25 @@ def test_agent_result_rejects_unsupported_mutation_class_with_distinct_blocker(t
     result = validate_agent_result(root, write_json(root, "result.json", payload), POLICY_REL)
 
     assert f"unsupported_{mutation_class}" in {item["code"] for item in result.blockers}, result.blockers
+
+
+def test_missing_confirmation_authority_returns_distinct_lifecycle_blocker(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, "requirement-author")
+    confirmation_path = root / f".specbound/confirmations/{payload['target']['id']}-r{payload['target']['revision']}.confirmation.json"
+    confirmation = json.loads(confirmation_path.read_text(encoding="utf-8"))
+    confirmation["authority"] = ""
+    confirmation_path.write_text(json.dumps(confirmation, indent=2) + "\n", encoding="utf-8", newline="\n")
+    request_path = write_json(root, "request.json", payload)
+    before = repository_snapshot(root)
+
+    result = validate_role_request(root, request_path, POLICY_REL)
+
+    codes = {blocker["code"] for blocker in result.blockers}
+    assert "lifecycle_invalid_discovery_confirmation_authority" in codes, result.blockers
+    assert "undetermined_current_state" not in codes
+    assert result.payload()["permitted_next_action"] == "none"
+    assert repository_snapshot(root) == before
 
 
 @pytest.mark.parametrize(
@@ -1826,16 +2333,37 @@ def test_implementation_scope_comes_from_exact_reviewed_micro_spec_scope() -> No
     assert not _changed_path_allowed(ROOT, "README.md", role, target)
 
 
+def test_implementation_scope_serializes_complete_ms_0004_002_inventory() -> None:
+    target = ".specbound/micro-specs/req-0004/ms-0004-002.md"
+    role = role_contract("implementation")
+    expected_support_paths = {
+        ".github/workflows/ci.yml",
+        "fixtures/valid-minimal/.specbound/policies/agent-roles.yaml",
+        "fixtures/invalid-unsafe-path/.specbound/policies/agent-roles.yaml",
+    }
+
+    scoped = _reviewed_micro_spec_paths(ROOT, target)
+
+    assert expected_support_paths.issubset({path for path, is_directory in scoped if not is_directory})
+    assert all(_changed_path_allowed(ROOT, path, role, target) for path in expected_support_paths)
+
+
 @pytest.mark.parametrize("role_id", sorted(ROLE_IDS))
 def test_static_fixtures_cover_positive_and_negative_contracts(role_id: str) -> None:
-    reference_fields = {
-        "implementation": ["reviewer_run_ref"],
-        "independent-reviewer": ["producer_result_ref"],
-        "iteration-qc": ["producer_result_ref", "reviewer_run_ref"],
+    reference_files = {
+        "implementation": [
+            "implementation-reviewer_run_ref.json",
+            "implementation-reviewer-producer_result_ref.json",
+        ],
+        "independent-reviewer": ["independent-reviewer-producer_result_ref.json"],
+        "iteration-qc": [
+            "iteration-qc-producer_result_ref.json",
+            "iteration-qc-reviewer_run_ref.json",
+            "iteration-qc-reviewer-producer_result_ref.json",
+        ],
     }
     reference_result_files = [
-        f"reference-results/{role_id}-{field_name}.json"
-        for field_name in reference_fields.get(role_id, [])
+        f"reference-results/{name}" for name in reference_files.get(role_id, [])
     ]
     positive_request = validate_role_request(
         AGENT_FIXTURE,

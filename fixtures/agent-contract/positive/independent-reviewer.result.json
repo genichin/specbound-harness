@@ -12,14 +12,14 @@
     "path": ".specbound/requirements/req-9004/req-9004-r1.md",
     "id": "req-9004",
     "revision": 1,
-    "sha256": "8adea15f98b57ef9fbe39355944b3e4665d0aa0cda2d8143cac684a749411679"
+    "sha256": "e78c02b27a3f82c8d159a317bd0e00b35083fb7b4fc3eb76758a8c14fc5ae3b6"
   },
   "producer_result_ref": {
     "result_id": "result-requirement-author",
     "role_id": "requirement-author",
     "execution_id": "execution-requirement-author",
     "context_id": "context-requirement-author",
-    "sha256": "3053746a993a0e85979f88af08c6c78e2e2bdb9d4a55fd34f977aad5ac528a92"
+    "sha256": "4cb69f57bab33cc16d8bc79b936c594553b02c99ef3bfcbcfeef51fe502b4891"
   },
   "reviewer_run_ref": null,
   "authority_type": "none",
@@ -33,13 +33,13 @@
         "path": ".specbound/requirements/req-9004/req-9004-r1.md",
         "id": "req-9004",
         "revision": 1,
-        "sha256": "8adea15f98b57ef9fbe39355944b3e4665d0aa0cda2d8143cac684a749411679"
+        "sha256": "e78c02b27a3f82c8d159a317bd0e00b35083fb7b4fc3eb76758a8c14fc5ae3b6"
       },
       {
         "path": "reference-results/independent-reviewer-producer_result_ref.json",
         "id": "result-requirement-author",
         "revision": null,
-        "sha256": "3053746a993a0e85979f88af08c6c78e2e2bdb9d4a55fd34f977aad5ac528a92"
+        "sha256": "4cb69f57bab33cc16d8bc79b936c594553b02c99ef3bfcbcfeef51fe502b4891"
       }
     ]
   },
@@ -60,7 +60,7 @@
           "path": ".specbound/requirements/req-9004/req-9004-r1.md",
           "id": "req-9004",
           "revision": 1,
-          "sha256": "8adea15f98b57ef9fbe39355944b3e4665d0aa0cda2d8143cac684a749411679"
+          "sha256": "e78c02b27a3f82c8d159a317bd0e00b35083fb7b4fc3eb76758a8c14fc5ae3b6"
         }
       ],
       "commands": [],
@@ -74,7 +74,7 @@
           "path": ".specbound/requirements/req-9004/req-9004-r1.md",
           "id": "req-9004",
           "revision": 1,
-          "sha256": "8adea15f98b57ef9fbe39355944b3e4665d0aa0cda2d8143cac684a749411679"
+          "sha256": "e78c02b27a3f82c8d159a317bd0e00b35083fb7b4fc3eb76758a8c14fc5ae3b6"
         }
       ],
       "commands": [],
@@ -88,7 +88,7 @@
           "path": ".specbound/requirements/req-9004/req-9004-r1.md",
           "id": "req-9004",
           "revision": 1,
-          "sha256": "8adea15f98b57ef9fbe39355944b3e4665d0aa0cda2d8143cac684a749411679"
+          "sha256": "e78c02b27a3f82c8d159a317bd0e00b35083fb7b4fc3eb76758a8c14fc5ae3b6"
         }
       ],
       "commands": [],

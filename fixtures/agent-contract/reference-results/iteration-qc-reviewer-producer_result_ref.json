@@ -1,26 +1,20 @@
 {
   "schema_version": 1,
-  "result_id": "result-independent-reviewer",
-  "role_id": "independent-reviewer",
-  "task_kind": "independent-reviewer",
-  "planned_execution_id": "execution-independent-reviewer",
-  "planned_context_id": "context-independent-reviewer",
-  "execution_id": "execution-independent-reviewer",
-  "context_id": "context-independent-reviewer",
-  "model_alias": "advanced-review-model",
+  "result_id": "result-micro-spec-author-iteration-qc",
+  "role_id": "micro-spec-author",
+  "task_kind": "micro-spec-author",
+  "planned_execution_id": "execution-micro-spec-author-iteration-qc",
+  "planned_context_id": "context-micro-spec-author-iteration-qc",
+  "execution_id": "execution-micro-spec-author-iteration-qc",
+  "context_id": "context-micro-spec-author-iteration-qc",
+  "model_alias": "worker-model",
   "target": {
     "path": ".specbound/micro-specs/req-9006/ms-9006-001.md",
     "id": "ms-9006-001",
     "revision": null,
     "sha256": "2b13b1d0c6056a39a559c62e6069ca7b387140eb919f15388fee9669f2251ab2"
   },
-  "producer_result_ref": {
-    "result_id": "result-micro-spec-author-iteration-qc",
-    "role_id": "micro-spec-author",
-    "execution_id": "execution-micro-spec-author-iteration-qc",
-    "context_id": "context-micro-spec-author-iteration-qc",
-    "sha256": "55aeacaefeddc74662cc9f8bd32486cab3beb5c3a1a6c21f6add07ee234d1f12"
-  },
+  "producer_result_ref": null,
   "reviewer_run_ref": null,
   "authority_type": "none",
   "authority_action_id": null,
@@ -34,22 +28,19 @@
         "id": "ms-9006-001",
         "revision": null,
         "sha256": "2b13b1d0c6056a39a559c62e6069ca7b387140eb919f15388fee9669f2251ab2"
-      },
-      {
-        "path": "reference-results/iteration-qc-reviewer-producer_result_ref.json",
-        "id": "result-micro-spec-author-iteration-qc",
-        "revision": null,
-        "sha256": "55aeacaefeddc74662cc9f8bd32486cab3beb5c3a1a6c21f6add07ee234d1f12"
       }
     ]
   },
   "target_risk": "high",
   "effective_task_risk": "high",
   "tool_categories": [
-    "repository-read"
+    "repository-read",
+    "candidate-write"
   ],
-  "mutation_class": "none",
-  "changed_paths": [],
+  "mutation_class": "candidate_write",
+  "changed_paths": [
+    ".specbound/micro-specs/req-9006/ms-9006-001.md"
+  ],
   "output_kind": "agent-result",
   "evidence": [
     {
@@ -67,21 +58,7 @@
       "reason": null
     },
     {
-      "slot": "review-findings",
-      "status": "provided",
-      "artifacts": [
-        {
-          "path": ".specbound/micro-specs/req-9006/ms-9006-001.md",
-          "id": "ms-9006-001",
-          "revision": null,
-          "sha256": "2b13b1d0c6056a39a559c62e6069ca7b387140eb919f15388fee9669f2251ab2"
-        }
-      ],
-      "commands": [],
-      "reason": null
-    },
-    {
-      "slot": "no-write",
+      "slot": "selected-ac-coverage",
       "status": "provided",
       "artifacts": [
         {
@@ -97,6 +74,6 @@
   ],
   "verdict": "pass",
   "findings": [],
-  "permitted_next_action": "request-authority-action",
+  "permitted_next_action": "submit-candidate-for-review",
   "claims": []
 }
