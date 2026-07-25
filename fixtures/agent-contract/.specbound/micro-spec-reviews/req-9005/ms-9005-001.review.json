@@ -1,0 +1,16 @@
+{
+  "authority": "fixture-maintainer",
+  "decided_at": "2026-01-01T00:00:00Z",
+  "decision": "approved_for_implementation",
+  "micro_spec_id": "ms-9005-001",
+  "micro_spec_path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
+  "micro_spec_sha256": "d27fd3e39c98d1632cb389f0c5e50079933aa3e53dbd9d10e852b5cfb56505c6",
+  "permitted_next_action": "implement_bound_micro_spec_only",
+  "reason": "Exact fixture review permits only this bound implementation.",
+  "requirement_id": "req-9005",
+  "requirement_path": ".specbound/requirements/req-9005/req-9005-r1.md",
+  "requirement_sha256": "a9728fbc73bb3c0204ad9fac8e0823cc73d6378d7a619d662887ff2ac0ab5cb8",
+  "revision": 1,
+  "risk": "high",
+  "schema_version": 1
+}

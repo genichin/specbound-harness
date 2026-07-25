@@ -1,3 +1,3 @@
 # Agent contract fixtures
 
-Provider-neutral positive and fail-closed negative request/result fixtures for all seven stable roles. Copy this directory as an isolated validation root and use `.specbound/policies/agent-roles.yaml` from the repository policy. Negative requests use an ineligible state; negative results assert a forbidden approval claim.
+Self-contained provider-neutral positive and fail-closed negative request/result fixtures for all seven stable roles. Each target and evidence artifact is exact path/identity/revision/SHA-256 bound. Negative requests spoof repository-derived state; negative results assert a forbidden approval claim.

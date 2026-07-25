@@ -3,17 +3,19 @@
   "role_id": "requirement-author",
   "task_kind": "requirement-author",
   "target": {
-    "path": "targets/requirement-author.md",
-    "sha256": "828483f0d5dcb2a283651c86c049ec3382959e42e04ed9c211fc1133f363522f"
+    "path": ".specbound/discoveries/dcy-9002-r1.md",
+    "id": "dcy-9002",
+    "revision": 1,
+    "sha256": "7f5dc9499d89af905eb73b872f8a437659c90ac05c842294b72591d3172f6c76"
   },
   "current_state": "confirmed",
   "inputs": {
-    "confirmed-discovery": "confirmed-discovery",
-    "exact-target": "exact-target"
+    "confirmed-discovery": "input:confirmed-discovery",
+    "exact-target": "input:exact-target"
   },
   "requested_capabilities": {
-    "path_patterns": [
-      ".specbound/requirements/req-*/req-*-r*.md"
+    "paths": [
+      ".specbound/requirements/req-9100/req-9100-r1.md"
     ],
     "tool_categories": [
       "repository-read",
@@ -21,6 +23,12 @@
     ],
     "mutation_classes": [
       "candidate_write"
+    ],
+    "output_kinds": [
+      "agent-result"
+    ],
+    "actions": [
+      "submit-candidate-for-review"
     ]
   },
   "producer_result_ref": null,

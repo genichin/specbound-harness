@@ -1,64 +1,112 @@
 {
   "schema_version": 1,
+  "result_id": "result-implementation",
   "role_id": "implementation",
   "task_kind": "implementation",
+  "execution_id": "execution-implementation",
+  "context_id": "context-implementation",
+  "model_alias": "worker-model",
   "target": {
-    "path": "targets/implementation.md",
-    "sha256": "7de6f424aa36b0b9f8d4dc8aed85251469ae14e763db96b954a46a098f3881bb"
+    "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
+    "id": "ms-9005-001",
+    "revision": null,
+    "sha256": "d27fd3e39c98d1632cb389f0c5e50079933aa3e53dbd9d10e852b5cfb56505c6"
   },
   "producer_result_ref": null,
-  "reviewer_run_ref": "review-run-001",
-  "artifacts": [
-    {
-      "path": "src/fixture_impl.py",
-      "sha256": "1549be898f04832599d0b67150101791753a1b235bc537fea78f473c91a5d0b3",
-      "kind": "implementation"
-    }
+  "reviewer_run_ref": {
+    "path": ".specbound/agent-results/independent-reviewer/result-independent-reviewer.json",
+    "result_id": "result-independent-reviewer",
+    "role_id": "independent-reviewer",
+    "execution_id": "execution-independent-reviewer",
+    "context_id": "context-independent-reviewer",
+    "sha256": "cb63f7c79e84d2182c3242c73623ff46bd4a7246bcf517ecc87b9bfd732416a6"
+  },
+  "authority_type": "none",
+  "authority_action_id": null,
+  "context_provenance": {
+    "fresh_context": true,
+    "producer_transcript_inherited": false,
+    "session_memory_inherited": false,
+    "input_artifacts": [
+      {
+        "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
+        "id": "ms-9005-001",
+        "revision": null,
+        "sha256": "d27fd3e39c98d1632cb389f0c5e50079933aa3e53dbd9d10e852b5cfb56505c6"
+      }
+    ]
+  },
+  "target_risk": "high",
+  "effective_task_risk": "high",
+  "tool_categories": [
+    "repository-read",
+    "candidate-write",
+    "test-execute",
+    "filesystem-metadata"
   ],
+  "mutation_class": "repository_mutation",
+  "changed_paths": [
+    "src/fixture_impl.py"
+  ],
+  "output_kind": "agent-result",
   "evidence": [
     {
       "slot": "target-binding",
       "status": "provided",
-      "artifact_ref": "src/fixture_impl.py",
-      "detail": "Fixture evidence for target-binding."
+      "artifacts": [
+        {
+          "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
+          "id": "ms-9005-001",
+          "revision": null,
+          "sha256": "d27fd3e39c98d1632cb389f0c5e50079933aa3e53dbd9d10e852b5cfb56505c6"
+        },
+        {
+          "path": "src/fixture_impl.py",
+          "id": "fixture_impl",
+          "revision": null,
+          "sha256": "c66732d4b0f88725b147602bed81dad9d1459efaa4dc4bb25db0cb385d0ee36e"
+        }
+      ],
+      "commands": [],
+      "reason": null
     },
     {
       "slot": "test-results",
       "status": "provided",
-      "artifact_ref": "src/fixture_impl.py",
-      "detail": "Fixture evidence for test-results."
+      "artifacts": [
+        {
+          "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
+          "id": "ms-9005-001",
+          "revision": null,
+          "sha256": "d27fd3e39c98d1632cb389f0c5e50079933aa3e53dbd9d10e852b5cfb56505c6"
+        }
+      ],
+      "commands": [
+        {
+          "command": "fixture-check",
+          "result": "passed",
+          "exit_code": 0
+        }
+      ],
+      "reason": null
     },
     {
       "slot": "rollback-inventory",
       "status": "provided",
-      "artifact_ref": "src/fixture_impl.py",
-      "detail": "Fixture evidence for rollback-inventory."
+      "artifacts": [
+        {
+          "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
+          "id": "ms-9005-001",
+          "revision": null,
+          "sha256": "d27fd3e39c98d1632cb389f0c5e50079933aa3e53dbd9d10e852b5cfb56505c6"
+        }
+      ],
+      "commands": [],
+      "reason": null
     }
   ],
-  "provenance": {
-    "execution_id": "fixture-implementation",
-    "request_sha256": "180af3a0573b1372732325cfeb55576326a87d705aae37402f5fbf28fd8957c9",
-    "tool_categories": [
-      "repository-read",
-      "candidate-write",
-      "test-execute",
-      "filesystem-metadata"
-    ],
-    "mutation_classes": [
-      "repository_mutation"
-    ]
-  },
-  "verification": {
-    "commands": [
-      {
-        "command": "fixture-check",
-        "result": "passed",
-        "exit_code": 0
-      }
-    ],
-    "summary": "Fixture check passed."
-  },
-  "verdict": "completed",
+  "verdict": "pass",
+  "findings": [],
   "permitted_next_action": "request-iteration-qc",
   "claims": [
     "approval"

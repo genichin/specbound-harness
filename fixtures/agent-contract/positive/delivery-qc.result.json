@@ -1,64 +1,119 @@
 {
   "schema_version": 1,
+  "result_id": "result-delivery-qc",
   "role_id": "delivery-qc",
   "task_kind": "delivery-qc",
+  "execution_id": "execution-delivery-qc",
+  "context_id": "context-delivery-qc",
+  "model_alias": "worker-model",
   "target": {
-    "path": "targets/delivery-qc.md",
-    "sha256": "91db9e625b2fa5a78b1b14b2181972db4f5d19ac17113e8fa5ddc7d723807e36"
+    "path": ".specbound/iteration-qc/req-9007/iqc-9007-001-r1.json",
+    "id": "iqc-9007-001",
+    "revision": 1,
+    "sha256": "96da077e2ff7b13a8b39fe3419724bb6f608cdcbd5afedbe8bcb26746541024f"
   },
-  "producer_result_ref": "positive/iteration-qc.result.json",
-  "reviewer_run_ref": "review-run-001",
-  "artifacts": [
-    {
-      "path": ".specbound/delivery-qc/dqc-9000-r1.json",
-      "sha256": "f5f5348c100caa526adb54630af34de655b8f54a359821bd1c8f3db114d42e9d",
-      "kind": "evidence"
-    }
+  "producer_result_ref": {
+    "path": ".specbound/agent-results/iteration-qc/result-iteration-qc.json",
+    "result_id": "result-iteration-qc",
+    "role_id": "iteration-qc",
+    "execution_id": "execution-iteration-qc",
+    "context_id": "context-iteration-qc",
+    "sha256": "ba63c0b658939013eddbdde396dbe5f181ecd7f0b7d7e7bb4e41261fb5849662"
+  },
+  "reviewer_run_ref": {
+    "path": ".specbound/agent-results/independent-reviewer/result-independent-reviewer.json",
+    "result_id": "result-independent-reviewer",
+    "role_id": "independent-reviewer",
+    "execution_id": "execution-independent-reviewer",
+    "context_id": "context-independent-reviewer",
+    "sha256": "cb63f7c79e84d2182c3242c73623ff46bd4a7246bcf517ecc87b9bfd732416a6"
+  },
+  "authority_type": "none",
+  "authority_action_id": null,
+  "context_provenance": {
+    "fresh_context": true,
+    "producer_transcript_inherited": false,
+    "session_memory_inherited": false,
+    "input_artifacts": [
+      {
+        "path": ".specbound/iteration-qc/req-9007/iqc-9007-001-r1.json",
+        "id": "iqc-9007-001",
+        "revision": 1,
+        "sha256": "96da077e2ff7b13a8b39fe3419724bb6f608cdcbd5afedbe8bcb26746541024f"
+      }
+    ]
+  },
+  "target_risk": "high",
+  "effective_task_risk": "high",
+  "tool_categories": [
+    "repository-read",
+    "candidate-write",
+    "test-execute",
+    "filesystem-metadata"
   ],
+  "mutation_class": "evidence_write",
+  "changed_paths": [
+    ".specbound/delivery-qc/dqc-9100-r1.json"
+  ],
+  "output_kind": "agent-result",
   "evidence": [
     {
       "slot": "target-binding",
       "status": "provided",
-      "artifact_ref": ".specbound/delivery-qc/dqc-9000-r1.json",
-      "detail": "Fixture evidence for target-binding."
+      "artifacts": [
+        {
+          "path": ".specbound/iteration-qc/req-9007/iqc-9007-001-r1.json",
+          "id": "iqc-9007-001",
+          "revision": 1,
+          "sha256": "96da077e2ff7b13a8b39fe3419724bb6f608cdcbd5afedbe8bcb26746541024f"
+        },
+        {
+          "path": ".specbound/delivery-qc/dqc-9100-r1.json",
+          "id": "dqc-9100",
+          "revision": 1,
+          "sha256": "58ce385e65a02c7becccd99170ba44eb9456db36e0b52020ca1535ced9cfb50c"
+        }
+      ],
+      "commands": [],
+      "reason": null
     },
     {
       "slot": "complete-ac-coverage",
       "status": "provided",
-      "artifact_ref": ".specbound/delivery-qc/dqc-9000-r1.json",
-      "detail": "Fixture evidence for complete-ac-coverage."
+      "artifacts": [
+        {
+          "path": ".specbound/iteration-qc/req-9007/iqc-9007-001-r1.json",
+          "id": "iqc-9007-001",
+          "revision": 1,
+          "sha256": "96da077e2ff7b13a8b39fe3419724bb6f608cdcbd5afedbe8bcb26746541024f"
+        }
+      ],
+      "commands": [],
+      "reason": null
     },
     {
       "slot": "regression-evidence",
       "status": "provided",
-      "artifact_ref": ".specbound/delivery-qc/dqc-9000-r1.json",
-      "detail": "Fixture evidence for regression-evidence."
+      "artifacts": [
+        {
+          "path": ".specbound/iteration-qc/req-9007/iqc-9007-001-r1.json",
+          "id": "iqc-9007-001",
+          "revision": 1,
+          "sha256": "96da077e2ff7b13a8b39fe3419724bb6f608cdcbd5afedbe8bcb26746541024f"
+        }
+      ],
+      "commands": [
+        {
+          "command": "fixture-check",
+          "result": "passed",
+          "exit_code": 0
+        }
+      ],
+      "reason": null
     }
   ],
-  "provenance": {
-    "execution_id": "fixture-delivery-qc",
-    "request_sha256": "a109e7a5bfa4bb5975e2f6dad0ae5e59f414bfd6e3b87c8b15542aae588d7da3",
-    "tool_categories": [
-      "repository-read",
-      "candidate-write",
-      "test-execute",
-      "filesystem-metadata"
-    ],
-    "mutation_classes": [
-      "evidence_write"
-    ]
-  },
-  "verification": {
-    "commands": [
-      {
-        "command": "fixture-check",
-        "result": "passed",
-        "exit_code": 0
-      }
-    ],
-    "summary": "Fixture check passed."
-  },
-  "verdict": "completed",
+  "verdict": "pass",
+  "findings": [],
   "permitted_next_action": "request-delivery-decision",
   "claims": []
 }

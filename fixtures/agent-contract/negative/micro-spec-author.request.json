@@ -3,18 +3,20 @@
   "role_id": "micro-spec-author",
   "task_kind": "micro-spec-author",
   "target": {
-    "path": "targets/micro-spec-author.md",
-    "sha256": "28880c3526a97e11e2dc63257ef44aea6c75827ba25a1b126f96ef43e56a2b06"
+    "path": ".specbound/requirements/req-9003/req-9003-r1.md",
+    "id": "req-9003",
+    "revision": 1,
+    "sha256": "7923e3e404f908f02a314fd2bbe65bca9a293a606c89b80642871623a296af1c"
   },
   "current_state": "blocked",
   "inputs": {
-    "approved-requirement": "approved-requirement",
-    "selected-acceptance-criteria": "selected-acceptance-criteria",
-    "exact-target": "exact-target"
+    "approved-requirement": "input:approved-requirement",
+    "selected-acceptance-criteria": "input:selected-acceptance-criteria",
+    "exact-target": "input:exact-target"
   },
   "requested_capabilities": {
-    "path_patterns": [
-      ".specbound/micro-specs/req-*/ms-*-*.md"
+    "paths": [
+      ".specbound/micro-specs/req-9100/ms-9100-001.md"
     ],
     "tool_categories": [
       "repository-read",
@@ -22,6 +24,12 @@
     ],
     "mutation_classes": [
       "candidate_write"
+    ],
+    "output_kinds": [
+      "agent-result"
+    ],
+    "actions": [
+      "submit-candidate-for-review"
     ]
   },
   "producer_result_ref": null,

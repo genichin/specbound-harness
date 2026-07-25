@@ -1,58 +1,105 @@
 {
   "schema_version": 1,
+  "result_id": "result-iteration-qc",
   "role_id": "iteration-qc",
   "task_kind": "iteration-qc",
+  "execution_id": "execution-iteration-qc",
+  "context_id": "context-iteration-qc",
+  "model_alias": "worker-model",
   "target": {
-    "path": "targets/iteration-qc.md",
-    "sha256": "70cf3c35eea7ccb98fc34ecfe68ca80d1d87c87b7c6824afbe70e7f6c858e338"
+    "path": ".specbound/micro-specs/req-9006/ms-9006-001.md",
+    "id": "ms-9006-001",
+    "revision": null,
+    "sha256": "94286957e71459cfc9fab66b4f974fdc8094360477148f68e1028de3184ac659"
   },
-  "producer_result_ref": "positive/implementation.result.json",
-  "reviewer_run_ref": "review-run-001",
-  "artifacts": [
-    {
-      "path": ".specbound/iteration-qc/req-9000/iqc-9000-001-r1.json",
-      "sha256": "ad5859ce07dc5bee4fe78408c60ffcccbbeefed592491880690ff8616feaf0be",
-      "kind": "evidence"
-    }
+  "producer_result_ref": {
+    "path": ".specbound/agent-results/implementation/result-implementation.json",
+    "result_id": "result-implementation",
+    "role_id": "implementation",
+    "execution_id": "execution-implementation",
+    "context_id": "context-implementation",
+    "sha256": "b4223189b3504cd354638a0c62a90772cf02eb5013c7f456ee376592d01f9828"
+  },
+  "reviewer_run_ref": {
+    "path": ".specbound/agent-results/independent-reviewer/result-independent-reviewer.json",
+    "result_id": "result-independent-reviewer",
+    "role_id": "independent-reviewer",
+    "execution_id": "execution-independent-reviewer",
+    "context_id": "context-independent-reviewer",
+    "sha256": "cb63f7c79e84d2182c3242c73623ff46bd4a7246bcf517ecc87b9bfd732416a6"
+  },
+  "authority_type": "none",
+  "authority_action_id": null,
+  "context_provenance": {
+    "fresh_context": true,
+    "producer_transcript_inherited": false,
+    "session_memory_inherited": false,
+    "input_artifacts": [
+      {
+        "path": ".specbound/micro-specs/req-9006/ms-9006-001.md",
+        "id": "ms-9006-001",
+        "revision": null,
+        "sha256": "94286957e71459cfc9fab66b4f974fdc8094360477148f68e1028de3184ac659"
+      }
+    ]
+  },
+  "target_risk": "high",
+  "effective_task_risk": "high",
+  "tool_categories": [
+    "repository-read",
+    "candidate-write",
+    "test-execute",
+    "filesystem-metadata"
   ],
+  "mutation_class": "evidence_write",
+  "changed_paths": [
+    ".specbound/iteration-qc/req-9100/iqc-9100-001-r1.json"
+  ],
+  "output_kind": "agent-result",
   "evidence": [
     {
       "slot": "target-binding",
       "status": "provided",
-      "artifact_ref": ".specbound/iteration-qc/req-9000/iqc-9000-001-r1.json",
-      "detail": "Fixture evidence for target-binding."
+      "artifacts": [
+        {
+          "path": ".specbound/micro-specs/req-9006/ms-9006-001.md",
+          "id": "ms-9006-001",
+          "revision": null,
+          "sha256": "94286957e71459cfc9fab66b4f974fdc8094360477148f68e1028de3184ac659"
+        },
+        {
+          "path": ".specbound/iteration-qc/req-9100/iqc-9100-001-r1.json",
+          "id": "iqc-9100-001",
+          "revision": 1,
+          "sha256": "5c2c2c08096e42c0eda8cc0cd0956a5a943449c7eb10ed449e5baa52c0ea35de"
+        }
+      ],
+      "commands": [],
+      "reason": null
     },
     {
       "slot": "focused-verification",
       "status": "provided",
-      "artifact_ref": ".specbound/iteration-qc/req-9000/iqc-9000-001-r1.json",
-      "detail": "Fixture evidence for focused-verification."
+      "artifacts": [
+        {
+          "path": ".specbound/micro-specs/req-9006/ms-9006-001.md",
+          "id": "ms-9006-001",
+          "revision": null,
+          "sha256": "94286957e71459cfc9fab66b4f974fdc8094360477148f68e1028de3184ac659"
+        }
+      ],
+      "commands": [
+        {
+          "command": "fixture-check",
+          "result": "passed",
+          "exit_code": 0
+        }
+      ],
+      "reason": null
     }
   ],
-  "provenance": {
-    "execution_id": "fixture-iteration-qc",
-    "request_sha256": "08933a2552cc3046832b8b4b77a25ded8bf67cfe168b3f99e09c9cbf99e5e4b4",
-    "tool_categories": [
-      "repository-read",
-      "candidate-write",
-      "test-execute",
-      "filesystem-metadata"
-    ],
-    "mutation_classes": [
-      "evidence_write"
-    ]
-  },
-  "verification": {
-    "commands": [
-      {
-        "command": "fixture-check",
-        "result": "passed",
-        "exit_code": 0
-      }
-    ],
-    "summary": "Fixture check passed."
-  },
-  "verdict": "completed",
+  "verdict": "pass",
+  "findings": [],
   "permitted_next_action": "request-delivery-qc",
   "claims": []
 }

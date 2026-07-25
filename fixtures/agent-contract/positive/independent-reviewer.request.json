@@ -3,24 +3,39 @@
   "role_id": "independent-reviewer",
   "task_kind": "independent-reviewer",
   "target": {
-    "path": "targets/independent-reviewer.md",
-    "sha256": "7e3d64e0a539fbda8c1f56d8f682e9dc941067c01d6bec3fa741c9aa7ca445fd"
+    "path": ".specbound/requirements/req-9004/req-9004-r1.md",
+    "id": "req-9004",
+    "revision": 1,
+    "sha256": "80c0e6fde176592935c54aba698cc47a96b4a236c2c7abeb1ffbcef1bc832e5e"
   },
   "current_state": "in_review",
   "inputs": {
-    "producer-result": "producer-result",
-    "exact-target": "exact-target",
-    "current-state": "current-state"
+    "producer-result": "input:producer-result",
+    "exact-target": "input:exact-target",
+    "current-state": "input:current-state"
   },
   "requested_capabilities": {
-    "path_patterns": [],
+    "paths": [],
     "tool_categories": [
       "repository-read"
     ],
     "mutation_classes": [
       "none"
+    ],
+    "output_kinds": [
+      "agent-result"
+    ],
+    "actions": [
+      "request-authority-action"
     ]
   },
-  "producer_result_ref": "positive/discovery-author.result.json",
+  "producer_result_ref": {
+    "path": ".specbound/agent-results/implementation/result-implementation.json",
+    "result_id": "result-implementation",
+    "role_id": "implementation",
+    "execution_id": "execution-implementation",
+    "context_id": "context-implementation",
+    "sha256": "b4223189b3504cd354638a0c62a90772cf02eb5013c7f456ee376592d01f9828"
+  },
   "reviewer_run_ref": null
 }

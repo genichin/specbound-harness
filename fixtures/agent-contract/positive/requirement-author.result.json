@@ -1,56 +1,83 @@
 {
   "schema_version": 1,
+  "result_id": "result-requirement-author",
   "role_id": "requirement-author",
   "task_kind": "requirement-author",
+  "execution_id": "execution-requirement-author",
+  "context_id": "context-requirement-author",
+  "model_alias": "worker-model",
   "target": {
-    "path": "targets/requirement-author.md",
-    "sha256": "828483f0d5dcb2a283651c86c049ec3382959e42e04ed9c211fc1133f363522f"
+    "path": ".specbound/discoveries/dcy-9002-r1.md",
+    "id": "dcy-9002",
+    "revision": 1,
+    "sha256": "7f5dc9499d89af905eb73b872f8a437659c90ac05c842294b72591d3172f6c76"
   },
   "producer_result_ref": null,
   "reviewer_run_ref": null,
-  "artifacts": [
-    {
-      "path": ".specbound/requirements/req-9000/req-9000-r1.md",
-      "sha256": "b6ff24691d0c5fa6ee4dc193b054205d4ea27da1aefc984c7467aba7b9fd9ab9",
-      "kind": "candidate"
-    }
+  "authority_type": "none",
+  "authority_action_id": null,
+  "context_provenance": {
+    "fresh_context": true,
+    "producer_transcript_inherited": false,
+    "session_memory_inherited": false,
+    "input_artifacts": [
+      {
+        "path": ".specbound/discoveries/dcy-9002-r1.md",
+        "id": "dcy-9002",
+        "revision": 1,
+        "sha256": "7f5dc9499d89af905eb73b872f8a437659c90ac05c842294b72591d3172f6c76"
+      }
+    ]
+  },
+  "target_risk": "high",
+  "effective_task_risk": "high",
+  "tool_categories": [
+    "repository-read",
+    "candidate-write"
   ],
+  "mutation_class": "candidate_write",
+  "changed_paths": [
+    ".specbound/requirements/req-9100/req-9100-r1.md"
+  ],
+  "output_kind": "agent-result",
   "evidence": [
     {
       "slot": "target-binding",
       "status": "provided",
-      "artifact_ref": ".specbound/requirements/req-9000/req-9000-r1.md",
-      "detail": "Fixture evidence for target-binding."
+      "artifacts": [
+        {
+          "path": ".specbound/discoveries/dcy-9002-r1.md",
+          "id": "dcy-9002",
+          "revision": 1,
+          "sha256": "7f5dc9499d89af905eb73b872f8a437659c90ac05c842294b72591d3172f6c76"
+        },
+        {
+          "path": ".specbound/requirements/req-9100/req-9100-r1.md",
+          "id": "req-9100",
+          "revision": 1,
+          "sha256": "ff8334f3fbfdf2ddb014c31077c051db3ef303a6ef142d0dfea31e1d8adb269f"
+        }
+      ],
+      "commands": [],
+      "reason": null
     },
     {
       "slot": "acceptance-criteria",
       "status": "provided",
-      "artifact_ref": ".specbound/requirements/req-9000/req-9000-r1.md",
-      "detail": "Fixture evidence for acceptance-criteria."
+      "artifacts": [
+        {
+          "path": ".specbound/discoveries/dcy-9002-r1.md",
+          "id": "dcy-9002",
+          "revision": 1,
+          "sha256": "7f5dc9499d89af905eb73b872f8a437659c90ac05c842294b72591d3172f6c76"
+        }
+      ],
+      "commands": [],
+      "reason": null
     }
   ],
-  "provenance": {
-    "execution_id": "fixture-requirement-author",
-    "request_sha256": "1bb17f442975630a48301d75c5974c74de91eeb17d60e848087d7a7e54dbb59f",
-    "tool_categories": [
-      "repository-read",
-      "candidate-write"
-    ],
-    "mutation_classes": [
-      "candidate_write"
-    ]
-  },
-  "verification": {
-    "commands": [
-      {
-        "command": "fixture-check",
-        "result": "passed",
-        "exit_code": 0
-      }
-    ],
-    "summary": "Fixture check passed."
-  },
-  "verdict": "completed",
+  "verdict": "pass",
+  "findings": [],
   "permitted_next_action": "submit-candidate-for-review",
   "claims": []
 }

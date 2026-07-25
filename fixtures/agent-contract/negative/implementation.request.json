@@ -3,19 +3,21 @@
   "role_id": "implementation",
   "task_kind": "implementation",
   "target": {
-    "path": "targets/implementation.md",
-    "sha256": "7de6f424aa36b0b9f8d4dc8aed85251469ae14e763db96b954a46a098f3881bb"
+    "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
+    "id": "ms-9005-001",
+    "revision": null,
+    "sha256": "d27fd3e39c98d1632cb389f0c5e50079933aa3e53dbd9d10e852b5cfb56505c6"
   },
   "current_state": "blocked",
   "inputs": {
-    "reviewed-micro-spec": "reviewed-micro-spec",
-    "review-record": "review-record",
-    "exact-target": "exact-target",
-    "current-state": "current-state"
+    "reviewed-micro-spec": "input:reviewed-micro-spec",
+    "review-record": "input:review-record",
+    "exact-target": "input:exact-target",
+    "current-state": "input:current-state"
   },
   "requested_capabilities": {
-    "path_patterns": [
-      "@reviewed-micro-spec-scope"
+    "paths": [
+      "src/fixture_impl.py"
     ],
     "tool_categories": [
       "repository-read",
@@ -25,8 +27,21 @@
     ],
     "mutation_classes": [
       "repository_mutation"
+    ],
+    "output_kinds": [
+      "agent-result"
+    ],
+    "actions": [
+      "request-iteration-qc"
     ]
   },
   "producer_result_ref": null,
-  "reviewer_run_ref": "review-run-001"
+  "reviewer_run_ref": {
+    "path": ".specbound/agent-results/independent-reviewer/result-independent-reviewer.json",
+    "result_id": "result-independent-reviewer",
+    "role_id": "independent-reviewer",
+    "execution_id": "execution-independent-reviewer",
+    "context_id": "context-independent-reviewer",
+    "sha256": "cb63f7c79e84d2182c3242c73623ff46bd4a7246bcf517ecc87b9bfd732416a6"
+  }
 }

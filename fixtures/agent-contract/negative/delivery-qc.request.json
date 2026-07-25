@@ -3,19 +3,21 @@
   "role_id": "delivery-qc",
   "task_kind": "delivery-qc",
   "target": {
-    "path": "targets/delivery-qc.md",
-    "sha256": "91db9e625b2fa5a78b1b14b2181972db4f5d19ac17113e8fa5ddc7d723807e36"
+    "path": ".specbound/iteration-qc/req-9007/iqc-9007-001-r1.json",
+    "id": "iqc-9007-001",
+    "revision": 1,
+    "sha256": "96da077e2ff7b13a8b39fe3419724bb6f608cdcbd5afedbe8bcb26746541024f"
   },
   "current_state": "blocked",
   "inputs": {
-    "verified-iteration-qc-set": "verified-iteration-qc-set",
-    "approved-requirement": "approved-requirement",
-    "exact-target": "exact-target",
-    "current-state": "current-state"
+    "verified-iteration-qc-set": "input:verified-iteration-qc-set",
+    "approved-requirement": "input:approved-requirement",
+    "exact-target": "input:exact-target",
+    "current-state": "input:current-state"
   },
   "requested_capabilities": {
-    "path_patterns": [
-      ".specbound/delivery-qc/dqc-*-r*.json"
+    "paths": [
+      ".specbound/delivery-qc/dqc-9100-r1.json"
     ],
     "tool_categories": [
       "repository-read",
@@ -25,8 +27,28 @@
     ],
     "mutation_classes": [
       "evidence_write"
+    ],
+    "output_kinds": [
+      "agent-result"
+    ],
+    "actions": [
+      "request-delivery-decision"
     ]
   },
-  "producer_result_ref": "positive/iteration-qc.result.json",
-  "reviewer_run_ref": "review-run-001"
+  "producer_result_ref": {
+    "path": ".specbound/agent-results/iteration-qc/result-iteration-qc.json",
+    "result_id": "result-iteration-qc",
+    "role_id": "iteration-qc",
+    "execution_id": "execution-iteration-qc",
+    "context_id": "context-iteration-qc",
+    "sha256": "ba63c0b658939013eddbdde396dbe5f181ecd7f0b7d7e7bb4e41261fb5849662"
+  },
+  "reviewer_run_ref": {
+    "path": ".specbound/agent-results/independent-reviewer/result-independent-reviewer.json",
+    "result_id": "result-independent-reviewer",
+    "role_id": "independent-reviewer",
+    "execution_id": "execution-independent-reviewer",
+    "context_id": "context-independent-reviewer",
+    "sha256": "cb63f7c79e84d2182c3242c73623ff46bd4a7246bcf517ecc87b9bfd732416a6"
+  }
 }

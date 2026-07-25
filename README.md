@@ -12,7 +12,6 @@ This initial slice supplies:
 - `specbound docs requirements` — regenerate the user-facing requirement list from canonical REQ metadata; `--check` fails when the projection is stale.
 - `specbound req reject` — atomic rejection of an exact in-review REQ with immutable decision evidence.
 - `specbound discovery confirm` — non-overwritable, exact-byte confirmation record creation after an explicit authority decision.
-- `specbound agent check-role-request` / `validate-result` — read-only, provider-neutral fail-closed checks for bounded role requests and result evidence.
 - isolated valid/invalid fixtures and CI.
 - a repository-backed Hermes skill source under `skills/`.
 
@@ -35,8 +34,6 @@ python3 -m venv .venv
 .venv/bin/python -m specbound.cli preflight
 .venv/bin/python -m specbound.cli validate
 .venv/bin/python -m specbound.cli docs requirements --check
-.venv/bin/python -m specbound.cli agent check-role-request --request-file REQUEST.json
-.venv/bin/python -m specbound.cli agent validate-result --result-file RESULT.json
 .venv/bin/python -m pytest
 ```
 
@@ -52,8 +49,6 @@ selected_acceptance_criteria: [AC-<id>]
 ```
 
 Canonical iteration-QC records bind the exact canonical Micro-SPEC path/ID/SHA-256 snapshot, preserve that Micro-SPEC's selected AC list, retain one or more reproducible focused `command`/`result`/`exit_code` entries, use only `verified`, `rework`, or `blocked` verdicts, and enumerate exactly the parent REQ ACs remaining outside the slice. `verified` requires complete passing focused evidence. Canonical delivery-QC records bind one exact approved REQ snapshot and its risk-policy-allowlisted QC authority, map every parent AC to one or more exact, verified canonical iteration-QC snapshots, retain passing cross-iteration regression evidence, and explicitly preserve unresolved exceptions plus residual-risk disposition. A delivery-QC cannot contain merge, delivery, release, or authorization claims; it proves readiness evidence only and never authorizes a transition. Control-plane evidence remains opt-in: `policy.control_plane_adoption` is a strict versioned registry of exact approved REQ `{path, id, revision, sha256}` snapshots. Normal `specbound validate` preserves compatibility when canonical Micro-SPEC/QC evidence is absent. An explicit `specbound validate --claim iteration|delivery --requirement req-<id>-r<revision>` requires that exact REQ to be adopted and then fails closed only for the requested claim when the required canonical evidence is absent or invalid. Adoption never retroactively relabels manual-bootstrap artifacts or authorizes merge, delivery, or release. Discovery confirmation permits only REQ drafting. An explicit allowlisted authority may reject an exact `in_review` revision only through `specbound req reject req-<id>-r<revision> --authority <allowlisted-authority> --reason <substantive-reason>`; it atomically transitions the REQ to `rejected` and records both reviewed and final byte digests.
-
-The optional `policy.agent_contract` block activates the repository policy at `.specbound/policies/agent-roles.yaml`. It defines exactly seven stable lifecycle roles without naming a model provider, agent runtime, or orchestration product. Request validation checks current-state eligibility, exact target bytes, required inputs, reference constraints, and requested capability subsets before execution. Result validation checks the closed JSON contract, target and artifact digests, role path scope, evidence-slot rules, provenance, verification, forbidden claims, and the bounded next action. These checks never invoke an agent, select a next role, publish an authority record, merge, deliver, or release.
 
 ## Runtime boundary
 

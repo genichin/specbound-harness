@@ -1,56 +1,83 @@
 {
   "schema_version": 1,
+  "result_id": "result-micro-spec-author",
   "role_id": "micro-spec-author",
   "task_kind": "micro-spec-author",
+  "execution_id": "execution-micro-spec-author",
+  "context_id": "context-micro-spec-author",
+  "model_alias": "worker-model",
   "target": {
-    "path": "targets/micro-spec-author.md",
-    "sha256": "28880c3526a97e11e2dc63257ef44aea6c75827ba25a1b126f96ef43e56a2b06"
+    "path": ".specbound/requirements/req-9003/req-9003-r1.md",
+    "id": "req-9003",
+    "revision": 1,
+    "sha256": "7923e3e404f908f02a314fd2bbe65bca9a293a606c89b80642871623a296af1c"
   },
   "producer_result_ref": null,
   "reviewer_run_ref": null,
-  "artifacts": [
-    {
-      "path": ".specbound/micro-specs/req-9000/ms-9000-001.md",
-      "sha256": "d156f4665b8d63d25258111575a75fb2f7c3b3e6a41bc25fd553791ea2334f72",
-      "kind": "candidate"
-    }
+  "authority_type": "none",
+  "authority_action_id": null,
+  "context_provenance": {
+    "fresh_context": true,
+    "producer_transcript_inherited": false,
+    "session_memory_inherited": false,
+    "input_artifacts": [
+      {
+        "path": ".specbound/requirements/req-9003/req-9003-r1.md",
+        "id": "req-9003",
+        "revision": 1,
+        "sha256": "7923e3e404f908f02a314fd2bbe65bca9a293a606c89b80642871623a296af1c"
+      }
+    ]
+  },
+  "target_risk": "high",
+  "effective_task_risk": "high",
+  "tool_categories": [
+    "repository-read",
+    "candidate-write"
   ],
+  "mutation_class": "candidate_write",
+  "changed_paths": [
+    ".specbound/micro-specs/req-9100/ms-9100-001.md"
+  ],
+  "output_kind": "agent-result",
   "evidence": [
     {
       "slot": "target-binding",
       "status": "provided",
-      "artifact_ref": ".specbound/micro-specs/req-9000/ms-9000-001.md",
-      "detail": "Fixture evidence for target-binding."
+      "artifacts": [
+        {
+          "path": ".specbound/requirements/req-9003/req-9003-r1.md",
+          "id": "req-9003",
+          "revision": 1,
+          "sha256": "7923e3e404f908f02a314fd2bbe65bca9a293a606c89b80642871623a296af1c"
+        },
+        {
+          "path": ".specbound/micro-specs/req-9100/ms-9100-001.md",
+          "id": "ms-9100-001",
+          "revision": null,
+          "sha256": "0bc936da1d855356c48e7757d0d16ca3f3f65ef70fcbab19bd5b46a20312e453"
+        }
+      ],
+      "commands": [],
+      "reason": null
     },
     {
       "slot": "selected-ac-coverage",
       "status": "provided",
-      "artifact_ref": ".specbound/micro-specs/req-9000/ms-9000-001.md",
-      "detail": "Fixture evidence for selected-ac-coverage."
+      "artifacts": [
+        {
+          "path": ".specbound/requirements/req-9003/req-9003-r1.md",
+          "id": "req-9003",
+          "revision": 1,
+          "sha256": "7923e3e404f908f02a314fd2bbe65bca9a293a606c89b80642871623a296af1c"
+        }
+      ],
+      "commands": [],
+      "reason": null
     }
   ],
-  "provenance": {
-    "execution_id": "fixture-micro-spec-author",
-    "request_sha256": "1eb2b49b6fece4a62d0360713216b0b316be77fe117772e1f48a4bd4e30c41db",
-    "tool_categories": [
-      "repository-read",
-      "candidate-write"
-    ],
-    "mutation_classes": [
-      "candidate_write"
-    ]
-  },
-  "verification": {
-    "commands": [
-      {
-        "command": "fixture-check",
-        "result": "passed",
-        "exit_code": 0
-      }
-    ],
-    "summary": "Fixture check passed."
-  },
-  "verdict": "completed",
+  "verdict": "pass",
+  "findings": [],
   "permitted_next_action": "submit-candidate-for-review",
   "claims": [
     "approval"

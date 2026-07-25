@@ -129,3 +129,6 @@ policy:
   control_plane_adoption:
     schema_version: 1
     requirements: []
+  agent_contract:
+    enabled: true
+    roles_path: .specbound/policies/agent-roles.yaml

@@ -3,18 +3,20 @@
   "role_id": "discovery-author",
   "task_kind": "discovery-author",
   "target": {
-    "path": "targets/discovery-author.md",
-    "sha256": "c9d1c8c6048b9345991505cebd5c917680954a5272285ef8f0294d4b19c4c639"
+    "path": ".specbound/discoveries/dcy-9001-r1.md",
+    "id": "dcy-9001",
+    "revision": 1,
+    "sha256": "a6b905059266155cdbd134b638df9ab1f0d792730f92e84615b541e96a4a24be"
   },
   "current_state": "blocked",
   "inputs": {
-    "user-intent": "user-intent",
-    "repository-context": "repository-context",
-    "exact-target": "exact-target"
+    "user-intent": "input:user-intent",
+    "repository-context": "input:repository-context",
+    "exact-target": "input:exact-target"
   },
   "requested_capabilities": {
-    "path_patterns": [
-      ".specbound/discoveries/dcy-*-r*.md"
+    "paths": [
+      ".specbound/discoveries/dcy-9100-r1.md"
     ],
     "tool_categories": [
       "repository-read",
@@ -22,6 +24,12 @@
     ],
     "mutation_classes": [
       "candidate_write"
+    ],
+    "output_kinds": [
+      "agent-result"
+    ],
+    "actions": [
+      "submit-candidate-for-review"
     ]
   },
   "producer_result_ref": null,
