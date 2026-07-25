@@ -3,6 +3,8 @@
   "result_id": "result-micro-spec-author",
   "role_id": "micro-spec-author",
   "task_kind": "micro-spec-author",
+  "planned_execution_id": "execution-micro-spec-author",
+  "planned_context_id": "context-micro-spec-author",
   "execution_id": "execution-micro-spec-author",
   "context_id": "context-micro-spec-author",
   "model_alias": "worker-model",

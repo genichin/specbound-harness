@@ -2,6 +2,8 @@
   "schema_version": 1,
   "role_id": "independent-reviewer",
   "task_kind": "independent-reviewer",
+  "planned_execution_id": "execution-independent-reviewer",
+  "planned_context_id": "context-independent-reviewer",
   "target": {
     "path": ".specbound/requirements/req-9004/req-9004-r1.md",
     "id": "req-9004",
@@ -9,6 +11,8 @@
     "sha256": "8adea15f98b57ef9fbe39355944b3e4665d0aa0cda2d8143cac684a749411679"
   },
   "current_state": "blocked",
+  "target_risk": "high",
+  "effective_task_risk": "high",
   "inputs": {
     "producer-result": "input:producer-result",
     "exact-target": "input:exact-target",
@@ -30,11 +34,12 @@
     ]
   },
   "producer_result_ref": {
-    "result_id": "result-implementation",
-    "role_id": "implementation",
-    "execution_id": "execution-implementation",
-    "context_id": "context-implementation",
-    "sha256": "aa05c0f66f3e47cfcad2cda41e8a09f12da0ca0684caf9a3169ec79e10fd3c8f"
+    "result_id": "result-requirement-author",
+    "role_id": "requirement-author",
+    "execution_id": "execution-requirement-author",
+    "context_id": "context-requirement-author",
+    "sha256": "3053746a993a0e85979f88af08c6c78e2e2bdb9d4a55fd34f977aad5ac528a92"
   },
-  "reviewer_run_ref": null
+  "reviewer_run_ref": null,
+  "verified_iteration_qc_set": []
 }

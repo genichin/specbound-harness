@@ -2,6 +2,8 @@
   "schema_version": 1,
   "role_id": "discovery-author",
   "task_kind": "discovery-author",
+  "planned_execution_id": "execution-discovery-author",
+  "planned_context_id": "context-discovery-author",
   "target": {
     "path": ".specbound/discoveries/dcy-9001-r1.md",
     "id": "dcy-9001",
@@ -9,6 +11,8 @@
     "sha256": "2aae2bdd20f1a4c2ba17e9ae85cf787d18b72ceb40eaccaca513c941c780d82b"
   },
   "current_state": "draft",
+  "target_risk": "high",
+  "effective_task_risk": "high",
   "inputs": {
     "user-intent": "input:user-intent",
     "repository-context": "input:repository-context",
@@ -33,5 +37,6 @@
     ]
   },
   "producer_result_ref": null,
-  "reviewer_run_ref": null
+  "reviewer_run_ref": null,
+  "verified_iteration_qc_set": []
 }

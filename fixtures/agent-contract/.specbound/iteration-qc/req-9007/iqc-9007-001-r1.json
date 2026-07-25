@@ -3,14 +3,12 @@
   "micro_spec": {
     "path": ".specbound/micro-specs/req-9007/ms-9007-001.md",
     "id": "ms-9007-001",
-    "sha256": "1e6e6aa268d4162db528e26c7174ee3fb098d728e7fcaf5f2117d1144da36f80"
+    "sha256": "163a4969d4a04791357ec345c81213cf127f9b3b5358cdfd18d22e9c821daffd"
   },
   "selected_acceptance_criteria": [
     "AC-001"
   ],
-  "remaining_acceptance_criteria": [
-    "AC-002"
-  ],
+  "remaining_acceptance_criteria": [],
   "verification": [
     {
       "command": "pytest -q",

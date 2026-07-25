@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "result_id": "result-iteration-qc",
-  "role_id": "iteration-qc",
-  "task_kind": "iteration-qc",
-  "planned_execution_id": "execution-iteration-qc",
-  "planned_context_id": "context-iteration-qc",
-  "execution_id": "execution-iteration-qc",
-  "context_id": "context-iteration-qc",
+  "result_id": "result-implementation",
+  "role_id": "implementation",
+  "task_kind": "implementation",
+  "planned_execution_id": "execution-implementation",
+  "planned_context_id": "context-implementation",
+  "execution_id": "execution-implementation",
+  "context_id": "context-implementation",
   "model_alias": "worker-model",
   "target": {
     "path": ".specbound/micro-specs/req-9006/ms-9006-001.md",
@@ -14,19 +14,13 @@
     "revision": null,
     "sha256": "87fcf8c7410e56dc182cd43270837e0deebc0e54438a02cfc4571f6c1b2f7a39"
   },
-  "producer_result_ref": {
-    "result_id": "result-implementation",
-    "role_id": "implementation",
-    "execution_id": "execution-implementation",
-    "context_id": "context-implementation",
-    "sha256": "38a7fa277984d2bdf56b3044e7e2ea1162c0f2b51f4307a1368fc87e222a1ec0"
-  },
+  "producer_result_ref": null,
   "reviewer_run_ref": {
     "result_id": "result-independent-reviewer",
     "role_id": "independent-reviewer",
     "execution_id": "execution-independent-reviewer",
     "context_id": "context-independent-reviewer",
-    "sha256": "f2d6ed60813b8183d1b1843df10407b700d6ead3bd3dc7928a228f23f39e52f1"
+    "sha256": "719417f1005d8174dbbdca28a9c086465f60b648e9e94ef45fa8715ba6e2b152"
   },
   "authority_type": "none",
   "authority_action_id": null,
@@ -40,18 +34,6 @@
         "id": "ms-9006-001",
         "revision": null,
         "sha256": "87fcf8c7410e56dc182cd43270837e0deebc0e54438a02cfc4571f6c1b2f7a39"
-      },
-      {
-        "path": "reference-results/iteration-qc-producer_result_ref.json",
-        "id": "result-implementation",
-        "revision": null,
-        "sha256": "38a7fa277984d2bdf56b3044e7e2ea1162c0f2b51f4307a1368fc87e222a1ec0"
-      },
-      {
-        "path": "reference-results/iteration-qc-reviewer_run_ref.json",
-        "id": "result-independent-reviewer",
-        "revision": null,
-        "sha256": "f2d6ed60813b8183d1b1843df10407b700d6ead3bd3dc7928a228f23f39e52f1"
       }
     ]
   },
@@ -63,10 +45,8 @@
     "test-execute",
     "filesystem-metadata"
   ],
-  "mutation_class": "evidence_write",
-  "changed_paths": [
-    ".specbound/iteration-qc/req-9100/iqc-9100-001-r1.json"
-  ],
+  "mutation_class": "none",
+  "changed_paths": [],
   "output_kind": "agent-result",
   "evidence": [
     {
@@ -78,19 +58,13 @@
           "id": "ms-9006-001",
           "revision": null,
           "sha256": "87fcf8c7410e56dc182cd43270837e0deebc0e54438a02cfc4571f6c1b2f7a39"
-        },
-        {
-          "path": ".specbound/iteration-qc/req-9100/iqc-9100-001-r1.json",
-          "id": "iqc-9100-001",
-          "revision": 1,
-          "sha256": "a973aa8ad41d65e311830c8b30900fa330f18b3e665e2b55a5b3cdfdcaeb76c9"
         }
       ],
       "commands": [],
       "reason": null
     },
     {
-      "slot": "focused-verification",
+      "slot": "test-results",
       "status": "provided",
       "artifacts": [
         {
@@ -103,6 +77,40 @@
       "commands": [
         {
           "command": "fixture-check",
+          "result": "passed",
+          "exit_code": 0
+        }
+      ],
+      "reason": null
+    },
+    {
+      "slot": "rollback-inventory",
+      "status": "provided",
+      "artifacts": [
+        {
+          "path": ".specbound/micro-specs/req-9006/ms-9006-001.md",
+          "id": "ms-9006-001",
+          "revision": null,
+          "sha256": "87fcf8c7410e56dc182cd43270837e0deebc0e54438a02cfc4571f6c1b2f7a39"
+        }
+      ],
+      "commands": [],
+      "reason": null
+    },
+    {
+      "slot": "negative-tests",
+      "status": "provided",
+      "artifacts": [
+        {
+          "path": ".specbound/micro-specs/req-9006/ms-9006-001.md",
+          "id": "ms-9006-001",
+          "revision": null,
+          "sha256": "87fcf8c7410e56dc182cd43270837e0deebc0e54438a02cfc4571f6c1b2f7a39"
+        }
+      ],
+      "commands": [
+        {
+          "command": "fixture-negative-tests",
           "result": "passed",
           "exit_code": 0
         }
@@ -128,12 +136,30 @@
         }
       ],
       "reason": null
+    },
+    {
+      "slot": "supported-ci",
+      "status": "provided",
+      "artifacts": [
+        {
+          "path": ".specbound/micro-specs/req-9006/ms-9006-001.md",
+          "id": "ms-9006-001",
+          "revision": null,
+          "sha256": "87fcf8c7410e56dc182cd43270837e0deebc0e54438a02cfc4571f6c1b2f7a39"
+        }
+      ],
+      "commands": [
+        {
+          "command": "fixture-supported-ci",
+          "result": "passed",
+          "exit_code": 0
+        }
+      ],
+      "reason": null
     }
   ],
   "verdict": "pass",
   "findings": [],
-  "permitted_next_action": "request-delivery-qc",
-  "claims": [
-    "approval"
-  ]
+  "permitted_next_action": "request-iteration-qc",
+  "claims": []
 }

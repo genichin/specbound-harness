@@ -107,11 +107,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="fail closed before execution when a role request exceeds the active policy",
     )
     check_role_request.add_argument("--request-file", type=Path, required=True)
+    check_role_request.add_argument(
+        "--reference-result-file",
+        action="append",
+        default=[],
+        help="repeatable repository-relative path to an exact referenced agent-result JSON file",
+    )
     validate_result = agent_commands.add_parser(
         "validate-result",
         help="validate a closed, digest-bound agent result without mutation",
     )
     validate_result.add_argument("--result-file", type=Path, required=True)
+    validate_result.add_argument(
+        "--reference-result-file",
+        action="append",
+        default=[],
+        help="repeatable repository-relative path to an exact referenced agent-result JSON file",
+    )
 
     discovery = commands.add_parser("discovery", help="operate on canonical Discovery artifacts")
     discovery_commands = discovery.add_subparsers(dest="discovery_command", required=True)
@@ -177,12 +189,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if result.valid else 2
 
     if args.command == "agent" and args.agent_command == "check-role-request":
-        result = validate_configured_role_request(root, args.request_file)
+        result = validate_configured_role_request(root, args.request_file, args.reference_result_file)
         _emit(result.payload())
         return 0 if result.valid else 2
 
     if args.command == "agent" and args.agent_command == "validate-result":
-        result = validate_configured_agent_result(root, args.result_file)
+        result = validate_configured_agent_result(root, args.result_file, args.reference_result_file)
         _emit(result.payload())
         return 0 if result.valid else 2
 

@@ -3,6 +3,8 @@
   "result_id": "result-independent-reviewer",
   "role_id": "independent-reviewer",
   "task_kind": "independent-reviewer",
+  "planned_execution_id": "execution-independent-reviewer",
+  "planned_context_id": "context-independent-reviewer",
   "execution_id": "execution-independent-reviewer",
   "context_id": "context-independent-reviewer",
   "model_alias": "advanced-review-model",
@@ -13,11 +15,11 @@
     "sha256": "8adea15f98b57ef9fbe39355944b3e4665d0aa0cda2d8143cac684a749411679"
   },
   "producer_result_ref": {
-    "result_id": "result-implementation",
-    "role_id": "implementation",
-    "execution_id": "execution-implementation",
-    "context_id": "context-implementation",
-    "sha256": "aa05c0f66f3e47cfcad2cda41e8a09f12da0ca0684caf9a3169ec79e10fd3c8f"
+    "result_id": "result-requirement-author",
+    "role_id": "requirement-author",
+    "execution_id": "execution-requirement-author",
+    "context_id": "context-requirement-author",
+    "sha256": "3053746a993a0e85979f88af08c6c78e2e2bdb9d4a55fd34f977aad5ac528a92"
   },
   "reviewer_run_ref": null,
   "authority_type": "none",
@@ -32,6 +34,12 @@
         "id": "req-9004",
         "revision": 1,
         "sha256": "8adea15f98b57ef9fbe39355944b3e4665d0aa0cda2d8143cac684a749411679"
+      },
+      {
+        "path": "reference-results/independent-reviewer-producer_result_ref.json",
+        "id": "result-requirement-author",
+        "revision": null,
+        "sha256": "3053746a993a0e85979f88af08c6c78e2e2bdb9d4a55fd34f977aad5ac528a92"
       }
     ]
   },
@@ -70,6 +78,26 @@
         }
       ],
       "commands": [],
+      "reason": null
+    },
+    {
+      "slot": "no-write",
+      "status": "provided",
+      "artifacts": [
+        {
+          "path": ".specbound/requirements/req-9004/req-9004-r1.md",
+          "id": "req-9004",
+          "revision": 1,
+          "sha256": "8adea15f98b57ef9fbe39355944b3e4665d0aa0cda2d8143cac684a749411679"
+        }
+      ],
+      "commands": [
+        {
+          "command": "fixture-no-write",
+          "result": "passed",
+          "exit_code": 0
+        }
+      ],
       "reason": null
     }
   ],

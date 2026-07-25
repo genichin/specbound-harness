@@ -2,6 +2,8 @@
   "schema_version": 1,
   "role_id": "micro-spec-author",
   "task_kind": "micro-spec-author",
+  "planned_execution_id": "execution-micro-spec-author",
+  "planned_context_id": "context-micro-spec-author",
   "target": {
     "path": ".specbound/requirements/req-9003/req-9003-r1.md",
     "id": "req-9003",
@@ -9,6 +11,8 @@
     "sha256": "b4480dec114995a1beb0ad8f25b2e7aad9ebdd50a2a6df1fec2bb7a6f69e1ca5"
   },
   "current_state": "approved",
+  "target_risk": "high",
+  "effective_task_risk": "high",
   "inputs": {
     "approved-requirement": "input:approved-requirement",
     "selected-acceptance-criteria": "input:selected-acceptance-criteria",
@@ -33,5 +37,6 @@
     ]
   },
   "producer_result_ref": null,
-  "reviewer_run_ref": null
+  "reviewer_run_ref": null,
+  "verified_iteration_qc_set": []
 }

@@ -7,6 +7,7 @@ from fnmatch import fnmatchcase
 from hashlib import sha256
 from importlib.resources import files
 import json
+import os
 from pathlib import Path, PurePosixPath
 import re
 from typing import Any
@@ -26,6 +27,7 @@ ROLE_IDS = frozenset(
         "delivery-qc",
     }
 )
+RISK_ORDER = ("low", "medium", "high")
 REQUIRED_FORBIDDEN_ACTIONS = frozenset(
     {"authority-transition", "canonical-publication", "merge", "release", "external-mutation", "next-role-selection"}
 )
@@ -47,19 +49,29 @@ _AGENT_REQUEST_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
     "required": [
-        "schema_version", "role_id", "task_kind", "target", "current_state", "inputs",
-        "requested_capabilities", "producer_result_ref", "reviewer_run_ref",
+        "schema_version", "role_id", "task_kind", "planned_execution_id", "planned_context_id",
+        "target", "current_state", "target_risk", "effective_task_risk", "inputs",
+        "verified_iteration_qc_set", "requested_capabilities", "producer_result_ref", "reviewer_run_ref",
     ],
     "properties": {
         "schema_version": {"const": 1},
         "role_id": {"$ref": "#/$defs/roleId"},
         "task_kind": {"$ref": "#/$defs/roleId"},
+        "planned_execution_id": {"type": "string", "minLength": 1},
+        "planned_context_id": {"type": "string", "minLength": 1},
         "target": {"$ref": "#/$defs/artifactRef"},
         "current_state": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "target_risk": {"enum": list(RISK_ORDER)},
+        "effective_task_risk": {"enum": list(RISK_ORDER)},
         "inputs": {
             "type": "object",
             "propertyNames": {"pattern": "^[a-z][a-z0-9-]*$"},
             "additionalProperties": {"type": "string", "minLength": 1},
+        },
+        "verified_iteration_qc_set": {
+            "type": "array",
+            "uniqueItems": True,
+            "items": {"$ref": "#/$defs/artifactRef"},
         },
         "requested_capabilities": {
             "type": "object",
@@ -301,6 +313,10 @@ class AgentContractResult:
     checked_requests: int = 0
     checked_results: int = 0
     role_id: str | None = None
+    derived_current_state: str | None = None
+    derived_target_risk: str | None = None
+    derived_effective_task_risk: str | None = None
+    advisory_next_action: str | None = None
     blockers: list[dict[str, str]] = field(default_factory=list)
 
     def block(self, code: str, path: str, detail: str) -> None:
@@ -314,6 +330,11 @@ class AgentContractResult:
             "checked_requests": self.checked_requests,
             "checked_results": self.checked_results,
             "role_id": self.role_id,
+            "derived_current_state": self.derived_current_state,
+            "derived_target_risk": self.derived_target_risk,
+            "derived_effective_task_risk": self.derived_effective_task_risk,
+            "advisory_state": "eligible" if self.valid else "blocked",
+            "permitted_next_action": self.advisory_next_action if self.valid and self.advisory_next_action else "none",
             "blockers": self.blockers,
         }
 
@@ -433,11 +454,98 @@ def _reference_valid(requirement: str, value: object) -> bool:
     return value is None
 
 
-def _verify_result_reference(root: Path, reference: dict[str, Any] | None, result: AgentContractResult, field_name: str) -> bool:
-    """Accept the exact closed reference envelope; cross-result resolution is deferred by ms-0004-001."""
+def _load_reference_result_index(
+    root: Path,
+    relative_files: list[str],
+    result: AgentContractResult,
+) -> dict[str, dict[str, Any]]:
+    index: dict[str, dict[str, Any]] = {}
+    physical_files: set[tuple[int, int] | str] = set()
+    for relative in relative_files:
+        try:
+            if relative.startswith(AUTHORITY_PATH_PREFIXES):
+                raise ValueError("authority-owned paths cannot be reference result inputs")
+            path = _safe_repository_path(root, relative)
+            if not path.is_file():
+                raise ValueError("reference result must be a regular file")
+            before = path.stat(follow_symlinks=False)
+            with path.open("rb") as handle:
+                opened = os.fstat(handle.fileno())
+                raw = handle.read()
+                after_read = os.fstat(handle.fileno())
+            after = path.stat(follow_symlinks=False)
+            identity = (opened.st_dev, opened.st_ino)
+            stable = (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+            if stable != (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns):
+                raise ValueError("reference result changed between path validation and open")
+            if (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns) != (
+                after_read.st_dev,
+                after_read.st_ino,
+                after_read.st_size,
+                after_read.st_mtime_ns,
+            ) or stable != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns):
+                raise ValueError("reference result changed while being read")
+            _safe_repository_path(root, relative)
+            physical_key: tuple[int, int] | str = identity if opened.st_ino else str(path.resolve()).casefold()
+            if physical_key in physical_files:
+                raise ValueError("duplicate physical reference result file")
+            physical_files.add(physical_key)
+            payload = json.loads(raw.decode("utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("reference result must be a JSON object")
+            schema_errors = _schema_errors(root, "agent-result.schema.json", payload)
+            if schema_errors:
+                raise ValueError("; ".join(schema_errors))
+            if payload["role_id"] != payload["task_kind"]:
+                raise ValueError("reference result role_id and task_kind must match")
+            if payload["planned_execution_id"] != payload["execution_id"]:
+                raise ValueError("reference result execution identity differs from its plan")
+            if payload["planned_context_id"] != payload["context_id"]:
+                raise ValueError("reference result context identity differs from its plan")
+            result_id = payload["result_id"]
+            if result_id in index:
+                raise ValueError(f"duplicate reference result ID: {result_id}")
+            index[result_id] = {
+                "payload": payload,
+                "path": relative,
+                "sha256": sha256(raw).hexdigest(),
+            }
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+            result.block("invalid_reference_result_file", relative, str(exc))
+    return index
+
+
+def _verify_result_reference(
+    root: Path,
+    reference: dict[str, Any] | None,
+    result: AgentContractResult,
+    field_name: str,
+    reference_index: dict[str, dict[str, Any]] | None = None,
+    used_reference_ids: set[str] | None = None,
+) -> bool:
+    """Verify a closed reference envelope against explicitly supplied noncanonical result bytes."""
 
     if reference is None:
         return False
+    if reference_index is None:
+        return True
+    indexed = reference_index.get(reference["result_id"])
+    if indexed is None:
+        result.block("missing_reference_result_file", field_name, f"no explicit result file declares {reference['result_id']}")
+        return False
+    payload = indexed["payload"]
+    expected = {
+        "result_id": payload["result_id"],
+        "role_id": payload["role_id"],
+        "execution_id": payload["execution_id"],
+        "context_id": payload["context_id"],
+        "sha256": indexed["sha256"],
+    }
+    if reference != expected:
+        result.block("reference_result_mismatch", field_name, "reference envelope differs from the explicit result bytes")
+        return False
+    if used_reference_ids is not None:
+        used_reference_ids.add(reference["result_id"])
     return True
 
 
@@ -460,6 +568,43 @@ def _artifact_metadata(path: Path) -> dict[str, Any]:
         except (OSError, UnicodeError, json.JSONDecodeError):
             return {}
     return _frontmatter(path)
+
+
+def _canonical_artifact_risk(root: Path, target_path: Path, seen: set[Path] | None = None) -> str:
+    """Derive closed Artifact Risk from exact canonical ancestry; unresolved lineage fails high."""
+
+    resolved = target_path.resolve()
+    visited = set() if seen is None else set(seen)
+    if resolved in visited:
+        return "high"
+    visited.add(resolved)
+    metadata = _artifact_metadata(target_path)
+    recorded = metadata.get("risk", metadata.get("risk_class"))
+    risks = [recorded] if recorded in RISK_ORDER else []
+    parent_bindings = [
+        metadata.get(name)
+        for name in ("parent_discovery", "requirement", "micro_spec")
+        if isinstance(metadata.get(name), dict)
+    ]
+    for binding in parent_bindings:
+        relative = binding.get("path")
+        digest = binding.get("sha256")
+        if not isinstance(relative, str) or not isinstance(digest, str):
+            return "high"
+        try:
+            parent_path = _safe_repository_path(root, relative)
+            if parent_path.resolve() in visited or sha256(parent_path.read_bytes()).hexdigest() != digest:
+                return "high"
+        except (OSError, ValueError):
+            return "high"
+        risks.append(_canonical_artifact_risk(root, parent_path, visited))
+    if not risks:
+        return "high"
+    return RISK_ORDER[max(RISK_ORDER.index(risk) for risk in risks)]
+
+
+def _effective_task_risk(target_risk: str, task_floor: str) -> str:
+    return RISK_ORDER[max(RISK_ORDER.index(target_risk), RISK_ORDER.index(task_floor))]
 
 
 def _fallback_identity(path: Path) -> tuple[str, int | None]:
@@ -684,7 +829,24 @@ def _derive_current_state(
     return None
 
 
-def validate_role_request(root: Path, request_path: Path, policy_path: str) -> AgentContractResult:
+def _expected_author_role_for_target(target: dict[str, Any]) -> str | None:
+    path = target["path"]
+    if path.startswith(".specbound/discoveries/"):
+        return "discovery-author"
+    if path.startswith(".specbound/requirements/"):
+        return "requirement-author"
+    if path.startswith(".specbound/micro-specs/"):
+        return "micro-spec-author"
+    return None
+
+
+def validate_role_request(
+    root: Path,
+    request_path: Path,
+    policy_path: str,
+    *,
+    reference_result_files: list[str] | None = None,
+) -> AgentContractResult:
     """Fail closed before execution when a request exceeds repository-derived eligibility."""
 
     result = AgentContractResult()
@@ -719,9 +881,12 @@ def validate_role_request(root: Path, request_path: Path, policy_path: str) -> A
         return result
     result.role_id = role["role_id"]
     result.checked_requests = 1
+    result.advisory_next_action = role["permitted_next_actions"][0]
     if request["task_kind"] != role["task_kind"]:
         result.block("role_task_mismatch", str(request_path), "task_kind does not match the selected role")
 
+    reference_index = _load_reference_result_index(root, reference_result_files or [], result)
+    used_reference_ids: set[str] = set()
     reference_validity: dict[str, bool] = {}
     for field_name in ("producer_result_ref", "reviewer_run_ref"):
         requirement = role["result_references"][field_name]
@@ -730,12 +895,69 @@ def validate_role_request(root: Path, request_path: Path, policy_path: str) -> A
             result.block("invalid_result_reference", str(request_path), f"{field_name} violates the role's {requirement} rule")
             reference_validity[field_name] = False
         else:
-            reference_validity[field_name] = reference is not None and _verify_result_reference(root, reference, result, field_name)
+            reference_validity[field_name] = reference is not None and _verify_result_reference(
+                root,
+                reference,
+                result,
+                field_name,
+                reference_index,
+                used_reference_ids,
+            )
+        if reference_validity[field_name]:
+            referenced_payload = reference_index[reference["result_id"]]["payload"]
+            if (
+                referenced_payload["execution_id"] == request["planned_execution_id"]
+                or referenced_payload["context_id"] == request["planned_context_id"]
+            ):
+                result.block("self_reference_result", field_name, "request identity overlaps its referenced result")
+                reference_validity[field_name] = False
+            reference_edge = role["reference_edges"][field_name]
+            if reference_validity[field_name] and (
+                reference_edge is None or referenced_payload["role_id"] not in reference_edge["allowed_roles"]
+            ):
+                result.block("invalid_reference_edge", field_name, "referenced producer role differs from the closed consumer edge")
+                reference_validity[field_name] = False
+            elif (
+                reference_validity[field_name]
+                and role["role_id"] == "independent-reviewer"
+                and field_name == "producer_result_ref"
+                and referenced_payload["role_id"] != _expected_author_role_for_target(request["target"])
+            ):
+                result.block("invalid_reference_edge", field_name, "review producer role must match the reviewed artifact family")
+                reference_validity[field_name] = False
+            elif (
+                reference_validity[field_name]
+                and reference_edge["target_binding"] in {"exact-target", "exact-parent"}
+                and referenced_payload["target"] != request["target"]
+            ):
+                result.block("reference_target_mismatch", field_name, "referenced result is not bound to the exact consumer target or authoring parent")
+                reference_validity[field_name] = False
+            elif reference_validity[field_name] and referenced_payload["verdict"] != reference_edge["required_verdict"]:
+                result.block("invalid_reference_verdict", field_name, "referenced result does not have the required verdict")
+                reference_validity[field_name] = False
+    if all(reference_validity.get(name) for name in ("producer_result_ref", "reviewer_run_ref")):
+        producer_payload = reference_index[request["producer_result_ref"]["result_id"]]["payload"]
+        reviewer_payload = reference_index[request["reviewer_run_ref"]["result_id"]]["payload"]
+        if any(
+            producer_payload[name] == reviewer_payload[name]
+            for name in ("result_id", "execution_id", "context_id")
+        ):
+            result.block("reference_identity_overlap", str(request_path), "producer and reviewer references must use distinct result, execution, and context identities")
+            reference_validity["producer_result_ref"] = False
+            reference_validity["reviewer_run_ref"] = False
     if request["reviewer_run_ref"] is not None and request["reviewer_run_ref"]["role_id"] != "independent-reviewer":
         result.block("invalid_result_reference", str(request_path), "reviewer_run_ref role_id must be independent-reviewer")
 
     target_path = _verify_artifact_ref(root, request["target"], result, "target")
     if target_path is not None:
+        target_risk = _canonical_artifact_risk(root, target_path)
+        effective_task_risk = _effective_task_risk(target_risk, role["task_risk_floor"])
+        result.derived_target_risk = target_risk
+        result.derived_effective_task_risk = effective_task_risk
+        if request["target_risk"] != target_risk:
+            result.block("target_risk_spoofing", request["target"]["path"], f"caller claimed {request['target_risk']!r}; repository risk is {target_risk!r}")
+        if request["effective_task_risk"] != effective_task_risk:
+            result.block("effective_task_risk_spoofing", request["target"]["path"], f"caller claimed {request['effective_task_risk']!r}; derived task risk is {effective_task_risk!r}")
         derived_state = _derive_current_state(
             root,
             request["target"],
@@ -747,6 +969,7 @@ def validate_role_request(root: Path, request_path: Path, policy_path: str) -> A
         if derived_state is None:
             result.block("undetermined_current_state", request["target"]["path"], "repository target has no deterministic lifecycle state")
         else:
+            result.derived_current_state = derived_state
             if request["current_state"] != derived_state:
                 result.block("current_state_spoofing", request["target"]["path"], f"caller claimed {request['current_state']!r}; repository state is {derived_state!r}")
             if derived_state not in role["lifecycle_eligibility"]:
@@ -760,6 +983,14 @@ def validate_role_request(root: Path, request_path: Path, policy_path: str) -> A
         result.block("missing_role_input", str(request_path), f"missing required inputs: {', '.join(missing)}")
     if undeclared:
         result.block("undeclared_role_input", str(request_path), f"undeclared inputs: {', '.join(undeclared)}")
+
+    verified_iqc_set = request["verified_iteration_qc_set"]
+    if role["role_id"] == "delivery-qc":
+        for artifact in verified_iqc_set:
+            _verify_artifact_ref(root, artifact, result, "verified_iteration_qc")
+        _delivery_qc_iqc_provenance(root, request["target"], verified_iqc_set, result)
+    elif verified_iqc_set:
+        result.block("unexpected_verified_iqc_set", str(request_path), "only delivery-qc may declare a verified Iteration-QC set")
 
     capabilities = request["requested_capabilities"]
     for requested_name, policy_name in (
@@ -783,6 +1014,9 @@ def validate_role_request(root: Path, request_path: Path, policy_path: str) -> A
     forbidden_actions = set(capabilities["actions"]) & set(role["forbidden_actions"])
     if forbidden_actions:
         result.block("forbidden_agent_action", str(request_path), f"forbidden actions: {', '.join(sorted(forbidden_actions))}")
+    if reference_index is not None:
+        for result_id in sorted(set(reference_index) - used_reference_ids):
+            result.block("extra_reference_result_file", reference_index[result_id]["path"], f"explicit result {result_id} is not declared by the request")
 
     return result
 
@@ -859,7 +1093,85 @@ def _changed_path_allowed(root: Path, path: str, role: dict[str, Any], target_pa
     return any(path == scoped or (is_directory and path.startswith(scoped + "/")) for scoped, is_directory in _reviewed_micro_spec_paths(root, target_path))
 
 
-def validate_agent_result(root: Path, result_path: Path, policy_path: str) -> AgentContractResult:
+def _delivery_qc_iqc_provenance(
+    root: Path,
+    target: dict[str, Any],
+    input_artifacts: list[dict[str, Any]],
+    outcome: AgentContractResult,
+) -> None:
+    iqc_refs = [
+        artifact
+        for artifact in input_artifacts
+        if artifact["path"].startswith(".specbound/iteration-qc/")
+    ]
+    if not iqc_refs:
+        outcome.block("missing_verified_iqc_set", target["path"], "delivery-qc requires at least one exact canonical IQC provenance artifact")
+        return
+    required_criteria: set[str] = set()
+    try:
+        requirement_path = _safe_repository_path(root, target["path"])
+        required_criteria = set(re.findall(r"^###\s+(AC-[0-9]+)\b", requirement_path.read_text(encoding="utf-8"), re.MULTILINE))
+    except (OSError, ValueError):
+        outcome.block("invalid_delivery_requirement", target["path"], "approved requirement bytes could not be read for AC coverage")
+        return
+    covered: set[str] = set()
+    seen_micro_specs: set[tuple[str, str, str]] = set()
+    for artifact in iqc_refs:
+        try:
+            iqc_path = _safe_repository_path(root, artifact["path"])
+            iqc = _read_json_object(iqc_path, "iteration-QC evidence")
+            if iqc.get("verdict") != "verified":
+                outcome.block("unverified_iqc", artifact["path"], "delivery-qc provenance contains a non-verified IQC")
+                continue
+            micro_ref = iqc.get("micro_spec")
+            if not isinstance(micro_ref, dict) or set(micro_ref) != {"path", "id", "sha256"}:
+                outcome.block("invalid_iqc_ancestry", artifact["path"], "IQC micro_spec ancestry is malformed")
+                continue
+            micro_path = _safe_repository_path(root, micro_ref["path"])
+            if sha256(micro_path.read_bytes()).hexdigest() != micro_ref["sha256"]:
+                outcome.block("stale_iqc_ancestry", artifact["path"], "IQC Micro-SPEC digest is stale")
+                continue
+            micro_metadata = _artifact_metadata(micro_path)
+            if micro_metadata.get("id") != micro_ref["id"]:
+                outcome.block("iqc_identity_mismatch", artifact["path"], "IQC Micro-SPEC identity does not match exact bytes")
+                continue
+            micro_key = (micro_ref["path"], micro_ref["id"], micro_ref["sha256"])
+            if micro_key in seen_micro_specs:
+                outcome.block("duplicate_iqc", artifact["path"], "verified IQC set contains duplicate Micro-SPEC coverage")
+                continue
+            seen_micro_specs.add(micro_key)
+            parent = micro_metadata.get("requirement")
+            if not isinstance(parent, dict) or any(parent.get(key) != target[key] for key in ("path", "id", "revision", "sha256")):
+                outcome.block("cross_requirement_iqc", artifact["path"], "IQC ancestry does not bind to the exact Delivery-QC requirement")
+                continue
+            micro_target = {"path": micro_ref["path"], "id": micro_ref["id"], "revision": None, "sha256": micro_ref["sha256"]}
+            if _micro_spec_review_state(root, micro_target) != "approved_for_implementation":
+                outcome.block("unreviewed_iqc_ancestry", artifact["path"], "IQC ancestry lacks an exact approved Micro-SPEC review")
+                continue
+            selected = iqc.get("selected_acceptance_criteria")
+            if not isinstance(selected, list) or not selected or any(not isinstance(item, str) for item in selected):
+                outcome.block("invalid_iqc_coverage", artifact["path"], "IQC selected acceptance criteria are empty or malformed")
+                continue
+            overlap = covered.intersection(selected)
+            if overlap:
+                outcome.block("duplicate_iqc_coverage", artifact["path"], f"acceptance criteria covered more than once: {', '.join(sorted(overlap))}")
+            covered.update(selected)
+        except (KeyError, OSError, TypeError, ValueError):
+            outcome.block("invalid_iqc_ancestry", artifact["path"], "IQC provenance could not be resolved safely")
+    if covered != required_criteria:
+        missing = sorted(required_criteria - covered)
+        extra = sorted(covered - required_criteria)
+        detail = f"IQC set does not exactly cover requirement ACs; missing={missing}, extra={extra}"
+        outcome.block("incomplete_iqc_coverage", target["path"], detail)
+
+
+def validate_agent_result(
+    root: Path,
+    result_path: Path,
+    policy_path: str,
+    *,
+    reference_result_files: list[str] | None = None,
+) -> AgentContractResult:
     """Validate one closed, exact-bound, non-authorizing result without mutation."""
 
     outcome = AgentContractResult()
@@ -875,6 +1187,13 @@ def validate_agent_result(root: Path, result_path: Path, policy_path: str) -> Ag
     except (OSError, UnicodeError, json.JSONDecodeError, yaml.YAMLError, ValueError) as exc:
         outcome.block("malformed_agent_result", str(result_path), str(exc))
         return outcome
+    if payload.get("mutation_class") in {"authority_transition", "external_mutation"}:
+        outcome.block(
+            f"unsupported_{payload['mutation_class']}",
+            str(result_path),
+            "agent-result contracts never authorize canonical authority or external mutations",
+        )
+        return outcome
     if errors:
         outcome.block("malformed_agent_result", str(result_path), "; ".join(errors))
         return outcome
@@ -885,13 +1204,20 @@ def validate_agent_result(root: Path, result_path: Path, policy_path: str) -> Ag
         return outcome
     outcome.checked_results = 1
     outcome.role_id = role["role_id"]
+    outcome.advisory_next_action = payload["permitted_next_action"]
     if payload["task_kind"] != role["task_kind"]:
         outcome.block("role_task_mismatch", str(result_path), "task_kind does not match the selected role")
+    if payload["planned_execution_id"] != payload["execution_id"]:
+        outcome.block("planned_execution_mismatch", str(result_path), "execution_id differs from the pre-execution planned_execution_id")
+    if payload["planned_context_id"] != payload["context_id"]:
+        outcome.block("planned_context_mismatch", str(result_path), "context_id differs from the pre-execution planned_context_id")
     if any(term in payload["model_alias"].lower() for term in RUNTIME_TERMS):
         outcome.block("runtime_specific_result", str(result_path), "model_alias must remain a provider-neutral alias")
     if payload["output_kind"] not in role["output_kinds"]:
         outcome.block("invalid_output_kind", str(result_path), "output_kind is outside the role policy")
 
+    reference_index = _load_reference_result_index(root, reference_result_files or [], outcome)
+    used_reference_ids: set[str] = set()
     reference_validity: dict[str, bool] = {}
     for field_name in ("producer_result_ref", "reviewer_run_ref"):
         requirement = role["result_references"][field_name]
@@ -900,10 +1226,67 @@ def validate_agent_result(root: Path, result_path: Path, policy_path: str) -> Ag
             outcome.block("invalid_result_reference", str(result_path), f"{field_name} violates the role's {requirement} rule")
             reference_validity[field_name] = False
         else:
-            reference_validity[field_name] = reference is not None and _verify_result_reference(root, reference, outcome, field_name)
+            reference_validity[field_name] = reference is not None and _verify_result_reference(
+                root,
+                reference,
+                outcome,
+                field_name,
+                reference_index,
+                used_reference_ids,
+            )
+        if reference_validity[field_name]:
+            referenced_payload = reference_index[reference["result_id"]]["payload"]
+            referenced_parent_ids = {
+                item["result_id"]
+                for item in (referenced_payload["producer_result_ref"], referenced_payload["reviewer_run_ref"])
+                if item is not None
+            }
+            if (
+                referenced_payload["result_id"] == payload["result_id"]
+                or referenced_payload["execution_id"] == payload["execution_id"]
+                or referenced_payload["context_id"] == payload["context_id"]
+                or payload["result_id"] in referenced_parent_ids
+            ):
+                outcome.block("self_reference_result", field_name, "result identity overlaps or is referenced by its own parent result")
+                reference_validity[field_name] = False
+            reference_edge = role["reference_edges"][field_name]
+            if reference_validity[field_name] and (
+                reference_edge is None or referenced_payload["role_id"] not in reference_edge["allowed_roles"]
+            ):
+                outcome.block("invalid_reference_edge", field_name, "referenced producer role differs from the closed consumer edge")
+                reference_validity[field_name] = False
+            elif (
+                reference_validity[field_name]
+                and role["role_id"] == "independent-reviewer"
+                and field_name == "producer_result_ref"
+                and referenced_payload["role_id"] != _expected_author_role_for_target(payload["target"])
+            ):
+                outcome.block("invalid_reference_edge", field_name, "review producer role must match the reviewed artifact family")
+                reference_validity[field_name] = False
+            elif (
+                reference_validity[field_name]
+                and reference_edge["target_binding"] in {"exact-target", "exact-parent"}
+                and referenced_payload["target"] != payload["target"]
+            ):
+                outcome.block("reference_target_mismatch", field_name, "referenced result is not bound to the exact consumer target or authoring parent")
+                reference_validity[field_name] = False
+            elif reference_validity[field_name] and referenced_payload["verdict"] != reference_edge["required_verdict"]:
+                outcome.block("invalid_reference_verdict", field_name, "referenced result does not have the required verdict")
+                reference_validity[field_name] = False
+    if all(reference_validity.get(name) for name in ("producer_result_ref", "reviewer_run_ref")):
+        producer_payload = reference_index[payload["producer_result_ref"]["result_id"]]["payload"]
+        reviewer_payload = reference_index[payload["reviewer_run_ref"]["result_id"]]["payload"]
+        if any(
+            producer_payload[name] == reviewer_payload[name]
+            for name in ("result_id", "execution_id", "context_id")
+        ):
+            outcome.block("reference_identity_overlap", str(result_path), "producer and reviewer references must use distinct result, execution, and context identities")
+            reference_validity["producer_result_ref"] = False
+            reference_validity["reviewer_run_ref"] = False
     if payload["reviewer_run_ref"] is not None and payload["reviewer_run_ref"]["role_id"] != "independent-reviewer":
         outcome.block("invalid_result_reference", str(result_path), "reviewer_run_ref role_id must be independent-reviewer")
 
+    derived_effective_task_risk = "high"
     target_path = _verify_artifact_ref(root, payload["target"], outcome, "target")
     if target_path is not None:
         state = _derive_current_state(
@@ -914,23 +1297,51 @@ def validate_agent_result(root: Path, result_path: Path, policy_path: str) -> Ag
             reference_validity["producer_result_ref"],
             payload["producer_result_ref"],
         )
+        outcome.derived_current_state = state
         if state is None or state not in role["lifecycle_eligibility"]:
             outcome.block("result_state_mismatch", payload["target"]["path"], f"repository state {state!r} is not eligible for {role['role_id']}")
-        metadata = _artifact_metadata(target_path)
-        recorded_risk = metadata.get("risk", metadata.get("risk_class"))
-        if recorded_risk is not None and payload["target_risk"] != recorded_risk:
-            outcome.block("target_risk_mismatch", payload["target"]["path"], "target_risk does not match repository metadata")
+        target_risk = _canonical_artifact_risk(root, target_path)
+        derived_effective_task_risk = _effective_task_risk(target_risk, role["task_risk_floor"])
+        outcome.derived_target_risk = target_risk
+        outcome.derived_effective_task_risk = derived_effective_task_risk
+        if payload["target_risk"] != target_risk:
+            outcome.block("target_risk_mismatch", payload["target"]["path"], "target_risk does not match canonical repository risk")
+        if payload["effective_task_risk"] != derived_effective_task_risk:
+            outcome.block("effective_task_risk_mismatch", payload["target"]["path"], "effective_task_risk is not max(target risk, task floor)")
 
     provenance = payload["context_provenance"]
     if not provenance["fresh_context"] or provenance["producer_transcript_inherited"] or provenance["session_memory_inherited"]:
         outcome.block("invalid_context_provenance", str(result_path), "result context must be fresh and inherit neither producer transcript nor session memory")
+    expected_reference_provenance: dict[str, dict[str, Any]] = {}
+    for field_name in ("producer_result_ref", "reviewer_run_ref"):
+        reference = payload[field_name]
+        if reference is None or reference["result_id"] not in reference_index:
+            continue
+        indexed = reference_index[reference["result_id"]]
+        expected_reference_provenance[indexed["path"]] = {
+            "path": indexed["path"],
+            "id": reference["result_id"],
+            "revision": None,
+            "sha256": reference["sha256"],
+        }
     input_keys: set[tuple[str, str, int | None, str]] = set()
     for artifact in provenance["input_artifacts"]:
-        _verify_artifact_ref(root, artifact, outcome, "input_artifact")
+        expected_reference = expected_reference_provenance.get(artifact["path"])
+        if expected_reference is not None:
+            if artifact != expected_reference:
+                outcome.block("invalid_reference_result_provenance", artifact["path"], "reference-result provenance must exactly bind path, result_id, null revision, and file digest")
+        else:
+            _verify_artifact_ref(root, artifact, outcome, "input_artifact")
         input_keys.add((artifact["path"], artifact["id"], artifact["revision"], artifact["sha256"]))
+    for expected in expected_reference_provenance.values():
+        expected_key = (expected["path"], expected["id"], expected["revision"], expected["sha256"])
+        if expected_key not in input_keys:
+            outcome.block("missing_reference_result_provenance", expected["path"], "context_provenance.input_artifacts must include the exact explicit reference-result file")
     target_key = (payload["target"]["path"], payload["target"]["id"], payload["target"]["revision"], payload["target"]["sha256"])
     if target_key not in input_keys:
         outcome.block("missing_target_provenance", str(result_path), "context_provenance.input_artifacts must include the exact target")
+    if role["role_id"] == "delivery-qc":
+        _delivery_qc_iqc_provenance(root, payload["target"], provenance["input_artifacts"], outcome)
 
     if not set(payload["tool_categories"]).issubset(role["allowed_tool_categories"]):
         outcome.block("capability_escalation", str(result_path), "tool categories exceed role policy")
@@ -977,18 +1388,25 @@ def validate_agent_result(root: Path, result_path: Path, policy_path: str) -> Ag
     unknown_slots = sorted(set(evidence_by_slot) - set(configured_slots))
     if unknown_slots:
         outcome.block("unknown_evidence_slot", str(result_path), f"unknown evidence slots: {', '.join(unknown_slots)}")
+    risk_evidence = role["evidence_requirements_by_risk"][derived_effective_task_risk]
+    required_slots = set(risk_evidence["required"])
+    conditional_slots = set(risk_evidence["conditional"])
     for slot_name, slot_policy in configured_slots.items():
         evidence = evidence_by_slot.get(slot_name)
         if evidence is None:
-            if slot_policy["requirement"] == "required":
+            if slot_name in required_slots:
                 outcome.block("missing_evidence_slot", str(result_path), f"required evidence slot {slot_name} is missing")
             continue
         if evidence["status"] == "not_applicable" and (
-            slot_policy["requirement"] == "required" or not slot_policy["not_applicable_allowed"]
+            slot_name in required_slots or slot_name not in conditional_slots or not slot_policy["not_applicable_allowed"]
         ):
             outcome.block("invalid_not_applicable_evidence", str(result_path), f"slot {slot_name} cannot be not_applicable")
         if evidence["status"] == "provided" and slot_name in COMMAND_EVIDENCE_SLOTS and not evidence["commands"]:
             outcome.block("missing_command_evidence", str(result_path), f"evidence slot {slot_name} requires a recorded command")
+        if slot_name == "no-write" and (
+            evidence["commands"] or changed_paths or payload["mutation_class"] != "none"
+        ):
+            outcome.block("invalid_no_write_proof", str(result_path), "no-write-proof requires empty commands, empty changed_paths, and mutation_class none")
     missing_changed_evidence = sorted(set(changed_paths) - evidence_artifact_paths)
     if missing_changed_evidence:
         outcome.block("missing_changed_path_evidence", str(result_path), f"changed paths lack exact artifact evidence: {', '.join(missing_changed_evidence)}")
@@ -1008,6 +1426,8 @@ def validate_agent_result(root: Path, result_path: Path, policy_path: str) -> Ag
     forbidden_claims = set(payload["claims"]) & set(role["forbidden_claims"])
     if forbidden_claims:
         outcome.block("forbidden_lifecycle_claim", str(result_path), f"forbidden claims: {', '.join(sorted(forbidden_claims))}")
+    for result_id in sorted(set(reference_index) - used_reference_ids):
+        outcome.block("extra_reference_result_file", reference_index[result_id]["path"], f"explicit result {result_id} is not declared by the result")
     return outcome
 
 
@@ -1025,21 +1445,39 @@ def configured_agent_policy_path(root: Path) -> str:
     return policy_path
 
 
-def validate_configured_role_request(root: Path, request_path: Path) -> AgentContractResult:
+def validate_configured_role_request(
+    root: Path,
+    request_path: Path,
+    reference_result_files: list[str] | None = None,
+) -> AgentContractResult:
     try:
         policy_path = configured_agent_policy_path(root)
     except ValueError as exc:
         result = AgentContractResult()
         result.block("agent_contract_disabled", "specbound.yaml", str(exc))
         return result
-    return validate_role_request(root, request_path, policy_path)
+    return validate_role_request(
+        root,
+        request_path,
+        policy_path,
+        reference_result_files=reference_result_files,
+    )
 
 
-def validate_configured_agent_result(root: Path, result_path: Path) -> AgentContractResult:
+def validate_configured_agent_result(
+    root: Path,
+    result_path: Path,
+    reference_result_files: list[str] | None = None,
+) -> AgentContractResult:
     try:
         policy_path = configured_agent_policy_path(root)
     except ValueError as exc:
         result = AgentContractResult()
         result.block("agent_contract_disabled", "specbound.yaml", str(exc))
         return result
-    return validate_agent_result(root, result_path, policy_path)
+    return validate_agent_result(
+        root,
+        result_path,
+        policy_path,
+        reference_result_files=reference_result_files,
+    )

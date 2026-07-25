@@ -2,6 +2,8 @@
   "schema_version": 1,
   "role_id": "iteration-qc",
   "task_kind": "iteration-qc",
+  "planned_execution_id": "execution-iteration-qc",
+  "planned_context_id": "context-iteration-qc",
   "target": {
     "path": ".specbound/micro-specs/req-9006/ms-9006-001.md",
     "id": "ms-9006-001",
@@ -9,6 +11,8 @@
     "sha256": "87fcf8c7410e56dc182cd43270837e0deebc0e54438a02cfc4571f6c1b2f7a39"
   },
   "current_state": "implemented",
+  "target_risk": "high",
+  "effective_task_risk": "high",
   "inputs": {
     "implementation-result": "input:implementation-result",
     "reviewed-micro-spec": "input:reviewed-micro-spec",
@@ -40,13 +44,14 @@
     "role_id": "implementation",
     "execution_id": "execution-implementation",
     "context_id": "context-implementation",
-    "sha256": "aa05c0f66f3e47cfcad2cda41e8a09f12da0ca0684caf9a3169ec79e10fd3c8f"
+    "sha256": "38a7fa277984d2bdf56b3044e7e2ea1162c0f2b51f4307a1368fc87e222a1ec0"
   },
   "reviewer_run_ref": {
     "result_id": "result-independent-reviewer",
     "role_id": "independent-reviewer",
     "execution_id": "execution-independent-reviewer",
     "context_id": "context-independent-reviewer",
-    "sha256": "0dd28adf6f26daa10f456c3bc7e46e2f74feec6fa2faac109d84e8020ad2eb4d"
-  }
+    "sha256": "f2d6ed60813b8183d1b1843df10407b700d6ead3bd3dc7928a228f23f39e52f1"
+  },
+  "verified_iteration_qc_set": []
 }

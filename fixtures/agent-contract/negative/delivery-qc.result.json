@@ -3,6 +3,8 @@
   "result_id": "result-delivery-qc",
   "role_id": "delivery-qc",
   "task_kind": "delivery-qc",
+  "planned_execution_id": "execution-delivery-qc",
+  "planned_context_id": "context-delivery-qc",
   "execution_id": "execution-delivery-qc",
   "context_id": "context-delivery-qc",
   "model_alias": "worker-model",
@@ -10,7 +12,7 @@
     "path": ".specbound/requirements/req-9007/req-9007-r1.md",
     "id": "req-9007",
     "revision": 1,
-    "sha256": "ca9e66e1d518eea1e3f136b60039dae4d6fcf675d052daf0d3053a8cab12b215"
+    "sha256": "41a5bc546ecaaba388859861b9eb9958ca42dc069d168e90d77f246793e2415b"
   },
   "producer_result_ref": null,
   "reviewer_run_ref": null,
@@ -25,13 +27,13 @@
         "path": ".specbound/requirements/req-9007/req-9007-r1.md",
         "id": "req-9007",
         "revision": 1,
-        "sha256": "ca9e66e1d518eea1e3f136b60039dae4d6fcf675d052daf0d3053a8cab12b215"
+        "sha256": "41a5bc546ecaaba388859861b9eb9958ca42dc069d168e90d77f246793e2415b"
       },
       {
         "path": ".specbound/iteration-qc/req-9007/iqc-9007-001-r1.json",
         "id": "iqc-9007-001",
         "revision": 1,
-        "sha256": "6297e1e6ee2b5bf0706860664a8a888ee25f677a085ac5022150bef0ddbd394d"
+        "sha256": "c3c07c33f4cf6e5e9d514cf1c2e6458862ab721a35635e81c908e8fe132f0ecc"
       }
     ]
   },
@@ -57,7 +59,7 @@
           "path": ".specbound/requirements/req-9007/req-9007-r1.md",
           "id": "req-9007",
           "revision": 1,
-          "sha256": "ca9e66e1d518eea1e3f136b60039dae4d6fcf675d052daf0d3053a8cab12b215"
+          "sha256": "41a5bc546ecaaba388859861b9eb9958ca42dc069d168e90d77f246793e2415b"
         },
         {
           "path": ".specbound/delivery-qc/dqc-9100-r1.json",
@@ -77,7 +79,7 @@
           "path": ".specbound/iteration-qc/req-9007/iqc-9007-001-r1.json",
           "id": "iqc-9007-001",
           "revision": 1,
-          "sha256": "6297e1e6ee2b5bf0706860664a8a888ee25f677a085ac5022150bef0ddbd394d"
+          "sha256": "c3c07c33f4cf6e5e9d514cf1c2e6458862ab721a35635e81c908e8fe132f0ecc"
         }
       ],
       "commands": [],
@@ -91,7 +93,7 @@
           "path": ".specbound/iteration-qc/req-9007/iqc-9007-001-r1.json",
           "id": "iqc-9007-001",
           "revision": 1,
-          "sha256": "6297e1e6ee2b5bf0706860664a8a888ee25f677a085ac5022150bef0ddbd394d"
+          "sha256": "c3c07c33f4cf6e5e9d514cf1c2e6458862ab721a35635e81c908e8fe132f0ecc"
         }
       ],
       "commands": [

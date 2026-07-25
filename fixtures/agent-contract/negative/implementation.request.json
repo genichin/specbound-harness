@@ -2,6 +2,8 @@
   "schema_version": 1,
   "role_id": "implementation",
   "task_kind": "implementation",
+  "planned_execution_id": "execution-implementation",
+  "planned_context_id": "context-implementation",
   "target": {
     "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
     "id": "ms-9005-001",
@@ -9,6 +11,8 @@
     "sha256": "377b38aaf142c7210fcc5e80e0e3d47a684568425c38b15e7e42c23ad1ca30e8"
   },
   "current_state": "blocked",
+  "target_risk": "high",
+  "effective_task_risk": "high",
   "inputs": {
     "reviewed-micro-spec": "input:reviewed-micro-spec",
     "review-record": "input:review-record",
@@ -41,6 +45,7 @@
     "role_id": "independent-reviewer",
     "execution_id": "execution-independent-reviewer",
     "context_id": "context-independent-reviewer",
-    "sha256": "0dd28adf6f26daa10f456c3bc7e46e2f74feec6fa2faac109d84e8020ad2eb4d"
-  }
+    "sha256": "719417f1005d8174dbbdca28a9c086465f60b648e9e94ef45fa8715ba6e2b152"
+  },
+  "verified_iteration_qc_set": []
 }
