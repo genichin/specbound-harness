@@ -139,6 +139,9 @@ def write_reference_result_file(
         if artifact["path"] in payload["changed_paths"]
     }
     payload["target"] = target
+    if role_id == "independent-reviewer" and payload["producer_result_ref"] is not None:
+        producer_edge = role_contract(role_id)["reference_edges"]["producer_result_ref"]
+        payload["producer_result_ref"] = result_reference(root, fixture_producer_role(role_id, target, producer_edge))
     payload["context_provenance"]["input_artifacts"] = [target]
     for evidence in payload["evidence"]:
         evidence["artifacts"] = [target, *changed_artifacts.values()]
@@ -1217,6 +1220,85 @@ def test_role_request_rejects_unsafe_reference_result_file_paths(tmp_path: Path,
     assert "invalid_reference_result_file" in {blocker["code"] for blocker in result.blockers}, result.blockers
 
 
+def test_reference_result_lifecycle_is_valid_standalone_and_embedded() -> None:
+    producer = AGENT_FIXTURE / "reference-results/implementation-reviewer-producer_result_ref.json"
+    request = AGENT_FIXTURE / "positive/implementation.request.json"
+    files = [
+        "reference-results/implementation-reviewer_run_ref.json",
+        "reference-results/implementation-reviewer-producer_result_ref.json",
+    ]
+
+    standalone = validate_agent_result(AGENT_FIXTURE, producer, POLICY_REL)
+    embedded = validate_role_request(
+        AGENT_FIXTURE,
+        request,
+        POLICY_REL,
+        reference_result_files=files,
+    )
+
+    assert standalone.valid is True, standalone.blockers
+    assert embedded.valid is True, embedded.blockers
+
+
+def test_embedded_reference_result_rechecks_lifecycle_eligibility(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, "implementation")
+    files = bind_explicit_reference_results(root, payload)
+    micro_metadata = agent_contract._artifact_metadata(root / payload["target"]["path"])
+    requirement = micro_metadata["requirement"]
+    approval = root / f".specbound/approvals/{requirement['id']}-r{requirement['revision']}.approval.json"
+    approval.unlink()
+
+    result = validate_role_request(
+        root,
+        write_json(root, "request.json", payload),
+        POLICY_REL,
+        reference_result_files=files,
+    )
+
+    assert "invalid_reference_result_lifecycle" in {blocker["code"] for blocker in result.blockers}, result.blockers
+
+
+def test_in_review_requirement_rejects_malformed_conflicting_lifecycle_records(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, "independent-reviewer")
+    files = bind_explicit_reference_results(root, payload)
+    requirement_id = payload["target"]["id"]
+    revision = payload["target"]["revision"]
+    write_json(root, f".specbound/rejections/{requirement_id}-r{revision}.rejection.json", {})
+    write_json(root, f".specbound/reconsiderations/{requirement_id}-r{revision}.reconsideration.json", {})
+
+    result = validate_role_request(
+        root,
+        write_json(root, "request.json", payload),
+        POLICY_REL,
+        reference_result_files=files,
+    )
+
+    assert "conflicting_lifecycle_evidence" in {blocker["code"] for blocker in result.blockers}, result.blockers
+
+
+def test_role_request_rejects_case_variant_authority_reference_path(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, "implementation")
+    files = bind_explicit_reference_results(root, payload)
+    reviewer_relative, reviewer_path = reference_result_path(root, files, payload["reviewer_run_ref"]["result_id"])
+    authority_relative = ".specbound/approvals/copied-reviewer.json"
+    authority_path = root / authority_relative
+    authority_path.parent.mkdir(parents=True, exist_ok=True)
+    authority_path.write_bytes(reviewer_path.read_bytes())
+    files[files.index(reviewer_relative)] = ".SPECBOUND/APPROVALS/copied-reviewer.json"
+
+    result = validate_role_request(
+        root,
+        write_json(root, "request.json", payload),
+        POLICY_REL,
+        reference_result_files=files,
+    )
+
+    assert "invalid_reference_result_file" in {blocker["code"] for blocker in result.blockers}, result.blockers
+
+
 def test_role_request_rejects_duplicate_physical_reference_result_file(tmp_path: Path) -> None:
     root, _ = setup_root(tmp_path)
     payload = valid_request(root, "implementation")
@@ -1813,12 +1895,19 @@ def test_high_risk_command_evidence_cannot_be_substantively_empty(tmp_path: Path
     assert "missing_command_evidence" in {blocker["code"] for blocker in result.blockers}, result.blockers
 
 
-def test_blanket_not_applicable_reason_is_rejected(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "This evidence is simply not applicable here.",
+        "Not applicable because it is not applicable.",
+    ],
+)
+def test_blanket_not_applicable_reason_is_rejected(tmp_path: Path, reason: str) -> None:
     root, _ = setup_root(tmp_path)
     payload = valid_result(root, "implementation")
     reference_result_files = bind_explicit_reference_results(root, payload)
     slot = next(item for item in payload["evidence"] if item["slot"] == "supported-ci")
-    slot.update({"status": "not_applicable", "artifacts": [], "commands": [], "reason": "This evidence is simply not applicable here."})
+    slot.update({"status": "not_applicable", "artifacts": [], "commands": [], "reason": reason})
 
     result = validate_agent_result(
         root,

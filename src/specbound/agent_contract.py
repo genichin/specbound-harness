@@ -43,6 +43,31 @@ AUTHORITY_PATH_PREFIXES = (
 )
 RUNTIME_TERMS = ("openai", "anthropic", "claude", "gemini", "hermes", "provider", "vendor", "runtime", "profile", "delegate_task")
 COMMAND_EVIDENCE_SLOTS = frozenset({"test-results", "focused-verification", "negative-tests", "regression-evidence", "supported-ci"})
+_NOT_APPLICABLE_BOILERPLATE = frozenset(
+    {"a", "an", "applicable", "are", "because", "evidence", "for", "here", "is", "it", "not", "simply", "slot", "the", "this", "to", "was", "were"}
+)
+
+
+def _authority_owned_path(relative: str) -> bool:
+    normalized = relative.casefold()
+    return normalized.startswith(tuple(prefix.casefold() for prefix in AUTHORITY_PATH_PREFIXES))
+
+
+def _blanket_not_applicable_reason(reason: str) -> bool:
+    normalized = reason.strip().casefold().rstrip(".")
+    substantive_tokens = [
+        token
+        for token in re.findall(r"[a-z0-9][a-z0-9-]*", normalized)
+        if token not in _NOT_APPLICABLE_BOILERPLATE
+    ]
+    return (
+        len(normalized) < 20
+        or normalized in {"not applicable", "not applicable here", "simply not applicable", "this evidence is not applicable here"}
+        or "simply not applicable" in normalized
+        or normalized.startswith("n/a")
+        or normalized.count("not applicable") > 1
+        or len(substantive_tokens) < 3
+    )
 
 _AGENT_REQUEST_SCHEMA: dict[str, Any] = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -497,15 +522,9 @@ def _validate_reference_result_intrinsics(
             raise ValueError(f"reference result evidence slot {slot_name} is not explicitly resolved")
         slot_policy = configured_slots[slot_name]
         if evidence["status"] == "not_applicable":
-            reason = (evidence.get("reason") or "").strip().lower().rstrip(".")
-            blanket_reason = (
-                len(reason) < 20
-                or reason in {"not applicable", "not applicable here", "simply not applicable", "this evidence is not applicable here"}
-                or "simply not applicable" in reason
-                or reason.startswith("n/a")
-            )
+            reason = (evidence.get("reason") or "").strip()
             if (
-                blanket_reason
+                _blanket_not_applicable_reason(reason)
                 or slot_name in required_slots
                 or not slot_policy["not_applicable_allowed"]
             ):
@@ -542,7 +561,7 @@ def _load_reference_result_index(
     physical_files: set[tuple[int, int] | str] = set()
     for relative in relative_files:
         try:
-            if relative.startswith(AUTHORITY_PATH_PREFIXES):
+            if _authority_owned_path(relative):
                 raise ValueError("authority-owned paths cannot be reference result inputs")
             path = _safe_repository_path(root, relative)
             if not path.is_file():
@@ -632,7 +651,7 @@ def _load_reference_result_index(
             if payload["verdict"] == "pass" and payload["mutation_class"] != "none" and not payload["changed_paths"]:
                 raise ValueError("passing mutating reference result must declare changed paths")
             for changed_path in payload["changed_paths"]:
-                if changed_path.startswith(AUTHORITY_PATH_PREFIXES):
+                if _authority_owned_path(changed_path):
                     raise ValueError("reference result declares an authority-owned changed path")
                 _safe_repository_path(root, changed_path)
                 if not _changed_path_allowed(root, changed_path, role_contract, payload["target"]["path"]):
@@ -710,6 +729,45 @@ def _load_reference_result_index(
                     indexed["path"],
                     f"transitive {field_name} is absent from exact context provenance",
                 )
+        producer_reference = payload["producer_result_ref"]
+        producer_valid = producer_reference is None and role_contract["result_references"]["producer_result_ref"] != "required"
+        if producer_reference is not None and producer_reference["result_id"] in index:
+            producer_indexed = index[producer_reference["result_id"]]
+            producer_payload = producer_indexed["payload"]
+            producer_edge = role_contract["reference_edges"]["producer_result_ref"]
+            producer_valid = (
+                producer_reference
+                == {
+                    "result_id": producer_payload["result_id"],
+                    "role_id": producer_payload["role_id"],
+                    "execution_id": producer_payload["execution_id"],
+                    "context_id": producer_payload["context_id"],
+                    "sha256": producer_indexed["sha256"],
+                }
+                and producer_payload["role_id"] in producer_edge["allowed_roles"]
+                and producer_payload["target"] == payload["target"]
+                and producer_payload["verdict"] == producer_edge["required_verdict"]
+            )
+        lifecycle_outcome = AgentContractResult()
+        target_path = _verify_artifact_ref(root, payload["target"], lifecycle_outcome, "reference_target")
+        lifecycle_state = None
+        if target_path is not None and lifecycle_outcome.valid:
+            lifecycle_state = _derive_current_state(
+                root,
+                payload["target"],
+                target_path,
+                payload["role_id"],
+                producer_valid,
+                producer_reference,
+                lifecycle_outcome,
+                for_result=True,
+            )
+        if not lifecycle_outcome.valid or lifecycle_state not in role_contract["lifecycle_eligibility"]:
+            result.block(
+                "invalid_reference_result_lifecycle",
+                indexed["path"],
+                f"referenced result role {payload['role_id']} is not eligible for its exact assignment state",
+            )
         provenance_outcome = AgentContractResult()
         for artifact in provenance_artifacts:
             if artifact == payload["target"] or artifact in reference_provenance:
@@ -996,6 +1054,84 @@ def _micro_spec_review_state(
     return None
 
 
+def _retained_requirement_lifecycle_is_valid(
+    root: Path,
+    target: dict[str, Any],
+    outcome: AgentContractResult | None,
+) -> bool:
+    stem = Path(target["path"]).stem
+    records = {
+        "rejection": (
+            f".specbound/rejections/{stem}.rejection.json",
+            {"schema_version", "requirement_path", "requirement_id", "revision", "reviewed_sha256", "sha256", "risk", "authority", "rejected_at", "decision", "reason"},
+            "requirement_rejection_authorities_by_risk",
+            "rejected",
+        ),
+        "reconsideration": (
+            f".specbound/reconsiderations/{stem}.reconsideration.json",
+            {"schema_version", "requirement_path", "requirement_id", "revision", "reviewed_sha256", "rejected_sha256", "reopened_sha256", "risk", "authority", "reconsidered_at", "decision", "reason"},
+            "requirement_reconsideration_authorities_by_risk",
+            "reopened_for_review",
+        ),
+        "review-decision": (
+            f".specbound/review-decisions/{stem}.review-decision.json",
+            {"schema_version", "requirement_path", "requirement_id", "revision", "reviewed_sha256", "risk", "authority", "decided_at", "decision", "reason"},
+            "requirement_review_decision_authorities_by_risk",
+            None,
+        ),
+    }
+    present: dict[str, tuple[str, dict[str, Any]]] = {}
+    try:
+        target_path = _safe_repository_path(root, target["path"])
+        metadata = _artifact_metadata(target_path)
+        config_path = _safe_repository_path(root, "specbound.yaml")
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        policy = config["policy"]
+        for name, (relative, required_fields, selector, expected_decision) in records.items():
+            path = _safe_repository_path(root, relative, must_exist=False)
+            if not path.exists():
+                continue
+            record = _read_json_object(_safe_repository_path(root, relative), f"retained {name}")
+            present[name] = (relative, record)
+            risk = metadata.get("risk")
+            allowed = policy.get(selector, {}).get(risk, []) if isinstance(policy, dict) else []
+            digest_fields = [field for field in required_fields if field.endswith("sha256") or field == "sha256"]
+            if (
+                not required_fields.issubset(record)
+                or record.get("schema_version") != 1
+                or record.get("requirement_path") != target["path"]
+                or record.get("requirement_id") != target["id"]
+                or record.get("revision") != target["revision"]
+                or record.get("risk") != risk
+                or record.get("authority") not in allowed
+                or not isinstance(record.get("reason"), str)
+                or not record["reason"].strip()
+                or any(not isinstance(record.get(field), str) or not re.fullmatch(r"[0-9a-f]{64}", record[field]) for field in digest_fields)
+                or (expected_decision is not None and record.get("decision") != expected_decision)
+                or (name == "review-decision" and record.get("decision") not in {"approval_ready", "rejected"})
+            ):
+                raise ValueError(f"retained {name} record is malformed, unbound, or unauthorized")
+        if ("rejection" in present) != ("reconsideration" in present):
+            raise ValueError("retained rejection and reconsideration evidence must form an exact pair")
+        if "rejection" in present:
+            rejection = present["rejection"][1]
+            reconsideration = present["reconsideration"][1]
+            if (
+                rejection["reviewed_sha256"] != target["sha256"]
+                or reconsideration["reviewed_sha256"] != target["sha256"]
+                or reconsideration["reopened_sha256"] != target["sha256"]
+                or reconsideration["rejected_sha256"] != rejection["sha256"]
+            ):
+                raise ValueError("retained rejection/reconsideration digests do not bind the exact in-review snapshot")
+        if "review-decision" in present and present["review-decision"][1]["reviewed_sha256"] != target["sha256"]:
+            raise ValueError("retained review decision does not bind the exact in-review snapshot")
+    except (KeyError, OSError, TypeError, ValueError, yaml.YAMLError) as exc:
+        if outcome is not None:
+            outcome.block("conflicting_lifecycle_evidence", target["path"], str(exc))
+        return False
+    return True
+
+
 def _canonical_state_record_matches(
     root: Path,
     target: dict[str, Any],
@@ -1123,6 +1259,8 @@ def _canonical_state_record_matches(
                 blocker.get("path", relative),
                 blocker.get("detail", f"canonical {state} record failed validation"),
             )
+    if state == "in_review" and validation.valid and not _retained_requirement_lifecycle_is_valid(root, target, outcome):
+        return False
     return validation.valid
 
 
@@ -1134,9 +1272,43 @@ def _derive_current_state(
     producer_reference_valid: bool,
     producer_reference: dict[str, Any] | None,
     outcome: AgentContractResult | None = None,
+    *,
+    for_result: bool = False,
 ) -> str | None:
     if not target["path"].startswith(".specbound/"):
         return None
+    if for_result and role_id == "discovery-author" and target["path"].startswith(".specbound/discoveries/"):
+        metadata = _artifact_metadata(path)
+        if metadata.get("status") == "in_review":
+            return "draft"
+    if for_result and role_id == "requirement-author" and target["path"].startswith(".specbound/requirements/"):
+        metadata = _artifact_metadata(path)
+        parent = metadata.get("parent_discovery")
+        if not isinstance(parent, dict):
+            return None
+        check = outcome if outcome is not None else AgentContractResult()
+        blockers_before = len(check.blockers)
+        parent_path = _verify_artifact_ref(root, parent, check, "parent_discovery")
+        if parent_path is None or len(check.blockers) != blockers_before:
+            return None
+        if not _canonical_state_record_matches(root, parent, "confirmed", check):
+            return None
+        return "confirmed"
+    if for_result and role_id == "independent-reviewer" and producer_reference_valid:
+        return "in_review"
+    if for_result and role_id == "micro-spec-author" and target["path"].startswith(".specbound/micro-specs/"):
+        metadata = _artifact_metadata(path)
+        requirement = metadata.get("requirement")
+        if not isinstance(requirement, dict):
+            return None
+        check = outcome if outcome is not None else AgentContractResult()
+        blockers_before = len(check.blockers)
+        requirement_path = _verify_artifact_ref(root, requirement, check, "parent_requirement")
+        if requirement_path is None or len(check.blockers) != blockers_before:
+            return None
+        if not _canonical_state_record_matches(root, requirement, "approved", check):
+            return None
+        return "approved"
     if (
         target["path"].startswith(".specbound/micro-specs/")
         and role_id == "independent-reviewer"
@@ -1383,7 +1555,7 @@ def validate_role_request(
         except (OSError, ValueError) as exc:
             result.block("unsafe_capability_path", requested_path, str(exc))
             continue
-        if requested_path.startswith(AUTHORITY_PATH_PREFIXES) or not _changed_path_allowed(
+        if _authority_owned_path(requested_path) or not _changed_path_allowed(
             root, requested_path, role, request["target"]["path"]
         ):
             result.block("capability_escalation", requested_path, f"requested path exceeds the {role['role_id']} policy")
@@ -1705,6 +1877,7 @@ def validate_agent_result(
             reference_validity["producer_result_ref"],
             payload["producer_result_ref"],
             outcome,
+            for_result=True,
         )
         outcome.derived_current_state = state
         if state is None:
@@ -1773,7 +1946,7 @@ def validate_agent_result(
         except (OSError, ValueError) as exc:
             outcome.block("invalid_changed_path", changed_path, str(exc))
             continue
-        if changed_path.startswith(AUTHORITY_PATH_PREFIXES):
+        if _authority_owned_path(changed_path):
             outcome.block("forbidden_changed_path", changed_path, "authority-owned paths cannot be changed by an agent role")
         if not _changed_path_allowed(root, changed_path, role, payload["target"]["path"]):
             outcome.block("changed_path_outside_role_scope", changed_path, "changed path is outside the role policy")
@@ -1815,14 +1988,8 @@ def validate_agent_result(
                 )
             continue
         if evidence["status"] == "not_applicable":
-            reason = (evidence.get("reason") or "").strip().lower().rstrip(".")
-            blanket_reason = (
-                len(reason) < 20
-                or reason in {"not applicable", "not applicable here", "simply not applicable", "this evidence is not applicable here"}
-                or "simply not applicable" in reason
-                or reason.startswith("n/a")
-            )
-            if blanket_reason:
+            reason = (evidence.get("reason") or "").strip()
+            if _blanket_not_applicable_reason(reason):
                 outcome.block("blanket_not_applicable_evidence", str(result_path), f"slot {slot_name} requires a concrete task-specific reason")
             if slot_name in required_slots or slot_name not in conditional_slots or not slot_policy["not_applicable_allowed"]:
                 outcome.block("invalid_not_applicable_evidence", str(result_path), f"slot {slot_name} cannot be not_applicable")
