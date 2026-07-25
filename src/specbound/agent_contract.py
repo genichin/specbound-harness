@@ -115,6 +115,7 @@ _AGENT_REQUEST_SCHEMA: dict[str, Any] = {
 _EXPECTED_ROLE_CONTRACTS: dict[str, dict[str, Any]] = {
     "discovery-author": {
         "task_kind": "discovery-author",
+        "task_risk_floor": "low",
         "required_inputs": ["user-intent", "repository-context", "exact-target"],
         "allowed_path_patterns": [".specbound/discoveries/dcy-*-r*.md"],
         "allowed_tool_categories": ["repository-read", "candidate-write"],
@@ -127,6 +128,7 @@ _EXPECTED_ROLE_CONTRACTS: dict[str, dict[str, Any]] = {
     },
     "requirement-author": {
         "task_kind": "requirement-author",
+        "task_risk_floor": "low",
         "required_inputs": ["confirmed-discovery", "exact-target"],
         "allowed_path_patterns": [".specbound/requirements/req-*/req-*-r*.md"],
         "allowed_tool_categories": ["repository-read", "candidate-write"],
@@ -139,6 +141,7 @@ _EXPECTED_ROLE_CONTRACTS: dict[str, dict[str, Any]] = {
     },
     "micro-spec-author": {
         "task_kind": "micro-spec-author",
+        "task_risk_floor": "low",
         "required_inputs": ["approved-requirement", "selected-acceptance-criteria", "exact-target"],
         "allowed_path_patterns": [".specbound/micro-specs/req-*/ms-*-*.md"],
         "allowed_tool_categories": ["repository-read", "candidate-write"],
@@ -151,6 +154,7 @@ _EXPECTED_ROLE_CONTRACTS: dict[str, dict[str, Any]] = {
     },
     "independent-reviewer": {
         "task_kind": "independent-reviewer",
+        "task_risk_floor": "medium",
         "required_inputs": ["producer-result", "exact-target", "current-state"],
         "allowed_path_patterns": [],
         "allowed_tool_categories": ["repository-read"],
@@ -163,6 +167,7 @@ _EXPECTED_ROLE_CONTRACTS: dict[str, dict[str, Any]] = {
     },
     "implementation": {
         "task_kind": "implementation",
+        "task_risk_floor": "medium",
         "required_inputs": ["reviewed-micro-spec", "review-record", "exact-target", "current-state"],
         "allowed_path_patterns": ["@reviewed-micro-spec-scope"],
         "allowed_tool_categories": ["repository-read", "candidate-write", "test-execute", "filesystem-metadata"],
@@ -179,6 +184,7 @@ _EXPECTED_ROLE_CONTRACTS: dict[str, dict[str, Any]] = {
     },
     "iteration-qc": {
         "task_kind": "iteration-qc",
+        "task_risk_floor": "medium",
         "required_inputs": ["implementation-result", "reviewed-micro-spec", "exact-target", "current-state"],
         "allowed_path_patterns": [".specbound/iteration-qc/req-*/iqc-*-*-r*.json"],
         "allowed_tool_categories": ["repository-read", "candidate-write", "test-execute", "filesystem-metadata"],
@@ -191,6 +197,7 @@ _EXPECTED_ROLE_CONTRACTS: dict[str, dict[str, Any]] = {
     },
     "delivery-qc": {
         "task_kind": "delivery-qc",
+        "task_risk_floor": "medium",
         "required_inputs": ["verified-iteration-qc-set", "approved-requirement", "exact-target", "current-state"],
         "allowed_path_patterns": [".specbound/delivery-qc/dqc-*-r*.json"],
         "allowed_tool_categories": ["repository-read", "candidate-write", "test-execute", "filesystem-metadata"],

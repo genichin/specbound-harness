@@ -1127,3 +1127,20 @@ def test_agent_contract_fixture_bytes_are_cross_platform_stable_lf() -> None:
     ]
 
     assert crlf_paths == []
+
+
+def test_policy_declares_closed_risk_order_and_exact_task_floors() -> None:
+    policy = actual_policy()
+
+    assert policy["risk_order"] == ["low", "medium", "high"]
+    assert {role["role_id"]: role["task_risk_floor"] for role in policy["roles"]} == {
+        "discovery-author": "low",
+        "requirement-author": "low",
+        "micro-spec-author": "low",
+        "independent-reviewer": "medium",
+        "implementation": "medium",
+        "iteration-qc": "medium",
+        "delivery-qc": "medium",
+    }
+    validation = validate_agent_roles_policy(ROOT, POLICY_REL)
+    assert validation.valid is True, validation.blockers

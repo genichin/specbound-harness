@@ -4,9 +4,10 @@
   "title": "SpecBound provider-neutral agent roles policy v1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "roles"],
+  "required": ["schema_version", "risk_order", "roles"],
   "properties": {
     "schema_version": {"const": 1},
+    "risk_order": {"const": ["low", "medium", "high"]},
     "roles": {
       "type": "array",
       "minItems": 7,
@@ -24,7 +25,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "role_id", "task_kind", "required_inputs", "allowed_path_patterns",
+        "role_id", "task_kind", "task_risk_floor", "required_inputs", "allowed_path_patterns",
         "allowed_tool_categories", "mutation_classes", "output_kinds",
         "lifecycle_eligibility", "result_references", "evidence_slots",
         "permitted_next_actions", "forbidden_actions", "forbidden_claims"
@@ -32,6 +33,7 @@
       "properties": {
         "role_id": {"enum": ["discovery-author", "requirement-author", "micro-spec-author", "independent-reviewer", "implementation", "iteration-qc", "delivery-qc"]},
         "task_kind": {"enum": ["discovery-author", "requirement-author", "micro-spec-author", "independent-reviewer", "implementation", "iteration-qc", "delivery-qc"]},
+        "task_risk_floor": {"enum": ["low", "medium", "high"]},
         "required_inputs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "allowed_path_patterns": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/safePathPattern"}},
         "allowed_tool_categories": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["repository-read", "candidate-write", "test-execute", "filesystem-metadata"]}},
