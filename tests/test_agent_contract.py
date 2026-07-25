@@ -278,11 +278,75 @@ def write_state_target(root: Path, role_id: str, state: str) -> dict:
             )
         return ref
 
+    requirement_id = "req-9007"
+    requirement_relative = ".specbound/requirements/req-9007/req-9007-r1.md"
+    requirement = root / requirement_relative
+    requirement.parent.mkdir(parents=True, exist_ok=True)
+    requirement.write_text(
+        "---\nid: req-9007\nrevision: 1\nstatus: approved\nrisk: high\nowner: fixture-owner\n---\n\n"
+        "# Requirement\n\n## Acceptance criteria\n\n### AC-001 — Implement slice\n\nEvidence.\n\n"
+        "### AC-002 — Remaining delivery work\n\nEvidence.\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    requirement_sha = sha256(requirement.read_bytes()).hexdigest()
+    micro_id = "ms-9007-001"
+    micro_relative = ".specbound/micro-specs/req-9007/ms-9007-001.md"
+    micro = root / micro_relative
+    micro.parent.mkdir(parents=True, exist_ok=True)
+    micro.write_text(
+        "---\nschema_version: 1\nid: ms-9007-001\nkind: micro-spec\nrisk: high\n"
+        f"requirement:\n  path: {requirement_relative}\n  id: {requirement_id}\n  revision: 1\n  sha256: {requirement_sha}\n"
+        "selected_acceptance_criteria: [AC-001]\n---\n\n# Verified fixture Micro-SPEC\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    micro_sha = sha256(micro.read_bytes()).hexdigest()
+    review = root / ".specbound/micro-spec-reviews/req-9007/ms-9007-001.review.json"
+    review.parent.mkdir(parents=True, exist_ok=True)
+    review.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "micro_spec_id": micro_id,
+                "micro_spec_path": micro_relative,
+                "micro_spec_sha256": micro_sha,
+                "requirement_path": requirement_relative,
+                "requirement_id": requirement_id,
+                "revision": 1,
+                "requirement_sha256": requirement_sha,
+                "risk": "high",
+                "authority": "fixture-maintainer",
+                "decided_at": "2026-01-01T00:00:00Z",
+                "decision": "approved_for_implementation",
+                "reason": "Exact fixture review permits only this bound implementation.",
+                "permitted_next_action": "implement_bound_micro_spec_only",
+            },
+            indent=2,
+            sort_keys=True,
+        ) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     artifact_id = "iqc-9007-001"
     relative = ".specbound/iteration-qc/req-9007/iqc-9007-001-r1.json"
     target = root / relative
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps({"schema_version": 1, "id": artifact_id, "revision": 1, "verdict": state, "risk": "high"}, indent=2) + "\n", encoding="utf-8", newline="\n")
+    target.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "micro_spec": {"path": micro_relative, "id": micro_id, "sha256": micro_sha},
+                "selected_acceptance_criteria": ["AC-001"],
+                "remaining_acceptance_criteria": ["AC-002"],
+                "verification": [{"command": "pytest -q", "result": "passed", "exit_code": 0}],
+                "verdict": state,
+            },
+            indent=2,
+        ) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     return exact_ref(root, relative, artifact_id, 1)
 
 
@@ -525,6 +589,32 @@ def test_role_request_rejects_review_when_parent_requirement_bytes_are_stale(tmp
     assert "undetermined_current_state" in {item["code"] for item in result.blockers}, result.blockers
 
 
+def test_iteration_qc_rejects_self_declared_implemented_state_without_canonical_review(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, "iteration-qc")
+    parts = PurePosixPath(payload["target"]["path"]).parts
+    review = root / f".specbound/micro-spec-reviews/{parts[2]}/{Path(parts[3]).stem}.review.json"
+    review.unlink()
+
+    result = validate_role_request(root, write_json(root, "request.json", payload), POLICY_REL)
+
+    assert "undetermined_current_state" in {item["code"] for item in result.blockers}, result.blockers
+
+
+def test_delivery_qc_rejects_malformed_self_declared_verified_record(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, "delivery-qc")
+    target_path = root / payload["target"]["path"]
+    record = json.loads(target_path.read_text(encoding="utf-8"))
+    record.pop("micro_spec")
+    target_path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8", newline="\n")
+    payload["target"] = exact_ref(root, payload["target"]["path"], "iqc-9007-001", 1)
+
+    result = validate_role_request(root, write_json(root, "request.json", payload), POLICY_REL)
+
+    assert "undetermined_current_state" in {item["code"] for item in result.blockers}, result.blockers
+
+
 def test_implementation_cannot_write_review_submission_authority_paths(tmp_path: Path) -> None:
     root, _ = setup_root(tmp_path)
     request = valid_request(root, "implementation")
@@ -655,6 +745,30 @@ def test_role_request_rejects_nested_suffix_pattern_and_runtime_specific_input(t
     assert "capability_escalation" in {item["code"] for item in nested_result.blockers}
     assert runtime_result.valid is False
     assert "runtime_specific_request" in {item["code"] for item in runtime_result.blockers}
+
+
+@pytest.mark.parametrize(
+    ("role_id", "candidate"),
+    [
+        ("discovery-author", ".specbound/discoveries/dcy--r.md"),
+        ("requirement-author", ".specbound/requirements/req-123/req-999-r1.md"),
+        ("micro-spec-author", ".specbound/micro-specs/req-123/ms-999-001.md"),
+        ("iteration-qc", ".specbound/iteration-qc/req-123/iqc-999-001-r1.json"),
+        ("delivery-qc", ".specbound/delivery-qc/dqc--r1.json"),
+    ],
+)
+def test_role_request_rejects_noncanonical_family_topology(
+    tmp_path: Path,
+    role_id: str,
+    candidate: str,
+) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, role_id)
+    payload["requested_capabilities"]["paths"] = [candidate]
+
+    result = validate_role_request(root, write_json(root, "request.json", payload), POLICY_REL)
+
+    assert "capability_escalation" in {item["code"] for item in result.blockers}, result.blockers
 
 
 @pytest.mark.parametrize("role_id", sorted(ROLE_IDS))
@@ -845,6 +959,35 @@ def test_symlink_target_and_changed_path_fail_closed_when_supported(tmp_path: Pa
     payload["target"] = {"path": "targets/link.md", "id": "link", "revision": None, "sha256": sha256(external.read_bytes()).hexdigest()}
     result = validate_role_request(root, write_json(root, "request.json", payload), POLICY_REL)
     assert "invalid_target_path" in {item["code"] for item in result.blockers}
+
+
+def test_role_request_rejects_mutation_path_through_external_link_or_junction(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, "requirement-author")
+    external = tmp_path / "external"
+    external.mkdir()
+    linked_parent = root / ".specbound/requirements/req-9100"
+    linked_parent.parent.mkdir(parents=True, exist_ok=True)
+    if sys.platform == "win32":
+        created = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(linked_parent), str(external)],
+            capture_output=True,
+            text=True,
+            encoding="mbcs",
+            errors="replace",
+            check=False,
+        )
+        if created.returncode != 0:
+            pytest.skip(f"junction creation is unavailable: {created.stderr or created.stdout}")
+    else:
+        linked_parent.symlink_to(external, target_is_directory=True)
+    payload["requested_capabilities"]["paths"] = [
+        ".specbound/requirements/req-9100/req-9100-r1.md"
+    ]
+
+    result = validate_role_request(root, write_json(root, "request.json", payload), POLICY_REL)
+
+    assert "unsafe_capability_path" in {item["code"] for item in result.blockers}, result.blockers
 
 
 def test_symlinked_changed_path_fails_closed_when_supported(tmp_path: Path) -> None:

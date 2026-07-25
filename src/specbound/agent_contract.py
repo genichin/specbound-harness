@@ -490,7 +490,23 @@ def _canonical_state_record_matches(root: Path, target: dict[str, Any], state: s
         return False
     candidate = candidates.get(state)
     if candidate is None:
-        return state in {"draft", "implemented", "verified"}
+        if state == "draft":
+            return True
+        if state != "verified":
+            return False
+        try:
+            from .validation import Result as RepositoryResult, _validate_qc_record
+
+            validation = RepositoryResult(root)
+            _validate_qc_record(
+                root,
+                _safe_repository_path(root, relative),
+                validation,
+                "iteration_qc",
+            )
+        except (OSError, TypeError, ValueError):
+            return False
+        return validation.valid
     record_relative, path_field, digest_field = candidate
     try:
         record_path = _safe_repository_path(root, record_relative)
@@ -669,6 +685,11 @@ def validate_role_request(root: Path, request_path: Path, policy_path: str) -> A
         if not set(capabilities[requested_name]).issubset(role[policy_name]):
             result.block("capability_escalation", str(request_path), f"requested {requested_name} exceed the {role['role_id']} policy")
     for requested_path in capabilities["paths"]:
+        try:
+            _safe_repository_path(root, requested_path, must_exist=False)
+        except (OSError, ValueError) as exc:
+            result.block("unsafe_capability_path", requested_path, str(exc))
+            continue
         if requested_path.startswith(AUTHORITY_PATH_PREFIXES) or not _changed_path_allowed(
             root, requested_path, role, request["target"]["path"]
         ):
@@ -714,6 +735,25 @@ def _reviewed_micro_spec_paths(root: Path, target_path: str) -> list[tuple[str, 
 
 
 def _path_matches(path: str, pattern: str) -> bool:
+    canonical_patterns: dict[str, str] = {
+        ".specbound/discoveries/dcy-*-r*.md": r"\.specbound/discoveries/dcy-([0-9]+)-r([1-9][0-9]*)\.md",
+        ".specbound/requirements/req-*/req-*-r*.md": r"\.specbound/requirements/req-([0-9]+)/req-([0-9]+)-r([1-9][0-9]*)\.md",
+        ".specbound/micro-specs/req-*/ms-*-*.md": r"\.specbound/micro-specs/req-([0-9]+)/ms-([0-9]+)-(0*[1-9][0-9]*)\.md",
+        ".specbound/iteration-qc/req-*/iqc-*-*-r*.json": r"\.specbound/iteration-qc/req-([0-9]+)/iqc-([0-9]+)-(0*[1-9][0-9]*)-r([1-9][0-9]*)\.json",
+        ".specbound/delivery-qc/dqc-*-r*.json": r"\.specbound/delivery-qc/dqc-([0-9]+)-r([1-9][0-9]*)\.json",
+    }
+    canonical = canonical_patterns.get(pattern)
+    if canonical is not None:
+        match = re.fullmatch(canonical, path)
+        if match is None:
+            return False
+        if pattern in {
+            ".specbound/requirements/req-*/req-*-r*.md",
+            ".specbound/micro-specs/req-*/ms-*-*.md",
+            ".specbound/iteration-qc/req-*/iqc-*-*-r*.json",
+        }:
+            return match.group(1) == match.group(2)
+        return True
     path_parts = PurePosixPath(path).parts
     pattern_parts = PurePosixPath(pattern).parts
     return len(path_parts) == len(pattern_parts) and all(
