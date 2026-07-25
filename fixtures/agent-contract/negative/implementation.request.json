@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "role_id": "implementation",
+  "task_kind": "implementation",
+  "target": {
+    "path": "targets/implementation.md",
+    "sha256": "7de6f424aa36b0b9f8d4dc8aed85251469ae14e763db96b954a46a098f3881bb"
+  },
+  "current_state": "blocked",
+  "inputs": {
+    "reviewed-micro-spec": "reviewed-micro-spec",
+    "review-record": "review-record",
+    "exact-target": "exact-target",
+    "current-state": "current-state"
+  },
+  "requested_capabilities": {
+    "path_patterns": [
+      "@reviewed-micro-spec-scope"
+    ],
+    "tool_categories": [
+      "repository-read",
+      "candidate-write",
+      "test-execute",
+      "filesystem-metadata"
+    ],
+    "mutation_classes": [
+      "repository_mutation"
+    ]
+  },
+  "producer_result_ref": null,
+  "reviewer_run_ref": "review-run-001"
+}

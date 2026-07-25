@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "role_id": "discovery-author",
+  "task_kind": "discovery-author",
+  "target": {
+    "path": "targets/discovery-author.md",
+    "sha256": "c9d1c8c6048b9345991505cebd5c917680954a5272285ef8f0294d4b19c4c639"
+  },
+  "current_state": "draft",
+  "inputs": {
+    "user-intent": "user-intent",
+    "repository-context": "repository-context",
+    "exact-target": "exact-target"
+  },
+  "requested_capabilities": {
+    "path_patterns": [
+      ".specbound/discoveries/dcy-*-r*.md"
+    ],
+    "tool_categories": [
+      "repository-read",
+      "candidate-write"
+    ],
+    "mutation_classes": [
+      "candidate_write"
+    ]
+  },
+  "producer_result_ref": null,
+  "reviewer_run_ref": null
+}

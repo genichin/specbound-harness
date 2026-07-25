@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "role_id": "micro-spec-author",
+  "task_kind": "micro-spec-author",
+  "target": {
+    "path": "targets/micro-spec-author.md",
+    "sha256": "28880c3526a97e11e2dc63257ef44aea6c75827ba25a1b126f96ef43e56a2b06"
+  },
+  "current_state": "approved",
+  "inputs": {
+    "approved-requirement": "approved-requirement",
+    "selected-acceptance-criteria": "selected-acceptance-criteria",
+    "exact-target": "exact-target"
+  },
+  "requested_capabilities": {
+    "path_patterns": [
+      ".specbound/micro-specs/req-*/ms-*-*.md"
+    ],
+    "tool_categories": [
+      "repository-read",
+      "candidate-write"
+    ],
+    "mutation_classes": [
+      "candidate_write"
+    ]
+  },
+  "producer_result_ref": null,
+  "reviewer_run_ref": null
+}

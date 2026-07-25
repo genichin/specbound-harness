@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "role_id": "micro-spec-author",
+  "task_kind": "micro-spec-author",
+  "target": {
+    "path": "targets/micro-spec-author.md",
+    "sha256": "28880c3526a97e11e2dc63257ef44aea6c75827ba25a1b126f96ef43e56a2b06"
+  },
+  "producer_result_ref": null,
+  "reviewer_run_ref": null,
+  "artifacts": [
+    {
+      "path": ".specbound/micro-specs/req-9000/ms-9000-001.md",
+      "sha256": "d156f4665b8d63d25258111575a75fb2f7c3b3e6a41bc25fd553791ea2334f72",
+      "kind": "candidate"
+    }
+  ],
+  "evidence": [
+    {
+      "slot": "target-binding",
+      "status": "provided",
+      "artifact_ref": ".specbound/micro-specs/req-9000/ms-9000-001.md",
+      "detail": "Fixture evidence for target-binding."
+    },
+    {
+      "slot": "selected-ac-coverage",
+      "status": "provided",
+      "artifact_ref": ".specbound/micro-specs/req-9000/ms-9000-001.md",
+      "detail": "Fixture evidence for selected-ac-coverage."
+    }
+  ],
+  "provenance": {
+    "execution_id": "fixture-micro-spec-author",
+    "request_sha256": "1eb2b49b6fece4a62d0360713216b0b316be77fe117772e1f48a4bd4e30c41db",
+    "tool_categories": [
+      "repository-read",
+      "candidate-write"
+    ],
+    "mutation_classes": [
+      "candidate_write"
+    ]
+  },
+  "verification": {
+    "commands": [
+      {
+        "command": "fixture-check",
+        "result": "passed",
+        "exit_code": 0
+      }
+    ],
+    "summary": "Fixture check passed."
+  },
+  "verdict": "completed",
+  "permitted_next_action": "submit-candidate-for-review",
+  "claims": [
+    "approval"
+  ]
+}

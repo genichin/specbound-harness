@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "role_id": "independent-reviewer",
+  "task_kind": "independent-reviewer",
+  "target": {
+    "path": "targets/independent-reviewer.md",
+    "sha256": "7e3d64e0a539fbda8c1f56d8f682e9dc941067c01d6bec3fa741c9aa7ca445fd"
+  },
+  "producer_result_ref": "positive/discovery-author.result.json",
+  "reviewer_run_ref": null,
+  "artifacts": [],
+  "evidence": [
+    {
+      "slot": "target-binding",
+      "status": "provided",
+      "artifact_ref": "targets/independent-reviewer.md",
+      "detail": "Fixture evidence for target-binding."
+    },
+    {
+      "slot": "review-findings",
+      "status": "provided",
+      "artifact_ref": "targets/independent-reviewer.md",
+      "detail": "Fixture evidence for review-findings."
+    }
+  ],
+  "provenance": {
+    "execution_id": "fixture-independent-reviewer",
+    "request_sha256": "1fd14ff0e01abf594b69842f0fbd253ec2b9be9ff12faa5f4d89f788ec392d53",
+    "tool_categories": [
+      "repository-read"
+    ],
+    "mutation_classes": [
+      "none"
+    ]
+  },
+  "verification": {
+    "commands": [
+      {
+        "command": "fixture-check",
+        "result": "passed",
+        "exit_code": 0
+      }
+    ],
+    "summary": "Fixture check passed."
+  },
+  "verdict": "completed",
+  "permitted_next_action": "request-authority-action",
+  "claims": [
+    "approval"
+  ]
+}

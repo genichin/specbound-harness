@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "role_id": "implementation",
+  "task_kind": "implementation",
+  "target": {
+    "path": "targets/implementation.md",
+    "sha256": "7de6f424aa36b0b9f8d4dc8aed85251469ae14e763db96b954a46a098f3881bb"
+  },
+  "producer_result_ref": null,
+  "reviewer_run_ref": "review-run-001",
+  "artifacts": [
+    {
+      "path": "src/fixture_impl.py",
+      "sha256": "1549be898f04832599d0b67150101791753a1b235bc537fea78f473c91a5d0b3",
+      "kind": "implementation"
+    }
+  ],
+  "evidence": [
+    {
+      "slot": "target-binding",
+      "status": "provided",
+      "artifact_ref": "src/fixture_impl.py",
+      "detail": "Fixture evidence for target-binding."
+    },
+    {
+      "slot": "test-results",
+      "status": "provided",
+      "artifact_ref": "src/fixture_impl.py",
+      "detail": "Fixture evidence for test-results."
+    },
+    {
+      "slot": "rollback-inventory",
+      "status": "provided",
+      "artifact_ref": "src/fixture_impl.py",
+      "detail": "Fixture evidence for rollback-inventory."
+    }
+  ],
+  "provenance": {
+    "execution_id": "fixture-implementation",
+    "request_sha256": "180af3a0573b1372732325cfeb55576326a87d705aae37402f5fbf28fd8957c9",
+    "tool_categories": [
+      "repository-read",
+      "candidate-write",
+      "test-execute",
+      "filesystem-metadata"
+    ],
+    "mutation_classes": [
+      "repository_mutation"
+    ]
+  },
+  "verification": {
+    "commands": [
+      {
+        "command": "fixture-check",
+        "result": "passed",
+        "exit_code": 0
+      }
+    ],
+    "summary": "Fixture check passed."
+  },
+  "verdict": "completed",
+  "permitted_next_action": "request-iteration-qc",
+  "claims": [
+    "approval"
+  ]
+}

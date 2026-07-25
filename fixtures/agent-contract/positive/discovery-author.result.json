@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "role_id": "discovery-author",
+  "task_kind": "discovery-author",
+  "target": {
+    "path": "targets/discovery-author.md",
+    "sha256": "c9d1c8c6048b9345991505cebd5c917680954a5272285ef8f0294d4b19c4c639"
+  },
+  "producer_result_ref": null,
+  "reviewer_run_ref": null,
+  "artifacts": [
+    {
+      "path": ".specbound/discoveries/dcy-9000-r1.md",
+      "sha256": "a9906f51d8e23885e3147c9d209223800acb0786a6cb185a79bc0e315c95a4d1",
+      "kind": "candidate"
+    }
+  ],
+  "evidence": [
+    {
+      "slot": "target-binding",
+      "status": "provided",
+      "artifact_ref": ".specbound/discoveries/dcy-9000-r1.md",
+      "detail": "Fixture evidence for target-binding."
+    },
+    {
+      "slot": "discovery-readiness",
+      "status": "provided",
+      "artifact_ref": ".specbound/discoveries/dcy-9000-r1.md",
+      "detail": "Fixture evidence for discovery-readiness."
+    }
+  ],
+  "provenance": {
+    "execution_id": "fixture-discovery-author",
+    "request_sha256": "e7275b7f208505374d6dcf7d2f21ac785871e664850a61a396de314490eec12b",
+    "tool_categories": [
+      "repository-read",
+      "candidate-write"
+    ],
+    "mutation_classes": [
+      "candidate_write"
+    ]
+  },
+  "verification": {
+    "commands": [
+      {
+        "command": "fixture-check",
+        "result": "passed",
+        "exit_code": 0
+      }
+    ],
+    "summary": "Fixture check passed."
+  },
+  "verdict": "completed",
+  "permitted_next_action": "submit-candidate-for-review",
+  "claims": []
+}

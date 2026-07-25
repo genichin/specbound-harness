@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "role_id": "requirement-author",
+  "task_kind": "requirement-author",
+  "target": {
+    "path": "targets/requirement-author.md",
+    "sha256": "828483f0d5dcb2a283651c86c049ec3382959e42e04ed9c211fc1133f363522f"
+  },
+  "current_state": "blocked",
+  "inputs": {
+    "confirmed-discovery": "confirmed-discovery",
+    "exact-target": "exact-target"
+  },
+  "requested_capabilities": {
+    "path_patterns": [
+      ".specbound/requirements/req-*/req-*-r*.md"
+    ],
+    "tool_categories": [
+      "repository-read",
+      "candidate-write"
+    ],
+    "mutation_classes": [
+      "candidate_write"
+    ]
+  },
+  "producer_result_ref": null,
+  "reviewer_run_ref": null
+}

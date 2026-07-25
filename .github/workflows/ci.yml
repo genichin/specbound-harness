@@ -30,6 +30,8 @@ jobs:
           python -m venv /tmp/specbound-wheel
           /tmp/specbound-wheel/bin/pip install --no-index --find-links dist specbound
           /tmp/specbound-wheel/bin/specbound --root fixtures/valid-minimal validate
+          /tmp/specbound-wheel/bin/specbound --root fixtures/agent-contract agent check-role-request --request-file fixtures/agent-contract/positive/implementation.request.json
+          /tmp/specbound-wheel/bin/specbound --root fixtures/agent-contract agent validate-result --result-file fixtures/agent-contract/positive/implementation.result.json
           /tmp/specbound-wheel/bin/specbound --root . docs requirements --check
       - name: Harness validation
         run: python -m specbound.cli validate

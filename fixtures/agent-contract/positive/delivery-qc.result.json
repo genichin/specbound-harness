@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "role_id": "delivery-qc",
+  "task_kind": "delivery-qc",
+  "target": {
+    "path": "targets/delivery-qc.md",
+    "sha256": "91db9e625b2fa5a78b1b14b2181972db4f5d19ac17113e8fa5ddc7d723807e36"
+  },
+  "producer_result_ref": "positive/iteration-qc.result.json",
+  "reviewer_run_ref": "review-run-001",
+  "artifacts": [
+    {
+      "path": ".specbound/delivery-qc/dqc-9000-r1.json",
+      "sha256": "f5f5348c100caa526adb54630af34de655b8f54a359821bd1c8f3db114d42e9d",
+      "kind": "evidence"
+    }
+  ],
+  "evidence": [
+    {
+      "slot": "target-binding",
+      "status": "provided",
+      "artifact_ref": ".specbound/delivery-qc/dqc-9000-r1.json",
+      "detail": "Fixture evidence for target-binding."
+    },
+    {
+      "slot": "complete-ac-coverage",
+      "status": "provided",
+      "artifact_ref": ".specbound/delivery-qc/dqc-9000-r1.json",
+      "detail": "Fixture evidence for complete-ac-coverage."
+    },
+    {
+      "slot": "regression-evidence",
+      "status": "provided",
+      "artifact_ref": ".specbound/delivery-qc/dqc-9000-r1.json",
+      "detail": "Fixture evidence for regression-evidence."
+    }
+  ],
+  "provenance": {
+    "execution_id": "fixture-delivery-qc",
+    "request_sha256": "a109e7a5bfa4bb5975e2f6dad0ae5e59f414bfd6e3b87c8b15542aae588d7da3",
+    "tool_categories": [
+      "repository-read",
+      "candidate-write",
+      "test-execute",
+      "filesystem-metadata"
+    ],
+    "mutation_classes": [
+      "evidence_write"
+    ]
+  },
+  "verification": {
+    "commands": [
+      {
+        "command": "fixture-check",
+        "result": "passed",
+        "exit_code": 0
+      }
+    ],
+    "summary": "Fixture check passed."
+  },
+  "verdict": "completed",
+  "permitted_next_action": "request-delivery-decision",
+  "claims": []
+}

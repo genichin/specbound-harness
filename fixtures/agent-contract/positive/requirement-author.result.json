@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "role_id": "requirement-author",
+  "task_kind": "requirement-author",
+  "target": {
+    "path": "targets/requirement-author.md",
+    "sha256": "828483f0d5dcb2a283651c86c049ec3382959e42e04ed9c211fc1133f363522f"
+  },
+  "producer_result_ref": null,
+  "reviewer_run_ref": null,
+  "artifacts": [
+    {
+      "path": ".specbound/requirements/req-9000/req-9000-r1.md",
+      "sha256": "b6ff24691d0c5fa6ee4dc193b054205d4ea27da1aefc984c7467aba7b9fd9ab9",
+      "kind": "candidate"
+    }
+  ],
+  "evidence": [
+    {
+      "slot": "target-binding",
+      "status": "provided",
+      "artifact_ref": ".specbound/requirements/req-9000/req-9000-r1.md",
+      "detail": "Fixture evidence for target-binding."
+    },
+    {
+      "slot": "acceptance-criteria",
+      "status": "provided",
+      "artifact_ref": ".specbound/requirements/req-9000/req-9000-r1.md",
+      "detail": "Fixture evidence for acceptance-criteria."
+    }
+  ],
+  "provenance": {
+    "execution_id": "fixture-requirement-author",
+    "request_sha256": "1bb17f442975630a48301d75c5974c74de91eeb17d60e848087d7a7e54dbb59f",
+    "tool_categories": [
+      "repository-read",
+      "candidate-write"
+    ],
+    "mutation_classes": [
+      "candidate_write"
+    ]
+  },
+  "verification": {
+    "commands": [
+      {
+        "command": "fixture-check",
+        "result": "passed",
+        "exit_code": 0
+      }
+    ],
+    "summary": "Fixture check passed."
+  },
+  "verdict": "completed",
+  "permitted_next_action": "submit-candidate-for-review",
+  "claims": []
+}

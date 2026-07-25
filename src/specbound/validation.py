@@ -14,6 +14,8 @@ from typing import Any
 
 import yaml
 
+from .agent_contract import validate_agent_roles_policy
+
 REQUIREMENT_RE = re.compile(r"^(req-[0-9]+)-r([1-9][0-9]*)\.md$")
 DISCOVERY_RE = re.compile(r"^(dcy-[0-9]+)-r([1-9][0-9]*)\.md$")
 DISCOVERY_CONFIRMATION_RE = re.compile(r"^(dcy-[0-9]+)-r([1-9][0-9]*)\.confirmation\.json$")
@@ -141,6 +143,7 @@ class Result:
     checked_micro_specs: int = 0
     checked_iteration_qc: int = 0
     checked_delivery_qc: int = 0
+    checked_agent_roles: int = 0
 
     @property
     def valid(self) -> bool:
@@ -160,6 +163,7 @@ class Result:
             "checked_micro_specs": self.checked_micro_specs,
             "checked_iteration_qc": self.checked_iteration_qc,
             "checked_delivery_qc": self.checked_delivery_qc,
+            "checked_agent_roles": self.checked_agent_roles,
             "blockers": self.blockers,
         }
 
@@ -303,6 +307,20 @@ def preflight(root: Path) -> Result:
             "policy.delivery_qc_authorities_by_risk must map each non-empty risk to a non-empty list of non-empty authority strings",
         )
     _validate_control_plane_adoption_config(result, policy)
+    agent_contract = policy.get("agent_contract") if isinstance(policy, dict) else None
+    if agent_contract is not None:
+        if (
+            not isinstance(agent_contract, dict)
+            or set(agent_contract) != {"enabled", "roles_path"}
+            or not isinstance(agent_contract.get("enabled"), bool)
+            or not isinstance(agent_contract.get("roles_path"), str)
+            or not _safe_relative(agent_contract.get("roles_path"))
+        ):
+            result.block(
+                "malformed_config",
+                "specbound.yaml",
+                "policy.agent_contract must contain exactly boolean enabled and a safe repository-relative roles_path",
+            )
     return result
 
 
@@ -2384,6 +2402,11 @@ def validate(root: Path, claim: str | None = None, requirement: str | None = Non
     if not result.valid:
         return result
     config = _load_config(root)
+    agent_contract = config["policy"].get("agent_contract")
+    if isinstance(agent_contract, dict) and agent_contract.get("enabled") is True:
+        policy_result = validate_agent_roles_policy(root, agent_contract["roles_path"])
+        result.checked_agent_roles = policy_result.checked_roles
+        result.blockers.extend(policy_result.blockers)
     adopted_requirements = _adopted_requirement_entries(root, config, result)
     allowed_authorities_by_risk = {
         risk_class: set(authorities)

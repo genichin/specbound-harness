@@ -1,0 +1,5 @@
+version: 1
+policy:
+  agent_contract:
+    enabled: true
+    roles_path: .specbound/policies/agent-roles.yaml

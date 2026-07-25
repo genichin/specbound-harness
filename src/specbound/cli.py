@@ -6,6 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
+from .agent_contract import validate_configured_agent_result, validate_configured_role_request
 from .validation import (
     ConfirmationError,
     REQUIRED_ROOTS,
@@ -99,6 +100,19 @@ def build_parser() -> argparse.ArgumentParser:
     micro_spec_review.add_argument("--decision", required=True, choices=("approved_for_implementation", "rework", "blocked"))
     micro_spec_review.add_argument("--reason", required=True, help="substantive review rationale")
 
+    agent = commands.add_parser("agent", help="read-only validation of provider-neutral agent contracts")
+    agent_commands = agent.add_subparsers(dest="agent_command", required=True)
+    check_role_request = agent_commands.add_parser(
+        "check-role-request",
+        help="fail closed before execution when a role request exceeds the active policy",
+    )
+    check_role_request.add_argument("--request-file", type=Path, required=True)
+    validate_result = agent_commands.add_parser(
+        "validate-result",
+        help="validate a closed, digest-bound agent result without mutation",
+    )
+    validate_result.add_argument("--result-file", type=Path, required=True)
+
     discovery = commands.add_parser("discovery", help="operate on canonical Discovery artifacts")
     discovery_commands = discovery.add_subparsers(dest="discovery_command", required=True)
     confirm = discovery_commands.add_parser("confirm", help="create a non-overwritable Discovery confirmation record")
@@ -159,6 +173,16 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "validate":
         result = validate(root, claim=args.claim, requirement=args.requirement)
+        _emit(result.payload())
+        return 0 if result.valid else 2
+
+    if args.command == "agent" and args.agent_command == "check-role-request":
+        result = validate_configured_role_request(root, args.request_file)
+        _emit(result.payload())
+        return 0 if result.valid else 2
+
+    if args.command == "agent" and args.agent_command == "validate-result":
+        result = validate_configured_agent_result(root, args.result_file)
         _emit(result.payload())
         return 0 if result.valid else 2
 

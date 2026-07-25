@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "role_id": "delivery-qc",
+  "task_kind": "delivery-qc",
+  "target": {
+    "path": "targets/delivery-qc.md",
+    "sha256": "91db9e625b2fa5a78b1b14b2181972db4f5d19ac17113e8fa5ddc7d723807e36"
+  },
+  "current_state": "verified",
+  "inputs": {
+    "verified-iteration-qc-set": "verified-iteration-qc-set",
+    "approved-requirement": "approved-requirement",
+    "exact-target": "exact-target",
+    "current-state": "current-state"
+  },
+  "requested_capabilities": {
+    "path_patterns": [
+      ".specbound/delivery-qc/dqc-*-r*.json"
+    ],
+    "tool_categories": [
+      "repository-read",
+      "candidate-write",
+      "test-execute",
+      "filesystem-metadata"
+    ],
+    "mutation_classes": [
+      "evidence_write"
+    ]
+  },
+  "producer_result_ref": "positive/iteration-qc.result.json",
+  "reviewer_run_ref": "review-run-001"
+}

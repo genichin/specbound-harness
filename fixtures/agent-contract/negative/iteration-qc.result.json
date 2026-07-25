@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "role_id": "iteration-qc",
+  "task_kind": "iteration-qc",
+  "target": {
+    "path": "targets/iteration-qc.md",
+    "sha256": "70cf3c35eea7ccb98fc34ecfe68ca80d1d87c87b7c6824afbe70e7f6c858e338"
+  },
+  "producer_result_ref": "positive/implementation.result.json",
+  "reviewer_run_ref": "review-run-001",
+  "artifacts": [
+    {
+      "path": ".specbound/iteration-qc/req-9000/iqc-9000-001-r1.json",
+      "sha256": "ad5859ce07dc5bee4fe78408c60ffcccbbeefed592491880690ff8616feaf0be",
+      "kind": "evidence"
+    }
+  ],
+  "evidence": [
+    {
+      "slot": "target-binding",
+      "status": "provided",
+      "artifact_ref": ".specbound/iteration-qc/req-9000/iqc-9000-001-r1.json",
+      "detail": "Fixture evidence for target-binding."
+    },
+    {
+      "slot": "focused-verification",
+      "status": "provided",
+      "artifact_ref": ".specbound/iteration-qc/req-9000/iqc-9000-001-r1.json",
+      "detail": "Fixture evidence for focused-verification."
+    }
+  ],
+  "provenance": {
+    "execution_id": "fixture-iteration-qc",
+    "request_sha256": "08933a2552cc3046832b8b4b77a25ded8bf67cfe168b3f99e09c9cbf99e5e4b4",
+    "tool_categories": [
+      "repository-read",
+      "candidate-write",
+      "test-execute",
+      "filesystem-metadata"
+    ],
+    "mutation_classes": [
+      "evidence_write"
+    ]
+  },
+  "verification": {
+    "commands": [
+      {
+        "command": "fixture-check",
+        "result": "passed",
+        "exit_code": 0
+      }
+    ],
+    "summary": "Fixture check passed."
+  },
+  "verdict": "completed",
+  "permitted_next_action": "request-delivery-qc",
+  "claims": [
+    "approval"
+  ]
+}

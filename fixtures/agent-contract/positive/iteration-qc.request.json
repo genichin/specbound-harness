@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "role_id": "iteration-qc",
+  "task_kind": "iteration-qc",
+  "target": {
+    "path": "targets/iteration-qc.md",
+    "sha256": "70cf3c35eea7ccb98fc34ecfe68ca80d1d87c87b7c6824afbe70e7f6c858e338"
+  },
+  "current_state": "implemented",
+  "inputs": {
+    "implementation-result": "implementation-result",
+    "reviewed-micro-spec": "reviewed-micro-spec",
+    "exact-target": "exact-target",
+    "current-state": "current-state"
+  },
+  "requested_capabilities": {
+    "path_patterns": [
+      ".specbound/iteration-qc/req-*/iqc-*-*-r*.json"
+    ],
+    "tool_categories": [
+      "repository-read",
+      "candidate-write",
+      "test-execute",
+      "filesystem-metadata"
+    ],
+    "mutation_classes": [
+      "evidence_write"
+    ]
+  },
+  "producer_result_ref": "positive/implementation.result.json",
+  "reviewer_run_ref": "review-run-001"
+}
