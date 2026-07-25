@@ -56,8 +56,8 @@ jobs:
             refs=""
             case "$role" in
               independent-reviewer) refs="--reference-result-file reference-results/independent-reviewer-producer_result_ref.json" ;;
-              implementation) refs="--reference-result-file reference-results/implementation-reviewer_run_ref.json" ;;
-              iteration-qc) refs="--reference-result-file reference-results/iteration-qc-producer_result_ref.json --reference-result-file reference-results/iteration-qc-reviewer_run_ref.json" ;;
+              implementation) refs="--reference-result-file reference-results/implementation-reviewer_run_ref.json --reference-result-file reference-results/implementation-reviewer-producer_result_ref.json" ;;
+              iteration-qc) refs="--reference-result-file reference-results/iteration-qc-producer_result_ref.json --reference-result-file reference-results/iteration-qc-reviewer_run_ref.json --reference-result-file reference-results/iteration-qc-reviewer-producer_result_ref.json" ;;
             esac
             /tmp/specbound-wheel/bin/specbound --root fixtures/agent-contract agent check-role-request --request-file "fixtures/agent-contract/positive/$role.request.json" $refs
             /tmp/specbound-wheel/bin/specbound --root fixtures/agent-contract agent validate-result --result-file "fixtures/agent-contract/positive/$role.result.json" $refs
