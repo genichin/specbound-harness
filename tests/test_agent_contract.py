@@ -618,13 +618,20 @@ def valid_result(root: Path, role_id: str) -> dict:
     artifacts = [target] + ([changed_artifact] if changed_artifact else [])
     slots = []
     for index, slot_policy in enumerate(role["evidence_slots"]):
-        slot_artifacts = artifacts if index == 0 else [target]
+        slot_name = slot_policy["slot"]
+        slot_artifacts = artifacts if index == 0 or slot_name == "rollback-inventory" else [target]
+        command_slots = {"test-results", "focused-verification", "negative-tests", "regression-evidence", "supported-ci"}
+        commands = []
+        if slot_name in command_slots:
+            commands = [{"command": "fixture-check", "result": "passed", "exit_code": 0}]
+        elif slot_name == "rollback-inventory":
+            commands = [{"command": "fixture-rollback-check", "result": "passed", "exit_code": 0}]
         slots.append(
             {
-                "slot": slot_policy["slot"],
+                "slot": slot_name,
                 "status": "provided",
                 "artifacts": slot_artifacts,
-                "commands": [{"command": "fixture-check", "result": "passed", "exit_code": 0}] if slot_policy["slot"] in {"test-results", "focused-verification", "negative-tests", "regression-evidence", "supported-ci"} else [],
+                "commands": commands,
                 "reason": None,
             }
         )
@@ -1052,6 +1059,98 @@ def test_role_request_rejects_reference_result_changed_path_outside_role_scope(t
 
     assert "invalid_reference_result_file" in {blocker["code"] for blocker in result.blockers}, result.blockers
     assert result.payload()["permitted_next_action"] == "none"
+
+
+def test_role_request_rejects_transitive_reference_identity_overlap(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, "implementation")
+    files = bind_explicit_reference_results(root, payload)
+    reviewer_relative, reviewer_path = reference_result_path(root, files, payload["reviewer_run_ref"]["result_id"])
+    reviewer = json.loads(reviewer_path.read_text(encoding="utf-8"))
+    _, producer_path = reference_result_path(root, files, reviewer["producer_result_ref"]["result_id"])
+    producer = json.loads(producer_path.read_text(encoding="utf-8"))
+    reviewer["planned_execution_id"] = producer["execution_id"]
+    reviewer["execution_id"] = producer["execution_id"]
+    reviewer["planned_context_id"] = producer["context_id"]
+    reviewer["context_id"] = producer["context_id"]
+    reviewer_path = write_json(root, reviewer_relative, reviewer)
+    payload["reviewer_run_ref"] = {
+        "result_id": reviewer["result_id"],
+        "role_id": reviewer["role_id"],
+        "execution_id": reviewer["execution_id"],
+        "context_id": reviewer["context_id"],
+        "sha256": sha256(reviewer_path.read_bytes()).hexdigest(),
+    }
+
+    result = validate_role_request(
+        root,
+        write_json(root, "request.json", payload),
+        POLICY_REL,
+        reference_result_files=files,
+    )
+
+    assert "reference_identity_overlap" in {blocker["code"] for blocker in result.blockers}, result.blockers
+
+
+def test_high_risk_rollback_inventory_requires_changed_path_and_command(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_result(root, "implementation")
+    rollback = next(evidence for evidence in payload["evidence"] if evidence["slot"] == "rollback-inventory")
+    rollback["artifacts"] = [payload["target"]]
+    rollback["commands"] = []
+    files = bind_explicit_reference_results(root, payload)
+
+    result = validate_agent_result(
+        root,
+        write_json(root, "result.json", payload),
+        POLICY_REL,
+        reference_result_files=files,
+    )
+
+    assert "invalid_rollback_evidence" in {blocker["code"] for blocker in result.blockers}, result.blockers
+
+
+def test_independent_reviewer_accepts_pre_authority_micro_spec_review_request(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, "independent-reviewer")
+    target = write_state_target(root, "implementation", "approved_for_implementation")
+    review_relative = target["path"].replace(".specbound/micro-specs/", ".specbound/micro-spec-reviews/").replace(".md", ".review.json")
+    (root / review_relative).unlink()
+    payload["target"] = target
+    payload["current_state"] = "in_review"
+    payload["producer_result_ref"] = result_reference(root, "micro-spec-author")
+    files = bind_explicit_reference_results(root, payload)
+
+    result = validate_role_request(
+        root,
+        write_json(root, "request.json", payload),
+        POLICY_REL,
+        reference_result_files=files,
+    )
+
+    assert result.valid is True, result.blockers
+    assert result.derived_current_state == "in_review"
+
+
+def test_role_request_rejects_no_write_command_in_reference_result(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, "implementation")
+    files = bind_explicit_reference_results(root, payload)
+    reviewer_relative, reviewer_path = reference_result_path(root, files, payload["reviewer_run_ref"]["result_id"])
+    reviewer = json.loads(reviewer_path.read_text(encoding="utf-8"))
+    no_write = next(evidence for evidence in reviewer["evidence"] if evidence["slot"] == "no-write")
+    no_write["commands"] = [{"command": "touch reviewed-candidate", "result": "passed", "exit_code": 0}]
+    reviewer_path = write_json(root, reviewer_relative, reviewer)
+    payload["reviewer_run_ref"]["sha256"] = sha256(reviewer_path.read_bytes()).hexdigest()
+
+    result = validate_role_request(
+        root,
+        write_json(root, "request.json", payload),
+        POLICY_REL,
+        reference_result_files=files,
+    )
+
+    assert "invalid_reference_result_file" in {blocker["code"] for blocker in result.blockers}, result.blockers
 
 
 @pytest.mark.parametrize(

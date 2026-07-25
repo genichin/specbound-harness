@@ -106,9 +106,21 @@
           "id": "ms-9005-001",
           "revision": null,
           "sha256": "00b5af7477c3ffb6ed612542ebd710730e30736d1c3b95e7365aa5b332b251c4"
+        },
+        {
+          "path": "src/fixture_impl.py",
+          "id": "fixture_impl",
+          "revision": null,
+          "sha256": "1e8526dce23b1e9ab2b49e0c59cdbe3e13641af8687ff57ce07616c98fdeb02b"
         }
       ],
-      "commands": [],
+      "commands": [
+        {
+          "command": "fixture-rollback-check",
+          "result": "passed",
+          "exit_code": 0
+        }
+      ],
       "reason": null
     },
     {

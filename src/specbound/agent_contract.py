@@ -512,6 +512,14 @@ def _validate_reference_result_intrinsics(
                 raise ValueError(f"reference result has invalid not_applicable evidence for {slot_name}")
         if evidence["status"] == "provided" and slot_name in COMMAND_EVIDENCE_SLOTS and not evidence["commands"]:
             raise ValueError(f"reference result evidence slot {slot_name} lacks a command")
+        if slot_name == "no-write" and (
+            evidence["commands"] or payload["changed_paths"] or payload["mutation_class"] != "none"
+        ):
+            raise ValueError("reference result no-write proof permits mutation")
+        if slot_name == "rollback-inventory" and effective_risk == "high":
+            rollback_paths = {artifact["path"] for artifact in evidence["artifacts"]}
+            if not evidence["commands"] or not set(payload["changed_paths"]).issubset(rollback_paths):
+                raise ValueError("reference result high-risk rollback inventory is incomplete")
 
     action = payload["permitted_next_action"]
     if payload["verdict"] == "pass":
@@ -675,6 +683,18 @@ def _load_reference_result_index(
                     "invalid_reference_result_file",
                     indexed["path"],
                     f"transitive {field_name} does not satisfy its exact handoff edge",
+                )
+                continue
+            overlap = []
+            if nested_payload["execution_id"] == payload["execution_id"]:
+                overlap.append("execution_id")
+            if nested_payload["context_id"] == payload["context_id"]:
+                overlap.append("context_id")
+            if overlap:
+                result.block(
+                    "reference_identity_overlap",
+                    indexed["path"],
+                    f"transitive {field_name} reuses {', '.join(overlap)} from its consumer result",
                 )
                 continue
             expected_provenance = {
@@ -1117,6 +1137,23 @@ def _derive_current_state(
 ) -> str | None:
     if not target["path"].startswith(".specbound/"):
         return None
+    if (
+        target["path"].startswith(".specbound/micro-specs/")
+        and role_id == "independent-reviewer"
+        and producer_reference_valid
+        and producer_reference is not None
+        and producer_reference["role_id"] == "micro-spec-author"
+    ):
+        parts = PurePosixPath(target["path"]).parts
+        review_relative = f".specbound/micro-spec-reviews/{parts[2]}/{Path(parts[3]).stem}.review.json"
+        try:
+            review_path = _safe_repository_path(root, review_relative, must_exist=False)
+        except ValueError as exc:
+            if outcome is not None:
+                outcome.block("unsafe_artifact_path", review_relative, str(exc))
+            return None
+        if not review_path.exists():
+            return "in_review"
     review_state = _micro_spec_review_state(root, target, outcome)
     if target["path"].startswith(".specbound/micro-specs/") and review_state is None:
         return None
@@ -1795,6 +1832,14 @@ def validate_agent_result(
             evidence["commands"] or changed_paths or payload["mutation_class"] != "none"
         ):
             outcome.block("invalid_no_write_proof", str(result_path), "no-write-proof requires empty commands, empty changed_paths, and mutation_class none")
+        if slot_name == "rollback-inventory" and derived_effective_task_risk == "high":
+            rollback_paths = {artifact["path"] for artifact in evidence["artifacts"]}
+            if not evidence["commands"] or not set(changed_paths).issubset(rollback_paths):
+                outcome.block(
+                    "invalid_rollback_evidence",
+                    str(result_path),
+                    "high-risk rollback inventory requires a command and exact evidence for every changed path",
+                )
     missing_changed_evidence = sorted(set(changed_paths) - evidence_artifact_paths)
     if missing_changed_evidence:
         outcome.block("missing_changed_path_evidence", str(result_path), f"changed paths lack exact artifact evidence: {', '.join(missing_changed_evidence)}")
