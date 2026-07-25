@@ -18,7 +18,27 @@ jobs:
       - name: Install source and test
         run: python -m pip install -e ".[test]"
       - name: Test
-        run: python -m pytest
+        run: |
+          set +e
+          python -m pytest --junitxml=pytest-results.xml
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("pytest-results.xml").getroot()
+          for case in root.iter("testcase"):
+              problem = case.find("failure")
+              if problem is None:
+                  problem = case.find("error")
+              if problem is None:
+                  continue
+              test_id = f"{case.get('classname', '')}::{case.get('name', '')}"
+              detail = " ".join((problem.text or problem.get("message", "")).split())
+              print(f"::error file=.github,title=pytest failure::{test_id}: {detail[:4000]}")
+          PY
+          fi
+          exit "$status"
       - name: Preflight bootstrap harness
         run: specbound preflight
       - name: Validate bootstrap harness
