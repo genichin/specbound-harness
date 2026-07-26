@@ -45,6 +45,33 @@ AUTHORITY_PATH_PREFIXES = (
 )
 RUNTIME_TERMS = ("openai", "anthropic", "claude", "gemini", "hermes", "provider", "vendor", "runtime", "profile", "delegate_task")
 COMMAND_EVIDENCE_SLOTS = frozenset({"test-results", "focused-verification", "negative-tests", "regression-evidence", "supported-ci"})
+SKILL_CONTRACT_FIELDS = frozenset(
+    {
+        "schema_version", "role_id", "policy_path", "skill_path", "task_kind", "required_inputs",
+        "allowed_path_patterns", "allowed_tool_categories", "mutation_classes", "output_kinds",
+        "lifecycle_eligibility", "result_references", "permitted_next_actions", "forbidden_actions",
+        "forbidden_claims", "authority_type", "self_review", "self_approval",
+    }
+)
+SKILL_POLICY_FIELDS = (
+    "task_kind", "required_inputs", "allowed_path_patterns", "allowed_tool_categories", "mutation_classes",
+    "output_kinds", "lifecycle_eligibility", "result_references", "permitted_next_actions",
+    "forbidden_actions", "forbidden_claims",
+)
+REQUIRED_SKILL_HEADINGS = (
+    "## Overview", "## When to Use", "## Required Inputs", "## Allowed Operations",
+    "## Forbidden Actions and Claims", "## Procedure", "## Verification",
+    "## Rework and Blocked", "## Completion Checklist",
+)
+REQUIRED_SKILL_BOUNDARIES = (
+    "The machine-readable role policy is authoritative; this skill is procedural guidance only.",
+    "This role must not perform self-review or self-approval.",
+    "This role never issues or claims confirmation, approval, review-decision, verified, delivery, canonical publication, Merge, Release, or external mutation authority.",
+)
+OVERBROAD_SKILL_CLAIM_RE = re.compile(
+    r"\b(?:may|can|is authorized to)\s+(?:self-review|self-approve|approve|confirm|publish\s+canonical|merge|release|deliver)\b",
+    re.IGNORECASE,
+)
 _NOT_APPLICABLE_BOILERPLATE = frozenset(
     {
         "a", "an", "applicable", "are", "because", "does", "evidence", "exist", "exists", "for", "here", "is", "it",
@@ -203,6 +230,7 @@ _AGENT_REQUEST_SCHEMA: dict[str, Any] = {
 _EXPECTED_ROLE_CONTRACTS: dict[str, dict[str, Any]] = {
     "discovery-author": {
         "task_kind": "discovery-author",
+        "skill_path": "skills/discovery-author/SKILL.md",
         "task_risk_floor": "low",
         "evidence_requirements_by_risk": {
             risk: {"required": ["target-binding", "discovery-readiness"], "conditional": []}
@@ -221,6 +249,7 @@ _EXPECTED_ROLE_CONTRACTS: dict[str, dict[str, Any]] = {
     },
     "requirement-author": {
         "task_kind": "requirement-author",
+        "skill_path": "skills/requirement-author/SKILL.md",
         "task_risk_floor": "low",
         "evidence_requirements_by_risk": {
             risk: {"required": ["target-binding", "acceptance-criteria"], "conditional": []}
@@ -242,6 +271,7 @@ _EXPECTED_ROLE_CONTRACTS: dict[str, dict[str, Any]] = {
     },
     "micro-spec-author": {
         "task_kind": "micro-spec-author",
+        "skill_path": "skills/micro-spec-author/SKILL.md",
         "task_risk_floor": "low",
         "evidence_requirements_by_risk": {
             risk: {"required": ["target-binding", "selected-ac-coverage"], "conditional": []}
@@ -263,6 +293,7 @@ _EXPECTED_ROLE_CONTRACTS: dict[str, dict[str, Any]] = {
     },
     "independent-reviewer": {
         "task_kind": "independent-reviewer",
+        "skill_path": "skills/independent-reviewer/SKILL.md",
         "task_risk_floor": "medium",
         "evidence_requirements_by_risk": {
             risk: {"required": ["target-binding", "review-findings", "no-write"], "conditional": []}
@@ -292,6 +323,7 @@ _EXPECTED_ROLE_CONTRACTS: dict[str, dict[str, Any]] = {
     },
     "implementation": {
         "task_kind": "implementation",
+        "skill_path": "skills/implementation/SKILL.md",
         "task_risk_floor": "medium",
         "evidence_requirements_by_risk": {
             "low": {
@@ -330,6 +362,7 @@ _EXPECTED_ROLE_CONTRACTS: dict[str, dict[str, Any]] = {
     },
     "iteration-qc": {
         "task_kind": "iteration-qc",
+        "skill_path": "skills/iteration-qc/SKILL.md",
         "task_risk_floor": "medium",
         "evidence_requirements_by_risk": {
             "low": {"required": ["target-binding", "focused-verification"], "conditional": ["regression-evidence"]},
@@ -356,6 +389,7 @@ _EXPECTED_ROLE_CONTRACTS: dict[str, dict[str, Any]] = {
     },
     "delivery-qc": {
         "task_kind": "delivery-qc",
+        "skill_path": "skills/delivery-qc/SKILL.md",
         "task_risk_floor": "medium",
         "evidence_requirements_by_risk": {
             risk: {
@@ -386,6 +420,7 @@ _EXPECTED_ROLE_CONTRACTS: dict[str, dict[str, Any]] = {
 class AgentContractResult:
     valid: bool = True
     checked_roles: int = 0
+    checked_skills: int = 0
     checked_requests: int = 0
     checked_results: int = 0
     role_id: str | None = None
@@ -403,6 +438,7 @@ class AgentContractResult:
         return {
             "valid": self.valid,
             "checked_roles": self.checked_roles,
+            "checked_agent_skills": self.checked_skills,
             "checked_requests": self.checked_requests,
             "checked_results": self.checked_results,
             "role_id": self.role_id,
@@ -505,6 +541,163 @@ def validate_agent_roles_policy(root: Path, policy_path: str) -> AgentContractRe
             result.block("overpermissive_agent_role", relative, f"{role_id} must use the exact closed forbidden action registry")
         if len(role["forbidden_claims"]) != len(REQUIRED_FORBIDDEN_CLAIMS) or set(role["forbidden_claims"]) != REQUIRED_FORBIDDEN_CLAIMS:
             result.block("overpermissive_agent_role", relative, f"{role_id} must use the exact closed forbidden claim registry")
+    return result
+
+
+def _stable_skill_bytes(root: Path, relative: str) -> tuple[bytes, tuple[int, int] | str]:
+    path = _safe_repository_path(root, relative)
+    if not _canonical_repository_spelling(root, relative):
+        raise ValueError("skill path spelling is not canonical for the repository")
+    if not path.is_file():
+        raise ValueError("skill path must identify a regular file")
+    before = path.stat(follow_symlinks=False)
+    with path.open("rb") as handle:
+        opened = os.fstat(handle.fileno())
+        raw = handle.read()
+        after_read = os.fstat(handle.fileno())
+    after = path.stat(follow_symlinks=False)
+    stable = (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+    opened_state = (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns)
+    if stable != opened_state or opened_state != (
+        after_read.st_dev,
+        after_read.st_ino,
+        after_read.st_size,
+        after_read.st_mtime_ns,
+    ) or stable != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns):
+        raise ValueError("skill changed while being read")
+    physical: tuple[int, int] | str = (opened.st_dev, opened.st_ino) if opened.st_ino else str(path.resolve()).casefold()
+    return raw, physical
+
+
+def _parse_role_skill(raw: bytes) -> tuple[dict[str, Any], str]:
+    text = raw.decode("utf-8")
+    if not text.startswith("---\n"):
+        raise ValueError("skill must start with YAML frontmatter at byte zero")
+    parts = text.split("---\n", 2)
+    if len(parts) != 3 or parts[0] != "":
+        raise ValueError("skill frontmatter closing delimiter is missing")
+    metadata = yaml.safe_load(parts[1])
+    if not isinstance(metadata, dict) or not parts[2].strip():
+        raise ValueError("skill requires mapping frontmatter and a non-empty Markdown body")
+    return metadata, parts[2]
+
+
+def validate_agent_role_skills(root: Path, policy_path: str) -> AgentContractResult:
+    """Validate one exact repository-backed SKILL.md for every stable role without mutation."""
+
+    result = AgentContractResult()
+    try:
+        policy_file, policy = load_agent_roles_policy(root, policy_path)
+    except (OSError, UnicodeError, yaml.YAMLError, ValueError) as exc:
+        result.block("invalid_agent_roles_policy", policy_path, str(exc))
+        return result
+    roles = policy.get("roles")
+    if not isinstance(roles, list):
+        result.block("invalid_agent_roles_policy", policy_path, "roles must be a list")
+        return result
+    skill_paths = [role.get("skill_path") for role in roles if isinstance(role, dict)]
+    if len(skill_paths) != len(set(value for value in skill_paths if isinstance(value, str))):
+        result.block("duplicate_agent_skill_path", policy_path, "each stable role must map to one unique skill path")
+
+    policy_result = validate_agent_roles_policy(root, policy_path)
+    result.checked_roles = policy_result.checked_roles
+    if not policy_result.valid:
+        result.block("invalid_agent_roles_policy", policy_file.relative_to(root).as_posix(), "skill validation requires the exact closed role policy")
+        result.blockers.extend(policy_result.blockers)
+        return result
+
+    expected_paths = {role["skill_path"] for role in roles}
+    physical_files: set[tuple[int, int] | str] = set()
+    for role in roles:
+        role_id = role["role_id"]
+        relative = role["skill_path"]
+        try:
+            raw, physical = _stable_skill_bytes(root, relative)
+        except FileNotFoundError:
+            result.block("missing_agent_skill", relative, f"{role_id} requires its exact repository-backed SKILL.md")
+            continue
+        except (OSError, UnicodeError, ValueError) as exc:
+            code = "noncanonical_agent_skill_path" if "spelling" in str(exc) else "unsafe_agent_skill_path"
+            result.block(code, relative, str(exc))
+            continue
+        result.checked_skills += 1
+        if physical in physical_files:
+            result.block("duplicate_agent_skill_path", relative, "multiple role mappings resolve to one physical skill file")
+            continue
+        physical_files.add(physical)
+        try:
+            frontmatter, body = _parse_role_skill(raw)
+        except (UnicodeError, yaml.YAMLError, ValueError) as exc:
+            result.block("malformed_agent_skill_frontmatter", relative, str(exc))
+            continue
+
+        if set(frontmatter) != {"name", "description", "version", "author", "license", "metadata"}:
+            result.block("malformed_agent_skill_frontmatter", relative, "skill frontmatter must use the exact closed top-level fields")
+            continue
+        description = frontmatter.get("description")
+        metadata = frontmatter.get("metadata")
+        if (
+            not isinstance(description, str)
+            or not description.startswith("Use when ")
+            or not 40 <= len(description.strip()) <= 1024
+            or frontmatter.get("version") != "1.0.0"
+            or frontmatter.get("author") != "SpecBound Maintainers"
+            or frontmatter.get("license") != "Apache-2.0"
+            or not isinstance(metadata, dict)
+        ):
+            result.block("malformed_agent_skill_frontmatter", relative, "skill description, version, author, license, and metadata must match the closed role-skill contract")
+            continue
+        hermes_metadata = metadata.get("hermes") if isinstance(metadata, dict) else None
+        if (
+            not isinstance(metadata, dict)
+            or set(metadata) != {"hermes", "specbound"}
+            or not isinstance(hermes_metadata, dict)
+            or set(hermes_metadata) != {"tags", "related_skills"}
+            or hermes_metadata.get("related_skills") != ["specbound-harness"]
+        ):
+            result.block("malformed_agent_skill_frontmatter", relative, "metadata must contain closed hermes tags/related_skills and specbound mappings")
+            continue
+        contract = metadata.get("specbound")
+        if not isinstance(contract, dict) or set(contract) != SKILL_CONTRACT_FIELDS:
+            result.block("malformed_agent_skill_frontmatter", relative, "metadata.specbound must use the exact closed contract fields")
+            continue
+        if (
+            frontmatter.get("name") != role_id
+            or contract.get("schema_version") != 1
+            or contract.get("role_id") != role_id
+            or contract.get("policy_path") != policy_path
+            or contract.get("skill_path") != relative
+        ):
+            result.block("misaligned_agent_skill_identity", relative, f"skill identity must bind exact policy role {role_id}")
+        if contract.get("authority_type") != "none" or contract.get("self_review") is not False or contract.get("self_approval") is not False:
+            result.block("invalid_agent_skill_authority", relative, "role skills are non-authorizing and forbid self-review and self-approval")
+        if any(contract.get(field_name) != role[field_name] for field_name in SKILL_POLICY_FIELDS):
+            result.block("misaligned_agent_skill_contract", relative, f"{role_id} skill capabilities must exactly match the machine policy")
+        missing_headings = [heading for heading in REQUIRED_SKILL_HEADINGS if f"\n{heading}\n" not in f"\n{body}"]
+        missing_boundaries = [boundary for boundary in REQUIRED_SKILL_BOUNDARIES if boundary not in body]
+        if missing_headings or missing_boundaries:
+            result.block(
+                "invalid_agent_skill_body",
+                relative,
+                f"missing headings={missing_headings}, missing non-authority boundaries={len(missing_boundaries)}",
+            )
+        if OVERBROAD_SKILL_CLAIM_RE.search(body):
+            result.block("overbroad_agent_skill_claim", relative, "skill body contains an explicit over-authorizing normative claim")
+
+    skills_root = root / "skills"
+    if skills_root.is_dir():
+        for candidate in sorted(skills_root.glob("*/SKILL.md")):
+            relative = candidate.relative_to(root).as_posix()
+            if relative in expected_paths:
+                continue
+            try:
+                raw, _ = _stable_skill_bytes(root, relative)
+                frontmatter, _ = _parse_role_skill(raw)
+            except (OSError, UnicodeError, yaml.YAMLError, ValueError):
+                continue
+            metadata = frontmatter.get("metadata")
+            if isinstance(metadata, dict) and isinstance(metadata.get("specbound"), dict):
+                result.block("orphan_agent_skill", relative, "SpecBound role skill is not mapped by the exact stable role policy")
     return result
 
 
@@ -2100,6 +2293,16 @@ def configured_agent_policy_path(root: Path) -> str:
     if not _safe_relative(policy_path):
         raise ValueError("policy.agent_contract.roles_path must be a safe repository-relative POSIX path")
     return policy_path
+
+
+def validate_configured_agent_role_skills(root: Path) -> AgentContractResult:
+    try:
+        policy_path = configured_agent_policy_path(root)
+    except ValueError as exc:
+        result = AgentContractResult()
+        result.block("agent_contract_disabled", "specbound.yaml", str(exc))
+        return result
+    return validate_agent_role_skills(root, policy_path)
 
 
 def validate_configured_role_request(

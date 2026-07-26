@@ -6,7 +6,11 @@ import argparse
 import json
 from pathlib import Path
 
-from .agent_contract import validate_configured_agent_result, validate_configured_role_request
+from .agent_contract import (
+    validate_configured_agent_result,
+    validate_configured_agent_role_skills,
+    validate_configured_role_request,
+)
 from .validation import (
     ConfirmationError,
     REQUIRED_ROOTS,
@@ -102,6 +106,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     agent = commands.add_parser("agent", help="read-only validation of provider-neutral agent contracts")
     agent_commands = agent.add_subparsers(dest="agent_command", required=True)
+    agent_commands.add_parser(
+        "validate-skills",
+        help="validate exact repository-backed role skills against the active machine policy",
+    )
     check_role_request = agent_commands.add_parser(
         "check-role-request",
         help="fail closed before execution when a role request exceeds the active policy",
@@ -185,6 +193,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "validate":
         result = validate(root, claim=args.claim, requirement=args.requirement)
+        _emit(result.payload())
+        return 0 if result.valid else 2
+
+    if args.command == "agent" and args.agent_command == "validate-skills":
+        result = validate_configured_agent_role_skills(root)
         _emit(result.payload())
         return 0 if result.valid else 2
 

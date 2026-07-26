@@ -80,7 +80,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "role_id", "task_kind", "task_risk_floor", "evidence_requirements_by_risk", "required_inputs", "allowed_path_patterns",
+        "role_id", "task_kind", "skill_path", "task_risk_floor", "evidence_requirements_by_risk", "required_inputs", "allowed_path_patterns",
         "allowed_tool_categories", "mutation_classes", "output_kinds",
         "lifecycle_eligibility", "result_references", "reference_edges", "evidence_slots",
         "permitted_next_actions", "forbidden_actions", "forbidden_claims"
@@ -88,6 +88,7 @@
       "properties": {
         "role_id": {"enum": ["discovery-author", "requirement-author", "micro-spec-author", "independent-reviewer", "implementation", "iteration-qc", "delivery-qc"]},
         "task_kind": {"enum": ["discovery-author", "requirement-author", "micro-spec-author", "independent-reviewer", "implementation", "iteration-qc", "delivery-qc"]},
+        "skill_path": {"type": "string", "pattern": "^skills/(discovery-author|requirement-author|micro-spec-author|independent-reviewer|implementation|iteration-qc|delivery-qc)/SKILL\\.md$"},
         "task_risk_floor": {"enum": ["low", "medium", "high"]},
         "evidence_requirements_by_risk": {
           "type": "object",
