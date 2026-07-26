@@ -629,7 +629,7 @@ def valid_result(root: Path, role_id: str) -> dict:
         command_slots = {"test-results", "focused-verification", "negative-tests", "regression-evidence", "supported-ci"}
         commands = []
         if slot_name in command_slots:
-            commands = [{"command": "fixture-check", "result": "passed", "exit_code": 0}]
+            commands = [{"command": f"fixture-{slot_name}", "result": "passed", "exit_code": 0}]
         elif slot_name == "rollback-inventory":
             commands = [{"command": "fixture-rollback-check", "result": "passed", "exit_code": 0}]
         slots.append(
@@ -2686,6 +2686,109 @@ def test_adoption_template_remains_preflight_valid(tmp_path: Path) -> None:
     completed = run_cli(root, "preflight")
 
     assert completed.returncode == 0, completed.stdout
+
+
+def test_micro_spec_risk_inherits_exact_parent_without_local_risk(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    target = write_state_target(root, "implementation", "approved_for_implementation")
+    target_path = root / target["path"]
+    target_path.write_text(
+        target_path.read_text(encoding="utf-8").replace("risk: high\n", ""),
+        encoding="utf-8",
+        newline="\n",
+    )
+    outcome = AgentContractResult()
+
+    derived = _canonical_artifact_risk(root, target_path, outcome)
+
+    assert derived == "high"
+    assert outcome.valid is True, outcome.blockers
+
+
+@pytest.mark.parametrize(
+    "slot_name",
+    ["test-results", "negative-tests", "regression-evidence", "supported-ci"],
+)
+def test_high_risk_evidence_rejects_nominal_unrelated_command(
+    tmp_path: Path,
+    slot_name: str,
+) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_result(root, "implementation")
+    reference_result_files = bind_explicit_reference_results(root, payload)
+    evidence = next(item for item in payload["evidence"] if item["slot"] == slot_name)
+    evidence["commands"] = [{"command": "python --version", "result": "passed", "exit_code": 0}]
+
+    result = validate_agent_result(
+        root,
+        write_json(root, "result.json", payload),
+        POLICY_REL,
+        reference_result_files=reference_result_files,
+    )
+
+    assert result.valid is False
+    assert "invalid_evidence_command_semantics" in {blocker["code"] for blocker in result.blockers}
+    assert result.payload()["permitted_next_action"] == "none"
+
+
+def test_reviewer_result_rejects_approved_requirement_without_approval_record(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_result(root, "independent-reviewer")
+    target_path = root / payload["target"]["path"]
+    target_path.write_text(
+        target_path.read_text(encoding="utf-8").replace("status: in_review", "status: approved"),
+        encoding="utf-8",
+        newline="\n",
+    )
+    payload["target"]["sha256"] = sha256(target_path.read_bytes()).hexdigest()
+    reference_result_files = bind_explicit_reference_results(root, payload)
+    approval = root / f".specbound/approvals/{Path(payload['target']['path']).stem}.approval.json"
+    assert not approval.exists()
+
+    result = validate_agent_result(
+        root,
+        write_json(root, "result.json", payload),
+        POLICY_REL,
+        reference_result_files=reference_result_files,
+    )
+
+    assert result.valid is False
+    assert "missing_approved_record" in {blocker["code"] for blocker in result.blockers}
+    assert result.payload()["permitted_next_action"] == "none"
+
+
+def test_role_request_rejects_placeholder_reason_in_retained_review_decision(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, "independent-reviewer")
+    stem = Path(payload["target"]["path"]).stem
+    write_json(
+        root,
+        f".specbound/review-decisions/{stem}.review-decision.json",
+        {
+            "schema_version": 1,
+            "requirement_path": payload["target"]["path"],
+            "requirement_id": payload["target"]["id"],
+            "revision": payload["target"]["revision"],
+            "reviewed_sha256": payload["target"]["sha256"],
+            "risk": "high",
+            "authority": "fixture-maintainer",
+            "decided_at": "2026-01-01T00:00:00Z",
+            "decision": "approval_ready",
+            "reason": "TODO",
+        },
+    )
+    reference_result_files = bind_explicit_reference_results(root, payload)
+
+    result = validate_role_request(
+        root,
+        write_json(root, "request.json", payload),
+        POLICY_REL,
+        reference_result_files=reference_result_files,
+    )
+
+    assert result.valid is False
+    assert "conflicting_lifecycle_evidence" in {blocker["code"] for blocker in result.blockers}
+    assert result.payload()["permitted_next_action"] == "none"
 
 
 def test_agent_contract_fixture_bytes_are_cross_platform_stable_lf() -> None:

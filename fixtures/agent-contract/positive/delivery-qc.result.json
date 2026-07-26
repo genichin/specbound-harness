@@ -98,7 +98,7 @@
       ],
       "commands": [
         {
-          "command": "fixture-check",
+          "command": "fixture-regression-evidence",
           "result": "passed",
           "exit_code": 0
         }

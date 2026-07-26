@@ -90,7 +90,7 @@
       ],
       "commands": [
         {
-          "command": "fixture-check",
+          "command": "fixture-test-results",
           "result": "passed",
           "exit_code": 0
         }
