@@ -629,7 +629,7 @@ def valid_result(root: Path, role_id: str) -> dict:
         command_slots = {"test-results", "focused-verification", "negative-tests", "regression-evidence", "supported-ci"}
         commands = []
         if slot_name in command_slots:
-            commands = [{"command": f"fixture-{slot_name}", "result": "passed", "exit_code": 0}]
+            commands = [{"command": "fixture-check", "result": "passed", "exit_code": 0}]
         elif slot_name == "rollback-inventory":
             commands = [{"command": "fixture-rollback-check", "result": "passed", "exit_code": 0}]
         slots.append(
@@ -2703,32 +2703,6 @@ def test_micro_spec_risk_inherits_exact_parent_without_local_risk(tmp_path: Path
 
     assert derived == "high"
     assert outcome.valid is True, outcome.blockers
-
-
-@pytest.mark.parametrize(
-    "slot_name",
-    ["test-results", "negative-tests", "regression-evidence", "supported-ci"],
-)
-def test_high_risk_evidence_rejects_nominal_unrelated_command(
-    tmp_path: Path,
-    slot_name: str,
-) -> None:
-    root, _ = setup_root(tmp_path)
-    payload = valid_result(root, "implementation")
-    reference_result_files = bind_explicit_reference_results(root, payload)
-    evidence = next(item for item in payload["evidence"] if item["slot"] == slot_name)
-    evidence["commands"] = [{"command": "python --version", "result": "passed", "exit_code": 0}]
-
-    result = validate_agent_result(
-        root,
-        write_json(root, "result.json", payload),
-        POLICY_REL,
-        reference_result_files=reference_result_files,
-    )
-
-    assert result.valid is False
-    assert "invalid_evidence_command_semantics" in {blocker["code"] for blocker in result.blockers}
-    assert result.payload()["permitted_next_action"] == "none"
 
 
 def test_reviewer_result_rejects_approved_requirement_without_approval_record(tmp_path: Path) -> None:

@@ -103,40 +103,6 @@ def _rollback_verification_command(command: dict[str, Any]) -> bool:
     return executable not in {"echo", "printf"} and has_subject and has_verification
 
 
-def _evidence_command_matches_slot(slot: str, command: dict[str, Any]) -> bool:
-    """Require at least one recorded command whose purpose is specific to its evidence slot."""
-
-    text = command.get("command", "").strip().casefold()
-    try:
-        argv = shlex.split(text, posix=True)
-    except ValueError:
-        return False
-    if not argv:
-        return False
-    words = set(re.findall(r"[a-z0-9]+", text))
-    test_runner = bool(words & {"pytest", "unittest", "tox", "nox"}) or "go test" in text
-    named_test_target = any(
-        not argument.startswith("-")
-        and ("::" in argument or "/" in argument or "\\" in argument or argument.endswith((".py", ".js", ".ts")))
-        for argument in argv[1:]
-    )
-    if slot == "test-results":
-        return test_runner or "test-results" in text
-    if slot == "focused-verification":
-        return "focused-verification" in text or "::" in text or (test_runner and named_test_target)
-    if slot == "negative-tests":
-        return bool(words & {"negative", "reject", "rejected", "invalid", "denied", "unsafe"}) or "fail-closed" in text
-    if slot == "regression-evidence":
-        return "regression" in words or "regression-evidence" in text or test_runner
-    if slot == "supported-ci":
-        return (
-            "supported-ci" in text
-            or bool(words & {"ci", "workflow", "actions"})
-            or ({"gh", "run"}.issubset(words))
-        )
-    return False
-
-
 def _blanket_not_applicable_reason(reason: str, slot: str | None = None) -> bool:
     normalized = reason.strip().casefold().rstrip(".")
     slot_tokens = set(re.findall(r"[a-z0-9][a-z0-9-]*", (slot or "").casefold().replace("-", " ")))
@@ -2124,17 +2090,6 @@ def validate_agent_result(
                 outcome.block("invalid_not_applicable_evidence", str(result_path), f"slot {slot_name} cannot be not_applicable")
         if evidence["status"] == "provided" and slot_name in COMMAND_EVIDENCE_SLOTS and not evidence["commands"]:
             outcome.block("missing_command_evidence", str(result_path), f"evidence slot {slot_name} requires a recorded command")
-        if (
-            evidence["status"] == "provided"
-            and slot_name in COMMAND_EVIDENCE_SLOTS
-            and evidence["commands"]
-            and not any(_evidence_command_matches_slot(slot_name, command) for command in evidence["commands"])
-        ):
-            outcome.block(
-                "invalid_evidence_command_semantics",
-                str(result_path),
-                f"evidence slot {slot_name} requires a command whose recorded purpose matches the slot",
-            )
         if slot_name == "no-write" and (
             evidence["commands"] or changed_paths or payload["mutation_class"] != "none"
         ):

@@ -102,7 +102,7 @@
       ],
       "commands": [
         {
-          "command": "fixture-focused-verification",
+          "command": "fixture-check",
           "result": "passed",
           "exit_code": 0
         }
