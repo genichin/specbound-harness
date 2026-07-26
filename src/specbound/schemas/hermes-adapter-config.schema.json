@@ -43,19 +43,11 @@
         "filesystem-metadata"
       ],
       "properties": {
-        "repository-read": {"$ref": "#/$defs/tools"},
-        "candidate-write": {"$ref": "#/$defs/tools"},
-        "test-execute": {"$ref": "#/$defs/tools"},
-        "filesystem-metadata": {"$ref": "#/$defs/tools"}
+        "repository-read": {"const": ["read_file", "search_files"]},
+        "candidate-write": {"const": ["patch", "write_file"]},
+        "test-execute": {"const": ["terminal"]},
+        "filesystem-metadata": {"const": ["search_files"]}
       }
-    }
-  },
-  "$defs": {
-    "tools": {
-      "type": "array",
-      "minItems": 1,
-      "uniqueItems": true,
-      "items": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"}
     }
   }
 }

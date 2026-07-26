@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -35,9 +36,12 @@ REQUIRED_DISPATCHER_CAPABILITIES = frozenset(
         "structured_completion",
     }
 )
-TOOL_CATEGORIES = frozenset(
-    {"repository-read", "candidate-write", "test-execute", "filesystem-metadata"}
-)
+TOOL_CATEGORY_MAP = {
+    "repository-read": ["read_file", "search_files"],
+    "candidate-write": ["patch", "write_file"],
+    "test-execute": ["terminal"],
+    "filesystem-metadata": ["search_files"],
+}
 COMPLETION_RESULT_FIELDS = frozenset(
     {
         "result_id",
@@ -68,6 +72,13 @@ class HermesDispatcher(Protocol):
     capabilities: dict[str, bool]
 
     def dispatch(self, spec: dict[str, object]) -> dict[str, object]: ...
+
+
+@dataclass(frozen=True)
+class _InputSnapshot:
+    data: bytes
+    sha256: str
+    identity: tuple[int, int, int, int]
 
 
 @dataclass
@@ -129,6 +140,62 @@ def _read_object(path: Path, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"{label} must contain a JSON object")
     return value
+
+
+def _read_snapshot_object(snapshot: _InputSnapshot, label: str) -> dict[str, Any]:
+    value = json.loads(snapshot.data.decode("utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must contain a JSON object")
+    return value
+
+
+def _stat_identity(value: os.stat_result) -> tuple[int, int, int, int]:
+    return (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns)
+
+
+def _capture_input(path: Path) -> _InputSnapshot:
+    with path.open("rb") as handle:
+        before = os.fstat(handle.fileno())
+        data = handle.read()
+        after = os.fstat(handle.fileno())
+    identity = _stat_identity(after)
+    if _stat_identity(before) != identity or _stat_identity(path.stat()) != identity:
+        raise ValueError("input changed while it was being captured")
+    return _InputSnapshot(
+        data=data,
+        sha256=hashlib.sha256(data).hexdigest(),
+        identity=identity,
+    )
+
+
+def _changed_input(
+    paths: dict[str, Path], snapshots: dict[str, _InputSnapshot]
+) -> str | None:
+    for relative, path in paths.items():
+        try:
+            current = _capture_input(path)
+        except (OSError, ValueError):
+            return relative
+        expected = snapshots[relative]
+        if current.identity != expected.identity or current.sha256 != expected.sha256:
+            return relative
+    return None
+
+
+def _block_changed_input(
+    outcome: HermesAdapterOutcome,
+    paths: dict[str, Path],
+    snapshots: dict[str, _InputSnapshot],
+) -> bool:
+    changed = _changed_input(paths, snapshots)
+    if changed is None:
+        return False
+    outcome.block(
+        "input_binding_changed",
+        changed,
+        "request or direct reference changed after immutable input capture",
+    )
+    return True
 
 
 def _schema(root: Path, name: str) -> dict[str, Any]:
@@ -225,10 +292,15 @@ def execute_hermes_invocation(
             raise ValueError("; ".join(errors))
         config_path = _safe_repository_path(root, invocation["config_file"])
         request_path = _safe_repository_path(root, invocation["request_file"])
-        reference_files = [
-            _safe_repository_path(root, value).relative_to(root).as_posix()
+        reference_paths = {
+            value: _safe_repository_path(root, value)
             for value in invocation["reference_result_files"]
-        ]
+        }
+        reference_files = list(reference_paths)
+        input_paths = {invocation["request_file"]: request_path, **reference_paths}
+        input_snapshots = {
+            relative: _capture_input(path) for relative, path in input_paths.items()
+        }
         config = _read_object(config_path, "Hermes adapter config")
         errors = _schema_errors(root, "hermes-adapter-config.schema.json", config)
         if errors:
@@ -258,8 +330,8 @@ def execute_hermes_invocation(
         if destination.exists():
             outcome.block("result_destination_exists", destination_relative, "result destination is no-overwrite")
             return outcome
-    if set(config["tool_category_map"]) != TOOL_CATEGORIES:
-        outcome.block("invalid_tool_category_map", invocation["config_file"], "tool category map must be exact")
+    if config["tool_category_map"] != TOOL_CATEGORY_MAP:
+        outcome.block("invalid_tool_category_map", invocation["config_file"], "tool category mapping must match the closed runtime registry")
         return outcome
     if any(term in config["model_alias"].casefold() for term in RUNTIME_TERMS):
         outcome.block("runtime_specific_model_alias", invocation["config_file"], "model_alias must remain provider-neutral")
@@ -270,12 +342,16 @@ def execute_hermes_invocation(
         _extend_core_blockers(outcome, skill_result.payload())
         return outcome
     request_result = validate_configured_role_request(root, request_path, reference_files)
+    if _block_changed_input(outcome, input_paths, input_snapshots):
+        return outcome
     if not request_result.valid:
         _extend_core_blockers(outcome, request_result.payload())
         return outcome
 
     try:
-        request = _read_object(request_path, "role request")
+        request = _read_snapshot_object(
+            input_snapshots[invocation["request_file"]], "role request"
+        )
         _, policy = load_agent_roles_policy(root, configured_agent_policy_path(root))
         role = _role(policy, request["role_id"])
         if role is None:
@@ -316,6 +392,9 @@ def execute_hermes_invocation(
         outcome.block("unenforced_dispatcher_capability", invocation["config_file"], "dispatcher cannot attest every required enforcement capability")
         return outcome
 
+    if _block_changed_input(outcome, input_paths, input_snapshots):
+        return outcome
+
     spec: dict[str, object] = {
         "schema_version": 1,
         "role_id": role["role_id"],
@@ -327,7 +406,12 @@ def execute_hermes_invocation(
         "planned_execution_id": request["planned_execution_id"],
         "planned_context_id": request["planned_context_id"],
         "target": request["target"],
+        "request_file": invocation["request_file"],
+        "request_sha256": input_snapshots[invocation["request_file"]].sha256,
         "reference_result_files": reference_files,
+        "reference_result_sha256": {
+            path: input_snapshots[path].sha256 for path in reference_files
+        },
         "allowed_tools": runtime_tools,
         "allowed_paths": request["requested_capabilities"]["paths"],
         "mutation_classes": request["requested_capabilities"]["mutation_classes"],
@@ -339,8 +423,14 @@ def execute_hermes_invocation(
         outcome.call_count = 1
         completion = dispatcher.dispatch(spec)
         outcome.dispatched = True
+    except asyncio.CancelledError as exc:
+        outcome.block("hermes_dispatch_cancelled", invocation["request_file"], str(exc))
+        return outcome
     except Exception as exc:  # dispatcher failures are untrusted runtime outcomes
         outcome.block("hermes_dispatch_failed", invocation["request_file"], str(exc))
+        return outcome
+
+    if _block_changed_input(outcome, input_paths, input_snapshots):
         return outcome
 
     if not isinstance(completion, dict) or set(completion) != COMPLETION_FIELDS or completion.get("schema_version") != 1:
@@ -401,10 +491,16 @@ def execute_hermes_invocation(
             candidate.write_text(json.dumps(normalized, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             validation = validate_configured_agent_result(root, candidate, reference_files)
     except (OSError, UnicodeError, ValueError) as exc:
+        if _block_changed_input(outcome, input_paths, input_snapshots):
+            return outcome
         outcome.block("hermes_result_validation_failed", invocation["request_file"], str(exc))
+        return outcome
+    if _block_changed_input(outcome, input_paths, input_snapshots):
         return outcome
     if not validation.valid:
         _extend_core_blockers(outcome, validation.payload())
+        return outcome
+    if _block_changed_input(outcome, input_paths, input_snapshots):
         return outcome
     if destination is not None:
         try:

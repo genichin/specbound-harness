@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import shutil
@@ -7,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+import specbound.hermes_adapter as hermes_adapter
 from specbound.hermes_adapter import execute_hermes_invocation
 
 
@@ -151,6 +153,13 @@ def test_one_shot_adapter_dispatches_once_and_returns_validated_result(tmp_path:
         (root / "skills/implementation/SKILL.md").read_bytes()
     ).hexdigest()
     assert spec["model_alias"] == "worker-model"
+    assert spec["request_sha256"] == hashlib.sha256(
+        (root / "positive/implementation.request.json").read_bytes()
+    ).hexdigest()
+    assert spec["reference_result_sha256"] == {
+        path: hashlib.sha256((root / path).read_bytes()).hexdigest()
+        for path in REFERENCE_FILES["implementation"]
+    }
 
 
 @pytest.mark.parametrize("capability_name", REQUIRED_CAPABILITIES)
@@ -175,6 +184,37 @@ def test_unprovable_dispatcher_capability_is_zero_call(
     assert {item["code"] for item in outcome.blockers} == {
         "unenforced_dispatcher_capability"
     }
+    assert dispatcher.calls == []
+
+
+@pytest.mark.parametrize(
+    "category,tool",
+    [
+        ("repository-read", "shell"),
+        ("repository-read", "web_search"),
+        ("repository-read", "read_secret"),
+        ("repository-read", "approve_release"),
+        ("repository-read", "*"),
+        ("repository-read", "unknown_tool"),
+        ("repository-read", "write_file"),
+    ],
+)
+def test_forbidden_unknown_or_misclassified_tool_is_zero_call(
+    tmp_path: Path, category: str, tool: str
+) -> None:
+    root, invocation_path = _configured_root(tmp_path)
+    config_path = root / "hermes-adapter/config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["tool_category_map"][category] = [tool]
+    _write_json(config_path, config)
+    dispatcher = EnforcingDispatcher(root)
+
+    outcome = execute_hermes_invocation(root, invocation_path, dispatcher)
+
+    assert outcome.valid is False
+    assert outcome.call_count == 0
+    assert outcome.result is None
+    assert outcome.permitted_next_action == "none"
     assert dispatcher.calls == []
 
 
@@ -220,6 +260,36 @@ def test_dispatcher_exception_is_not_retried(tmp_path: Path) -> None:
     assert outcome.permitted_next_action == "none"
     assert {item["code"] for item in outcome.blockers} == {"hermes_dispatch_failed"}
     assert len(dispatcher.calls) == 1
+
+
+def test_dispatch_cancellation_is_structured_and_leaves_no_partial_result(
+    tmp_path: Path,
+) -> None:
+    root, invocation_path = _configured_root(tmp_path)
+    destination = "candidates/agent-results/cancelled.json"
+    _set_invocation_role(
+        root, invocation_path, "implementation", result_destination=destination
+    )
+
+    class CancelledDispatcher(EnforcingDispatcher):
+        def dispatch(self, spec: dict[str, object]) -> dict[str, object]:
+            self.calls.append(spec)
+            raise asyncio.CancelledError("bounded invocation cancelled")
+
+    dispatcher = CancelledDispatcher(root)
+    outcome = execute_hermes_invocation(root, invocation_path, dispatcher)
+
+    assert outcome.valid is False
+    assert outcome.dispatched is False
+    assert outcome.call_count == 1
+    assert outcome.result is None
+    assert outcome.permitted_next_action == "none"
+    assert {item["code"] for item in outcome.blockers} == {
+        "hermes_dispatch_cancelled"
+    }
+    assert len(dispatcher.calls) == 1
+    assert not (root / destination).exists()
+    assert not (root / "candidates").exists()
 
 
 def test_runtime_model_alias_must_match_planned_alias(tmp_path: Path) -> None:
@@ -278,6 +348,115 @@ def test_core_ineligible_request_blocks_before_dispatch(
     assert outcome.result is None
     assert outcome.permitted_next_action == "none"
     assert dispatcher.calls == []
+
+
+def test_post_preflight_request_swap_is_zero_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, invocation_path = _configured_root(tmp_path)
+    _set_invocation_role(root, invocation_path, "discovery-author")
+    request_path = root / "positive/discovery-author.request.json"
+    replacement = (root / "positive/micro-spec-author.request.json").read_bytes()
+    original = hermes_adapter.validate_configured_role_request
+
+    def validate_then_swap(*args: object, **kwargs: object) -> object:
+        result = original(*args, **kwargs)
+        request_path.write_bytes(replacement)
+        return result
+
+    monkeypatch.setattr(
+        hermes_adapter, "validate_configured_role_request", validate_then_swap
+    )
+    dispatcher = EnforcingDispatcher(root)
+
+    outcome = execute_hermes_invocation(root, invocation_path, dispatcher)
+
+    assert outcome.valid is False
+    assert outcome.call_count == 0
+    assert outcome.result is None
+    assert outcome.permitted_next_action == "none"
+    assert dispatcher.calls == []
+    assert {item["code"] for item in outcome.blockers} == {"input_binding_changed"}
+
+
+def test_post_preflight_reference_swap_is_zero_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, invocation_path = _configured_root(tmp_path)
+    reference_path = root / REFERENCE_FILES["implementation"][0]
+    original = hermes_adapter.validate_configured_role_request
+
+    def validate_then_swap(*args: object, **kwargs: object) -> object:
+        result = original(*args, **kwargs)
+        reference_path.write_bytes(reference_path.read_bytes() + b"\n")
+        return result
+
+    monkeypatch.setattr(
+        hermes_adapter, "validate_configured_role_request", validate_then_swap
+    )
+    dispatcher = EnforcingDispatcher(root)
+
+    outcome = execute_hermes_invocation(root, invocation_path, dispatcher)
+
+    assert outcome.valid is False
+    assert outcome.call_count == 0
+    assert outcome.result is None
+    assert outcome.permitted_next_action == "none"
+    assert dispatcher.calls == []
+    assert {item["code"] for item in outcome.blockers} == {"input_binding_changed"}
+
+
+def test_reference_swap_during_dispatch_blocks_result_and_publication(tmp_path: Path) -> None:
+    root, invocation_path = _configured_root(tmp_path)
+    destination = "candidates/agent-results/swapped-reference.json"
+    _set_invocation_role(
+        root, invocation_path, "implementation", result_destination=destination
+    )
+    reference_path = root / REFERENCE_FILES["implementation"][0]
+
+    class ReferenceSwappingDispatcher(EnforcingDispatcher):
+        def dispatch(self, spec: dict[str, object]) -> dict[str, object]:
+            completion = super().dispatch(spec)
+            reference_path.write_bytes(reference_path.read_bytes() + b"\n")
+            return completion
+
+    dispatcher = ReferenceSwappingDispatcher(root)
+    outcome = execute_hermes_invocation(root, invocation_path, dispatcher)
+
+    assert outcome.valid is False
+    assert outcome.call_count == 1
+    assert outcome.result is None
+    assert outcome.permitted_next_action == "none"
+    assert len(dispatcher.calls) == 1
+    assert {item["code"] for item in outcome.blockers} == {"input_binding_changed"}
+    assert not (root / destination).exists()
+    assert not (root / "candidates").exists()
+
+
+def test_reference_swap_during_core_result_validation_is_blocked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, invocation_path = _configured_root(tmp_path)
+    reference_path = root / REFERENCE_FILES["implementation"][0]
+    original = hermes_adapter.validate_configured_agent_result
+
+    def validate_then_swap(*args: object, **kwargs: object) -> object:
+        result = original(*args, **kwargs)
+        reference_path.write_bytes(reference_path.read_bytes() + b"\n")
+        return result
+
+    monkeypatch.setattr(
+        hermes_adapter, "validate_configured_agent_result", validate_then_swap
+    )
+    dispatcher = EnforcingDispatcher(root)
+    outcome = execute_hermes_invocation(root, invocation_path, dispatcher)
+
+    assert outcome.valid is False
+    assert outcome.call_count == 1
+    assert outcome.result is None
+    assert outcome.permitted_next_action == "none"
+    assert len(dispatcher.calls) == 1
+    assert {item["code"] for item in outcome.blockers} == {"input_binding_changed"}
 
 
 @pytest.mark.parametrize(
