@@ -17,6 +17,12 @@ This initial slice supplies:
 
 The CLI and CI are enforcement surfaces. The Hermes skill explains the workflow but does not replace deterministic validation.
 
+## Agent-contract boundary
+
+The opt-in, provider-neutral agent contract defines exactly seven roles. A configured Hermes adapter maps each invocation to one configured model alias, the role's exact skill bytes, and a fresh isolated one-shot context; the portable request/result schemas contain no Hermes, provider, profile, session, or workdir fields. When the contract is disabled, the manual lifecycle workflow remains valid without agent policy or role-skill artifacts. Validation is read-only and non-authorizing: neither a valid envelope nor a successful dispatch may issue confirmation, approval, review-decision, verified, Delivery, Merge, or Release authority. Enabling repository validation is not a live Hermes rollout; runtime rollout and credentials remain a separate explicit operator action.
+
+The portable public validation surface is `specbound agent validate-skills`, `specbound agent check-role-request`, and `specbound agent validate-result`. These commands validate repository bytes and never dispatch. The separately configured Hermes adapter is deliberately one-shot: no role chain, scheduler, implicit retry, or next-role selection is supported. Fake/stub dispatchers are test evidence only and are not a live Hermes rollout or production execution claim.
+
 ## Lifecycle governance
 
 The repository's human operating model for issue intake through release is defined in [Issue SDLC](docs/governance/issue-sdlc.md). It uses SPEC-driven micro-iterations: each bounded Micro-SPEC maps to approved acceptance criteria, is focusedly verified, and advances only with iteration QC evidence.

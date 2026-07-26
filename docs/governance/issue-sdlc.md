@@ -6,6 +6,12 @@ This document defines the human operating model for an issue from intake through
 
 This document is the single human-readable authority for lifecycle semantics in this repository. It does **not** change the current bootstrap validator. `specbound` CLI and CI remain the enforcement authority for the REQ and approval bindings they currently implement. A future schema or validator may implement a rule in this document only through an explicit, reviewed change.
 
+## Agent-contract boundary
+
+The opt-in, provider-neutral agent contract defines exactly seven roles. A configured Hermes adapter maps each invocation to one configured model alias, the role's exact skill bytes, and a fresh isolated one-shot context; the portable request/result schemas contain no Hermes, provider, profile, session, or workdir fields. When the contract is disabled, the manual lifecycle workflow remains valid without agent policy or role-skill artifacts. Validation is read-only and non-authorizing: neither a valid envelope nor a successful dispatch may issue confirmation, approval, review-decision, verified, Delivery, Merge, or Release authority. Enabling repository validation is not a live Hermes rollout; runtime rollout and credentials remain a separate explicit operator action.
+
+Agent evidence preserves the same lifecycle separations as the human workflow. A Producer result is input evidence for a fresh-context Reviewer; neither result performs the authority decision. Implementation may request IQC, but only a separate iteration-QC result can provide verification evidence, and neither authorizes the next slice. DQC aggregates exact verified iteration evidence, while Delivery remains a distinct accountable decision; DQC never issues Delivery, Merge, or Release authority.
+
 ## Ownership boundaries
 
 | Concern | Canonical owner | SpecBound role |
