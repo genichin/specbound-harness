@@ -7,6 +7,12 @@
 - The canonical REQ root for the implemented bootstrap slice is `.specbound/requirements/`; `docs/requirements.md` is a generated user-facing projection, not lifecycle state.
 - A skill provides workflow guidance only. `specbound` CLI exit status and CI are enforcement authority.
 
+## Agent-contract boundary
+
+The opt-in, provider-neutral agent contract defines exactly seven roles. A configured Hermes adapter maps each invocation to one configured model alias, the role's exact skill bytes, and a fresh isolated one-shot context; the portable request/result schemas contain no Hermes, provider, profile, session, or workdir fields. When the contract is disabled, the manual lifecycle workflow remains valid without agent policy or role-skill artifacts. Validation is read-only and non-authorizing: neither a valid envelope nor a successful dispatch may issue confirmation, approval, review-decision, verified, Delivery, Merge, or Release authority. Enabling repository validation is not a live Hermes rollout; runtime rollout and credentials remain a separate explicit operator action.
+
+For agent-contract changes, first prove source provenance from the checkout: `python -c "from pathlib import Path; import specbound.agent_contract as m; source=Path(m.__file__).resolve(); expected=Path('src/specbound').resolve(); print(source); assert source.is_relative_to(expected)"`. Then run `tests/test_agent_integration.py` and `tests/test_hermes_adapter.py` in the focused source gate. The installed-wheel gate must clear `PYTHONPATH`, execute outside the checkout, print `module.__file__`, require `site-packages` provenance, compare all four packaged schemas byte-for-byte, and run the same integration/adapter tests. Push only after these local gates pass; then require GitHub Actions success for the exact `head_sha` on both Python 3.11 and 3.12 before Bootstrap formal QC. Green tests remain evidence, not authority.
+
 ## Safety invariants
 
 - Treat all artifact paths as safe repository-relative paths. Reject absolute paths, `..` traversal, and paths outside allowlisted roots.

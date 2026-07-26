@@ -104,15 +104,23 @@ def build_parser() -> argparse.ArgumentParser:
     micro_spec_review.add_argument("--decision", required=True, choices=("approved_for_implementation", "rework", "blocked"))
     micro_spec_review.add_argument("--reason", required=True, help="substantive review rationale")
 
-    agent = commands.add_parser("agent", help="read-only validation of provider-neutral agent contracts")
+    agent = commands.add_parser(
+        "agent",
+        help="read-only validation of provider-neutral agent contracts",
+        description=(
+            "Read-only, provider-neutral, non-authorizing contract validation. "
+            "This command does not dispatch agents; runtime execution uses the "
+            "separately configured Hermes adapter."
+        ),
+    )
     agent_commands = agent.add_subparsers(dest="agent_command", required=True)
     agent_commands.add_parser(
         "validate-skills",
-        help="validate exact repository-backed role skills against the active machine policy",
+        help="read-only validation of exact role skills against the active machine policy",
     )
     check_role_request = agent_commands.add_parser(
         "check-role-request",
-        help="fail closed before execution when a role request exceeds the active policy",
+        help="read-only fail-closed validation before a role request is dispatched",
     )
     check_role_request.add_argument("--request-file", type=Path, required=True)
     check_role_request.add_argument(
@@ -123,7 +131,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     validate_result = agent_commands.add_parser(
         "validate-result",
-        help="validate a closed, digest-bound agent result without mutation",
+        help="read-only validation of a closed, digest-bound agent result",
     )
     validate_result.add_argument("--result-file", type=Path, required=True)
     validate_result.add_argument(

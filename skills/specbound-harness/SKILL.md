@@ -16,6 +16,10 @@ metadata:
 
 SpecBound is a provider-neutral, repository-local control-plane harness. It treats lifecycle claims as separately stored, content-addressed bindings rather than Markdown status labels. The CLI and CI own deterministic enforcement; `confirm-discovery` governs the explicit human authorization boundary before the CLI creates a Discovery record. Repository protection, CI review, and optional signed or external records provide any immutability guarantee.
 
+### Agent-contract boundary
+
+The opt-in, provider-neutral agent contract defines exactly seven roles. A configured Hermes adapter maps each invocation to one configured model alias, the role's exact skill bytes, and a fresh isolated one-shot context; the portable request/result schemas contain no Hermes, provider, profile, session, or workdir fields. When the contract is disabled, the manual lifecycle workflow remains valid without agent policy or role-skill artifacts. Validation is read-only and non-authorizing: neither a valid envelope nor a successful dispatch may issue confirmation, approval, review-decision, verified, Delivery, Merge, or Release authority. Enabling repository validation is not a live Hermes rollout; runtime rollout and credentials remain a separate explicit operator action.
+
 ## When to Use
 
 Use this skill when:

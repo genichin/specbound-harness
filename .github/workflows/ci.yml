@@ -49,22 +49,44 @@ jobs:
         run: python -m pip wheel --wheel-dir dist ".[test]"
       - name: Validate installed wheel
         run: |
-          python -m venv /tmp/specbound-wheel
-          /tmp/specbound-wheel/bin/pip install --no-index --find-links dist specbound
-          /tmp/specbound-wheel/bin/specbound --root fixtures/valid-minimal validate
-          /tmp/specbound-wheel/bin/specbound --root fixtures/valid-minimal agent validate-skills
-          for role in discovery-author requirement-author micro-spec-author independent-reviewer implementation iteration-qc delivery-qc; do
-            refs=""
-            case "$role" in
-              independent-reviewer) refs="--reference-result-file reference-results/independent-reviewer-producer_result_ref.json" ;;
-              implementation) refs="--reference-result-file reference-results/implementation-reviewer_run_ref.json --reference-result-file reference-results/implementation-reviewer-producer_result_ref.json" ;;
-              iteration-qc) refs="--reference-result-file reference-results/iteration-qc-producer_result_ref.json --reference-result-file reference-results/iteration-qc-reviewer_run_ref.json --reference-result-file reference-results/iteration-qc-reviewer-producer_result_ref.json" ;;
-            esac
-            /tmp/specbound-wheel/bin/specbound --root fixtures/agent-contract agent check-role-request --request-file "fixtures/agent-contract/positive/$role.request.json" $refs
-            /tmp/specbound-wheel/bin/specbound --root fixtures/agent-contract agent validate-result --result-file "fixtures/agent-contract/positive/$role.result.json" $refs
-            if /tmp/specbound-wheel/bin/specbound --root fixtures/agent-contract agent check-role-request --request-file "fixtures/agent-contract/negative/$role.request.json" $refs; then echo "negative $role request was accepted" >&2; exit 1; fi
-            if /tmp/specbound-wheel/bin/specbound --root fixtures/agent-contract agent validate-result --result-file "fixtures/agent-contract/negative/$role.result.json" $refs; then echo "negative $role result was accepted" >&2; exit 1; fi
-          done
-          /tmp/specbound-wheel/bin/specbound --root . docs requirements --check
+          WHEEL_ENV="$RUNNER_TEMP/specbound-wheel"
+          WHEEL_PY="$WHEEL_ENV/bin/python"
+          WHEEL_CLI="$WHEEL_ENV/bin/specbound"
+          python -m venv "$WHEEL_ENV"
+          "$WHEEL_ENV/bin/pip" install --no-index --find-links dist specbound pytest
+          unset PYTHONPATH
+          "$WHEEL_PY" -I - <<'PY'
+          from importlib.resources import files
+          from pathlib import Path
+          import hashlib
+          import os
+          import specbound.agent_contract as agent_contract
+          import specbound.hermes_adapter as hermes_adapter
+
+          repository = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
+          for module in (agent_contract, hermes_adapter):
+              installed = Path(module.__file__).resolve()
+              assert "site-packages" in installed.parts, installed
+              assert not installed.is_relative_to(repository), installed
+              print(f"installed-module={installed}")
+
+          for name in (
+              "agent-roles.schema.json",
+              "agent-result.schema.json",
+              "hermes-adapter-config.schema.json",
+              "hermes-invocation.schema.json",
+          ):
+              repository_bytes = (repository / "schemas" / name).read_bytes()
+              installed_bytes = files("specbound.schemas").joinpath(name).read_bytes()
+              assert installed_bytes == repository_bytes, name
+              print(f"schema-sha256[{name}]={hashlib.sha256(installed_bytes).hexdigest()}")
+          PY
+          "$WHEEL_CLI" --root "$GITHUB_WORKSPACE/fixtures/valid-minimal" validate
+          "$WHEEL_CLI" --root "$GITHUB_WORKSPACE/fixtures/valid-minimal" agent validate-skills
+          cd "$RUNNER_TEMP"
+          "$WHEEL_PY" -I -m pytest -c /dev/null -q \
+            "$GITHUB_WORKSPACE/tests/test_agent_integration.py" \
+            "$GITHUB_WORKSPACE/tests/test_hermes_adapter.py"
+          "$WHEEL_CLI" --root "$GITHUB_WORKSPACE" docs requirements --check
       - name: Harness validation
         run: python -m specbound.cli validate

@@ -23,7 +23,8 @@ canonical:
   iteration_qc_pattern: "req-<id>/iqc-<id>-<slice>-r<revision>.json"
   delivery_qc_pattern: "dqc-<id>-r<revision>.json"
 policy:
-  # Provider-neutral role contract is opt-in for adopting repositories.
+  # Agent contract is opt-in and default-disabled for adopters.
+  # Enabling validates repository-local policy and skills; it does not roll out Hermes.
   agent_contract:
     enabled: false
     roles_path: .specbound/policies/agent-roles.yaml
