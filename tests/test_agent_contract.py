@@ -75,7 +75,10 @@ def setup_root(tmp_path: Path, policy: dict | None = None) -> tuple[Path, Path]:
         "version: 1\npolicy:\n  agent_contract:\n    enabled: true\n    roles_path: .specbound/policies/agent-roles.yaml\n"
         "  micro_spec_review_authorities_by_risk:\n    high: [fixture-maintainer]\n"
         "  discovery_confirmation_authorities_by_risk:\n    high: [fixture-maintainer]\n"
-        "  requirement_approval_authorities_by_risk:\n    high: [fixture-maintainer]\n",
+        "  requirement_approval_authorities_by_risk:\n    high: [fixture-maintainer]\n"
+        "  requirement_rejection_authorities_by_risk:\n    high: [fixture-maintainer]\n"
+        "  requirement_reconsideration_authorities_by_risk:\n    high: [fixture-maintainer]\n"
+        "  requirement_review_decision_authorities_by_risk:\n    high: [fixture-maintainer]\n",
         encoding="utf-8",
         newline="\n",
     )
@@ -1095,12 +1098,19 @@ def test_role_request_rejects_transitive_reference_identity_overlap(tmp_path: Pa
     assert "reference_identity_overlap" in {blocker["code"] for blocker in result.blockers}, result.blockers
 
 
-def test_high_risk_rollback_inventory_requires_changed_path_and_command(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "commands",
+    [[], [{"command": "python --version", "result": "passed", "exit_code": 0}]],
+)
+def test_high_risk_rollback_inventory_requires_changed_path_and_semantic_command(
+    tmp_path: Path,
+    commands: list[dict[str, object]],
+) -> None:
     root, _ = setup_root(tmp_path)
     payload = valid_result(root, "implementation")
     rollback = next(evidence for evidence in payload["evidence"] if evidence["slot"] == "rollback-inventory")
     rollback["artifacts"] = [payload["target"]]
-    rollback["commands"] = []
+    rollback["commands"] = commands
     files = bind_explicit_reference_results(root, payload)
 
     result = validate_agent_result(
@@ -1158,7 +1168,7 @@ def test_role_request_rejects_no_write_command_in_reference_result(tmp_path: Pat
 
 @pytest.mark.parametrize(
     "case",
-    ["missing-required-reviewer-edge", "failed-command-with-pass-verdict", "forged-transitive-envelope"],
+    ["missing-required-reviewer-edge", "failed-command-with-pass-verdict", "forged-transitive-envelope", "runtime-specific-model-alias"],
 )
 def test_role_request_rejects_intrinsically_invalid_reference_result(tmp_path: Path, case: str) -> None:
     root, _ = setup_root(tmp_path)
@@ -1177,8 +1187,10 @@ def test_role_request_rejects_intrinsically_invalid_reference_result(tmp_path: P
             for command in evidence["commands"]
         )
         command.update({"result": "failed", "exit_code": 1})
-    else:
+    elif case == "forged-transitive-envelope":
         producer["reviewer_run_ref"]["sha256"] = "0" * 64
+    else:
+        producer["model_alias"] = "openai-gpt"
     producer_path.write_text(json.dumps(producer, indent=2) + "\n", encoding="utf-8", newline="\n")
     payload["producer_result_ref"]["sha256"] = sha256(producer_path.read_bytes()).hexdigest()
 
@@ -1259,6 +1271,65 @@ def test_embedded_reference_result_rechecks_lifecycle_eligibility(tmp_path: Path
     assert "invalid_reference_result_lifecycle" in {blocker["code"] for blocker in result.blockers}, result.blockers
 
 
+@pytest.mark.parametrize("record_kind", ["reconsideration", "review-decision"])
+def test_retained_lifecycle_records_require_valid_timestamps(tmp_path: Path, record_kind: str) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, "independent-reviewer")
+    files = bind_explicit_reference_results(root, payload)
+    target = payload["target"]
+    common = {
+        "schema_version": 1,
+        "requirement_path": target["path"],
+        "requirement_id": target["id"],
+        "revision": target["revision"],
+        "reviewed_sha256": target["sha256"],
+        "risk": "high",
+        "authority": "fixture-maintainer",
+        "reason": "Substantive fixture lifecycle decision rationale.",
+    }
+    if record_kind == "reconsideration":
+        rejected_text = (root / target["path"]).read_text(encoding="utf-8").replace("status: in_review", "status: rejected")
+        rejected_sha = sha256(rejected_text.encode("utf-8")).hexdigest()
+        write_json(
+            root,
+            f".specbound/rejections/{target['id']}-r{target['revision']}.rejection.json",
+            {
+                **common,
+                "sha256": rejected_sha,
+                "rejected_at": "2026-01-01T00:00:00Z",
+                "decision": "rejected",
+            },
+        )
+        record_relative = f".specbound/reconsiderations/{target['id']}-r{target['revision']}.reconsideration.json"
+        timestamp_field = "reconsidered_at"
+        record = {
+            **common,
+            "rejected_sha256": rejected_sha,
+            "reopened_sha256": target["sha256"],
+            timestamp_field: "2026-01-02T00:00:00Z",
+            "decision": "reopened_for_review",
+        }
+    else:
+        record_relative = f".specbound/review-decisions/{target['id']}-r{target['revision']}.review-decision.json"
+        timestamp_field = "decided_at"
+        record = {
+            **common,
+            timestamp_field: "2026-01-02T00:00:00Z",
+            "decision": "approval_ready",
+        }
+    write_json(root, record_relative, record)
+    request_path = write_json(root, "request.json", payload)
+
+    control = validate_role_request(root, request_path, POLICY_REL, reference_result_files=files)
+    assert control.valid is True, control.blockers
+
+    record[timestamp_field] = "not-a-timestamp"
+    write_json(root, record_relative, record)
+    result = validate_role_request(root, request_path, POLICY_REL, reference_result_files=files)
+
+    assert "conflicting_lifecycle_evidence" in {blocker["code"] for blocker in result.blockers}, result.blockers
+
+
 def test_in_review_requirement_rejects_malformed_conflicting_lifecycle_records(tmp_path: Path) -> None:
     root, _ = setup_root(tmp_path)
     payload = valid_request(root, "independent-reviewer")
@@ -1276,6 +1347,28 @@ def test_in_review_requirement_rejects_malformed_conflicting_lifecycle_records(t
     )
 
     assert "conflicting_lifecycle_evidence" in {blocker["code"] for blocker in result.blockers}, result.blockers
+
+
+@pytest.mark.skipif(os.name != "nt", reason="case-insensitive path alias is Windows-specific")
+def test_role_request_rejects_noncanonical_case_alias_for_reference_result(tmp_path: Path) -> None:
+    root, _ = setup_root(tmp_path)
+    payload = valid_request(root, "implementation")
+    files = bind_explicit_reference_results(root, payload)
+    aliased = [
+        relative.replace("reference-results/", "REFERENCE-RESULTS/", 1)
+        if "reviewer_run_ref" in Path(relative).name
+        else relative
+        for relative in files
+    ]
+
+    result = validate_role_request(
+        root,
+        write_json(root, "request.json", payload),
+        POLICY_REL,
+        reference_result_files=aliased,
+    )
+
+    assert "invalid_reference_result_file" in {blocker["code"] for blocker in result.blockers}, result.blockers
 
 
 def test_role_request_rejects_case_variant_authority_reference_path(tmp_path: Path) -> None:
@@ -1900,6 +1993,7 @@ def test_high_risk_command_evidence_cannot_be_substantively_empty(tmp_path: Path
     [
         "This evidence is simply not applicable here.",
         "Not applicable because it is not applicable.",
+        "No supported CI evidence exists because supported CI evidence does not exist for this task.",
     ],
 )
 def test_blanket_not_applicable_reason_is_rejected(tmp_path: Path, reason: str) -> None:

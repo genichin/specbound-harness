@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from fnmatch import fnmatchcase
 from hashlib import sha256
 from importlib.resources import files
@@ -10,6 +11,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import shlex
 from typing import Any
 
 from jsonschema import Draft202012Validator
@@ -44,7 +46,10 @@ AUTHORITY_PATH_PREFIXES = (
 RUNTIME_TERMS = ("openai", "anthropic", "claude", "gemini", "hermes", "provider", "vendor", "runtime", "profile", "delegate_task")
 COMMAND_EVIDENCE_SLOTS = frozenset({"test-results", "focused-verification", "negative-tests", "regression-evidence", "supported-ci"})
 _NOT_APPLICABLE_BOILERPLATE = frozenset(
-    {"a", "an", "applicable", "are", "because", "evidence", "for", "here", "is", "it", "not", "simply", "slot", "the", "this", "to", "was", "were"}
+    {
+        "a", "an", "applicable", "are", "because", "does", "evidence", "exist", "exists", "for", "here", "is", "it",
+        "missing", "no", "not", "simply", "slot", "task", "the", "this", "to", "unavailable", "was", "were",
+    }
 )
 
 
@@ -53,12 +58,58 @@ def _authority_owned_path(relative: str) -> bool:
     return normalized.startswith(tuple(prefix.casefold() for prefix in AUTHORITY_PATH_PREFIXES))
 
 
-def _blanket_not_applicable_reason(reason: str) -> bool:
+def _canonical_repository_spelling(root: Path, relative: str) -> bool:
+    current = root.resolve()
+    for part in PurePosixPath(relative).parts:
+        try:
+            matches = [name for name in os.listdir(current) if name.casefold() == part.casefold()]
+        except OSError:
+            return False
+        if len(matches) != 1 or matches[0] != part:
+            return False
+        current /= matches[0]
+    return True
+
+
+def _valid_timestamp(value: Any) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None
+
+
+def _rollback_verification_command(command: dict[str, Any]) -> bool:
+    text = command.get("command", "").strip().casefold()
+    if command.get("result") != "passed" or command.get("exit_code") != 0:
+        return False
+    try:
+        tokens = shlex.split(text, posix=True)
+    except ValueError:
+        return False
+    if not tokens:
+        return False
+    executable = PurePosixPath(tokens[0].replace("\\", "/")).name
+    arguments = " ".join(tokens[1:])
+    if executable == "git":
+        return ("diff" in tokens[1:] and "--exit-code" in tokens[1:]) or ("status" in tokens[1:] and "--porcelain" in tokens[1:])
+    if executable in {"sha256sum", "shasum", "checksum"}:
+        return True
+    verification_target = f"{executable} {arguments}"
+    has_subject = any(marker in verification_target for marker in ("rollback", "partial-mutation", "partial_mutation", "atomicity"))
+    has_verification = any(marker in verification_target for marker in ("check", "test", "verify"))
+    return executable not in {"echo", "printf"} and has_subject and has_verification
+
+
+def _blanket_not_applicable_reason(reason: str, slot: str | None = None) -> bool:
     normalized = reason.strip().casefold().rstrip(".")
+    slot_tokens = set(re.findall(r"[a-z0-9][a-z0-9-]*", (slot or "").casefold().replace("-", " ")))
     substantive_tokens = [
         token
         for token in re.findall(r"[a-z0-9][a-z0-9-]*", normalized)
-        if token not in _NOT_APPLICABLE_BOILERPLATE
+        if token not in _NOT_APPLICABLE_BOILERPLATE and token not in slot_tokens
     ]
     return (
         len(normalized) < 20
@@ -524,7 +575,7 @@ def _validate_reference_result_intrinsics(
         if evidence["status"] == "not_applicable":
             reason = (evidence.get("reason") or "").strip()
             if (
-                _blanket_not_applicable_reason(reason)
+                _blanket_not_applicable_reason(reason, evidence["slot"])
                 or slot_name in required_slots
                 or not slot_policy["not_applicable_allowed"]
             ):
@@ -537,7 +588,7 @@ def _validate_reference_result_intrinsics(
             raise ValueError("reference result no-write proof permits mutation")
         if slot_name == "rollback-inventory" and effective_risk == "high":
             rollback_paths = {artifact["path"] for artifact in evidence["artifacts"]}
-            if not evidence["commands"] or not set(payload["changed_paths"]).issubset(rollback_paths):
+            if not any(_rollback_verification_command(command) for command in evidence["commands"]) or not set(payload["changed_paths"]).issubset(rollback_paths):
                 raise ValueError("reference result high-risk rollback inventory is incomplete")
 
     action = payload["permitted_next_action"]
@@ -564,6 +615,8 @@ def _load_reference_result_index(
             if _authority_owned_path(relative):
                 raise ValueError("authority-owned paths cannot be reference result inputs")
             path = _safe_repository_path(root, relative)
+            if not _canonical_repository_spelling(root, relative):
+                raise ValueError("reference result path spelling is not canonical for the repository")
             if not path.is_file():
                 raise ValueError("reference result must be a regular file")
             before = path.stat(follow_symlinks=False)
@@ -594,6 +647,8 @@ def _load_reference_result_index(
             schema_errors = _schema_errors(root, "agent-result.schema.json", payload)
             if schema_errors:
                 raise ValueError("; ".join(schema_errors))
+            if any(term in payload["model_alias"].casefold() for term in RUNTIME_TERMS):
+                raise ValueError("reference result model_alias must remain provider-neutral")
             if payload["role_id"] != payload["task_kind"]:
                 raise ValueError("reference result role_id and task_kind must match")
             if payload["planned_execution_id"] != payload["execution_id"]:
@@ -1096,6 +1151,7 @@ def _retained_requirement_lifecycle_is_valid(
             risk = metadata.get("risk")
             allowed = policy.get(selector, {}).get(risk, []) if isinstance(policy, dict) else []
             digest_fields = [field for field in required_fields if field.endswith("sha256") or field == "sha256"]
+            timestamp_field = {"rejection": "rejected_at", "reconsideration": "reconsidered_at", "review-decision": "decided_at"}[name]
             if (
                 not required_fields.issubset(record)
                 or record.get("schema_version") != 1
@@ -1106,6 +1162,7 @@ def _retained_requirement_lifecycle_is_valid(
                 or record.get("authority") not in allowed
                 or not isinstance(record.get("reason"), str)
                 or not record["reason"].strip()
+                or not _valid_timestamp(record.get(timestamp_field))
                 or any(not isinstance(record.get(field), str) or not re.fullmatch(r"[0-9a-f]{64}", record[field]) for field in digest_fields)
                 or (expected_decision is not None and record.get("decision") != expected_decision)
                 or (name == "review-decision" and record.get("decision") not in {"approval_ready", "rejected"})
@@ -1989,7 +2046,7 @@ def validate_agent_result(
             continue
         if evidence["status"] == "not_applicable":
             reason = (evidence.get("reason") or "").strip()
-            if _blanket_not_applicable_reason(reason):
+            if _blanket_not_applicable_reason(reason, evidence["slot"]):
                 outcome.block("blanket_not_applicable_evidence", str(result_path), f"slot {slot_name} requires a concrete task-specific reason")
             if slot_name in required_slots or slot_name not in conditional_slots or not slot_policy["not_applicable_allowed"]:
                 outcome.block("invalid_not_applicable_evidence", str(result_path), f"slot {slot_name} cannot be not_applicable")
@@ -2001,11 +2058,11 @@ def validate_agent_result(
             outcome.block("invalid_no_write_proof", str(result_path), "no-write-proof requires empty commands, empty changed_paths, and mutation_class none")
         if slot_name == "rollback-inventory" and derived_effective_task_risk == "high":
             rollback_paths = {artifact["path"] for artifact in evidence["artifacts"]}
-            if not evidence["commands"] or not set(changed_paths).issubset(rollback_paths):
+            if not any(_rollback_verification_command(command) for command in evidence["commands"]) or not set(changed_paths).issubset(rollback_paths):
                 outcome.block(
                     "invalid_rollback_evidence",
                     str(result_path),
-                    "high-risk rollback inventory requires a command and exact evidence for every changed path",
+                    "high-risk rollback inventory requires rollback/no-partial-mutation verification and exact evidence for every changed path",
                 )
     missing_changed_evidence = sorted(set(changed_paths) - evidence_artifact_paths)
     if missing_changed_evidence:
