@@ -69,7 +69,12 @@ REQUIRED_SKILL_BOUNDARIES = (
     "This role never issues or claims confirmation, approval, review-decision, verified, delivery, canonical publication, Merge, Release, or external mutation authority.",
 )
 OVERBROAD_SKILL_CLAIM_RE = re.compile(
-    r"\b(?:may|can|is authorized to)\s+(?:self-review|self-approve|approve|confirm|publish\s+canonical|merge|release|deliver)\b",
+    r"\b(?:may|can|is authorized to)\s+(?:"
+    r"self-review|self-approve|approve|confirm|publish\s+canonical|merge|release|deliver|"
+    r"(?:issue|grant|claim)\s+(?:an?\s+)?(?:confirmation|approval|review[ -]decision|verified|delivery|canonical\s+publication)|"
+    r"(?:write|modify|change)\s+(?:to\s+)?(?:any|all)\s+(?:repository\s+)?(?:path|paths|file|files)|"
+    r"(?:use|invoke)\s+(?:any|all)\s+(?:tool|tools)"
+    r")\b",
     re.IGNORECASE,
 )
 _NOT_APPLICABLE_BOILERPLATE = frozenset(

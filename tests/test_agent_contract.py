@@ -2979,6 +2979,28 @@ def test_role_skill_frontmatter_and_body_contract_is_closed(
 
 
 @pytest.mark.parametrize(
+    "claim",
+    [
+        "This role may write any repository path using any tool.",
+        "This role may issue approval for its candidate.",
+    ],
+)
+def test_role_skill_rejects_explicit_wildcard_or_authority_body_claim(
+    tmp_path: Path, claim: str
+) -> None:
+    root, policy_path = copy_role_skill_fixture(tmp_path)
+    path = root / role_contract("discovery-author")["skill_path"]
+    path.write_text(path.read_text(encoding="utf-8") + f"\n{claim}\n", encoding="utf-8", newline="\n")
+    before = repository_snapshot(root)
+
+    result = validate_agent_role_skills(root, policy_path.relative_to(root).as_posix())
+
+    assert result.valid is False
+    assert "overbroad_agent_skill_claim" in {item["code"] for item in result.blockers}, result.blockers
+    assert repository_snapshot(root) == before
+
+
+@pytest.mark.parametrize(
     "unsafe_path",
     ["../outside/SKILL.md", "/tmp/SKILL.md", "C:/outside/SKILL.md", "skills\\discovery-author\\SKILL.md", "skills/Discovery-Author/SKILL.md"],
 )
