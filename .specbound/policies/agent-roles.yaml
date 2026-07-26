@@ -39,6 +39,7 @@ transition_crosswalk:
 roles:
   - role_id: discovery-author
     task_kind: discovery-author
+    skill_path: skills/discovery-author/SKILL.md
     task_risk_floor: low
     evidence_requirements_by_risk:
       low: {required: [target-binding, discovery-readiness], conditional: []}
@@ -69,6 +70,7 @@ roles:
 
   - role_id: requirement-author
     task_kind: requirement-author
+    skill_path: skills/requirement-author/SKILL.md
     task_risk_floor: low
     evidence_requirements_by_risk:
       low: {required: [target-binding, acceptance-criteria], conditional: []}
@@ -99,6 +101,7 @@ roles:
 
   - role_id: micro-spec-author
     task_kind: micro-spec-author
+    skill_path: skills/micro-spec-author/SKILL.md
     task_risk_floor: low
     evidence_requirements_by_risk:
       low: {required: [target-binding, selected-ac-coverage], conditional: []}
@@ -129,6 +132,7 @@ roles:
 
   - role_id: independent-reviewer
     task_kind: independent-reviewer
+    skill_path: skills/independent-reviewer/SKILL.md
     task_risk_floor: medium
     evidence_requirements_by_risk:
       low: {required: [target-binding, review-findings, no-write], conditional: []}
@@ -165,6 +169,7 @@ roles:
 
   - role_id: implementation
     task_kind: implementation
+    skill_path: skills/implementation/SKILL.md
     task_risk_floor: medium
     evidence_requirements_by_risk:
       low:
@@ -213,6 +218,7 @@ roles:
 
   - role_id: iteration-qc
     task_kind: iteration-qc
+    skill_path: skills/iteration-qc/SKILL.md
     task_risk_floor: medium
     evidence_requirements_by_risk:
       low: {required: [target-binding, focused-verification], conditional: [regression-evidence]}
@@ -246,6 +252,7 @@ roles:
 
   - role_id: delivery-qc
     task_kind: delivery-qc
+    skill_path: skills/delivery-qc/SKILL.md
     task_risk_floor: medium
     evidence_requirements_by_risk:
       low: {required: [target-binding, complete-ac-coverage, regression-evidence], conditional: []}

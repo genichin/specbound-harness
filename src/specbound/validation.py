@@ -14,7 +14,7 @@ from typing import Any
 
 import yaml
 
-from .agent_contract import validate_agent_roles_policy
+from .agent_contract import validate_agent_role_skills, validate_agent_roles_policy
 
 REQUIREMENT_RE = re.compile(r"^(req-[0-9]+)-r([1-9][0-9]*)\.md$")
 DISCOVERY_RE = re.compile(r"^(dcy-[0-9]+)-r([1-9][0-9]*)\.md$")
@@ -144,6 +144,7 @@ class Result:
     checked_iteration_qc: int = 0
     checked_delivery_qc: int = 0
     checked_agent_roles: int = 0
+    checked_agent_skills: int = 0
 
     @property
     def valid(self) -> bool:
@@ -164,6 +165,7 @@ class Result:
             "checked_iteration_qc": self.checked_iteration_qc,
             "checked_delivery_qc": self.checked_delivery_qc,
             "checked_agent_roles": self.checked_agent_roles,
+            "checked_agent_skills": self.checked_agent_skills,
             "blockers": self.blockers,
         }
 
@@ -2407,6 +2409,10 @@ def validate(root: Path, claim: str | None = None, requirement: str | None = Non
         policy_result = validate_agent_roles_policy(root, agent_contract["roles_path"])
         result.checked_agent_roles = policy_result.checked_roles
         result.blockers.extend(policy_result.blockers)
+        if policy_result.valid:
+            skill_result = validate_agent_role_skills(root, agent_contract["roles_path"])
+            result.checked_agent_skills = skill_result.checked_skills
+            result.blockers.extend(skill_result.blockers)
     adopted_requirements = _adopted_requirement_entries(root, config, result)
     allowed_authorities_by_risk = {
         risk_class: set(authorities)

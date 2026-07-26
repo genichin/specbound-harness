@@ -52,6 +52,7 @@ jobs:
           python -m venv /tmp/specbound-wheel
           /tmp/specbound-wheel/bin/pip install --no-index --find-links dist specbound
           /tmp/specbound-wheel/bin/specbound --root fixtures/valid-minimal validate
+          /tmp/specbound-wheel/bin/specbound --root fixtures/valid-minimal agent validate-skills
           for role in discovery-author requirement-author micro-spec-author independent-reviewer implementation iteration-qc delivery-qc; do
             refs=""
             case "$role" in

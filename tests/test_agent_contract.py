@@ -21,6 +21,7 @@ from specbound.agent_contract import (
     _effective_task_risk,
     _reviewed_micro_spec_paths,
     validate_agent_result,
+    validate_agent_role_skills,
     validate_agent_roles_policy,
     validate_role_request,
 )
@@ -2895,3 +2896,263 @@ def test_policy_declares_closed_consumer_reference_edges() -> None:
         "producer_result_ref": None,
         "reviewer_run_ref": None,
     }
+
+
+SKILL_BOUNDARIES = (
+    "The machine-readable role policy is authoritative; this skill is procedural guidance only.",
+    "This role must not perform self-review or self-approval.",
+    "This role never issues or claims confirmation, approval, review-decision, verified, delivery, canonical publication, Merge, Release, or external mutation authority.",
+)
+
+
+def copy_role_skill_fixture(tmp_path: Path, policy: dict | None = None) -> tuple[Path, Path]:
+    root, policy_path = setup_root(tmp_path, policy)
+    for role in (policy or actual_policy())["roles"]:
+        canonical = f"skills/{role['role_id']}/SKILL.md"
+        source = ROOT / canonical
+        target = root / canonical
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+    return root, policy_path
+
+
+def mutate_role_skill(root: Path, role_id: str, mutate) -> Path:
+    path = root / role_contract(role_id)["skill_path"]
+    text = path.read_text(encoding="utf-8")
+    _, frontmatter, body = text.split("---\n", 2)
+    metadata = yaml.safe_load(frontmatter)
+    mutate(metadata, body)
+    path.write_text(
+        "---\n" + yaml.safe_dump(metadata, sort_keys=False, allow_unicode=True) + "---\n" + body,
+        encoding="utf-8",
+        newline="\n",
+    )
+    return path
+
+
+def test_actual_policy_maps_exactly_seven_unique_repository_role_skills() -> None:
+    policy = actual_policy()
+    paths = [role["skill_path"] for role in policy["roles"]]
+
+    assert paths == [f"skills/{role['role_id']}/SKILL.md" for role in policy["roles"]]
+    assert len(paths) == len(set(paths)) == len(ROLE_IDS) == 7
+    assert all((ROOT / path).is_file() for path in paths)
+    result = validate_agent_role_skills(ROOT, POLICY_REL)
+    assert result.valid is True, result.blockers
+    assert result.checked_skills == 7
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_code"),
+    [
+        ("missing", "missing_agent_skill"),
+        ("orphan", "orphan_agent_skill"),
+        ("duplicate", "duplicate_agent_skill_path"),
+    ],
+)
+def test_role_skill_inventory_fails_closed(tmp_path: Path, case: str, expected_code: str) -> None:
+    policy = actual_policy()
+    if case == "duplicate":
+        policy["roles"][1]["skill_path"] = policy["roles"][0]["skill_path"]
+    root, policy_path = copy_role_skill_fixture(tmp_path, policy)
+    if case == "missing":
+        (root / policy["roles"][0]["skill_path"]).unlink()
+    elif case == "orphan":
+        orphan = root / "skills/orphan-role/SKILL.md"
+        orphan.parent.mkdir(parents=True)
+        shutil.copy2(ROOT / policy["roles"][0]["skill_path"], orphan)
+
+    before = repository_snapshot(root)
+    result = validate_agent_role_skills(root, policy_path.relative_to(root).as_posix())
+
+    assert result.valid is False
+    assert expected_code in {item["code"] for item in result.blockers}, result.blockers
+    assert repository_snapshot(root) == before
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_code"),
+    [
+        ("required_inputs", ["user-intent"], "misaligned_agent_skill_contract"),
+        ("allowed_tool_categories", ["repository-read", "candidate-write", "shell-execute"], "misaligned_agent_skill_contract"),
+        ("allowed_path_patterns", ["**"], "misaligned_agent_skill_contract"),
+        ("mutation_classes", ["repository_mutation"], "misaligned_agent_skill_contract"),
+        ("output_kinds", ["agent-result", "canonical-record"], "misaligned_agent_skill_contract"),
+        ("lifecycle_eligibility", ["draft", "approved"], "misaligned_agent_skill_contract"),
+        ("result_references", {"producer_result_ref": "optional", "reviewer_run_ref": "forbidden"}, "misaligned_agent_skill_contract"),
+        ("permitted_next_actions", ["submit-candidate-for-review", "approve"], "misaligned_agent_skill_contract"),
+        ("forbidden_actions", ["authority-transition"], "misaligned_agent_skill_contract"),
+        ("forbidden_claims", ["confirmation"], "misaligned_agent_skill_contract"),
+        ("policy_path", ".specbound/policies/other.yaml", "misaligned_agent_skill_identity"),
+        ("skill_path", "skills/requirement-author/SKILL.md", "misaligned_agent_skill_identity"),
+        ("authority_type", "review-authority", "invalid_agent_skill_authority"),
+        ("self_review", True, "invalid_agent_skill_authority"),
+        ("self_approval", True, "invalid_agent_skill_authority"),
+    ],
+)
+def test_role_skill_rejects_widened_or_authorizing_frontmatter(
+    tmp_path: Path, field: str, value: object, expected_code: str
+) -> None:
+    root, policy_path = copy_role_skill_fixture(tmp_path)
+    mutate_role_skill(
+        root,
+        "discovery-author",
+        lambda metadata, _body: metadata["metadata"]["specbound"].__setitem__(field, value),
+    )
+
+    result = validate_agent_role_skills(root, policy_path.relative_to(root).as_posix())
+
+    assert result.valid is False
+    assert expected_code in {item["code"] for item in result.blockers}, result.blockers
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_code"),
+    [
+        ("wrong-name", "misaligned_agent_skill_identity"),
+        ("wrong-role", "misaligned_agent_skill_identity"),
+        ("extra-contract-field", "malformed_agent_skill_frontmatter"),
+        ("malformed-frontmatter", "malformed_agent_skill_frontmatter"),
+        ("missing-boundary", "invalid_agent_skill_body"),
+        ("missing-heading", "invalid_agent_skill_body"),
+        ("over-authorizing-phrase", "overbroad_agent_skill_claim"),
+    ],
+)
+def test_role_skill_frontmatter_and_body_contract_is_closed(
+    tmp_path: Path, case: str, expected_code: str
+) -> None:
+    root, policy_path = copy_role_skill_fixture(tmp_path)
+    path = root / role_contract("discovery-author")["skill_path"]
+    if case == "wrong-name":
+        mutate_role_skill(root, "discovery-author", lambda metadata, _body: metadata.__setitem__("name", "requirement-author"))
+    elif case == "wrong-role":
+        mutate_role_skill(
+            root,
+            "discovery-author",
+            lambda metadata, _body: metadata["metadata"]["specbound"].__setitem__("role_id", "requirement-author"),
+        )
+    elif case == "extra-contract-field":
+        mutate_role_skill(
+            root,
+            "discovery-author",
+            lambda metadata, _body: metadata["metadata"]["specbound"].__setitem__("provider", "runtime-vendor"),
+        )
+    elif case == "malformed-frontmatter":
+        path.write_text("---\nmetadata: [\n---\n# Broken\n", encoding="utf-8", newline="\n")
+    else:
+        text = path.read_text(encoding="utf-8")
+        if case == "missing-boundary":
+            text = text.replace(SKILL_BOUNDARIES[0], "Policy guidance applies.")
+        elif case == "missing-heading":
+            text = text.replace("## Completion Checklist", "## Done")
+        else:
+            text += "\nThis role may self-approve its candidate.\n"
+        path.write_text(text, encoding="utf-8", newline="\n")
+
+    result = validate_agent_role_skills(root, policy_path.relative_to(root).as_posix())
+
+    assert result.valid is False
+    assert expected_code in {item["code"] for item in result.blockers}, result.blockers
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "This role may write any repository path using any tool.",
+        "This role may issue approval for its candidate.",
+    ],
+)
+def test_role_skill_rejects_explicit_wildcard_or_authority_body_claim(
+    tmp_path: Path, claim: str
+) -> None:
+    root, policy_path = copy_role_skill_fixture(tmp_path)
+    path = root / role_contract("discovery-author")["skill_path"]
+    path.write_text(path.read_text(encoding="utf-8") + f"\n{claim}\n", encoding="utf-8", newline="\n")
+    before = repository_snapshot(root)
+
+    result = validate_agent_role_skills(root, policy_path.relative_to(root).as_posix())
+
+    assert result.valid is False
+    assert "overbroad_agent_skill_claim" in {item["code"] for item in result.blockers}, result.blockers
+    assert repository_snapshot(root) == before
+
+
+@pytest.mark.parametrize(
+    "unsafe_path",
+    ["../outside/SKILL.md", "/tmp/SKILL.md", "C:/outside/SKILL.md", "skills\\discovery-author\\SKILL.md", "skills/Discovery-Author/SKILL.md"],
+)
+def test_role_skill_rejects_unsafe_or_noncanonical_policy_path(tmp_path: Path, unsafe_path: str) -> None:
+    policy = actual_policy()
+    policy["roles"][0]["skill_path"] = unsafe_path
+    root, policy_path = copy_role_skill_fixture(tmp_path, policy)
+
+    result = validate_agent_role_skills(root, policy_path.relative_to(root).as_posix())
+
+    assert result.valid is False
+    assert {item["code"] for item in result.blockers}.intersection(
+        {"invalid_agent_roles_policy", "unsafe_agent_skill_path", "noncanonical_agent_skill_path"}
+    ), result.blockers
+
+
+def test_role_skill_rejects_symlink_when_supported(tmp_path: Path) -> None:
+    root, policy_path = copy_role_skill_fixture(tmp_path)
+    path = root / role_contract("discovery-author")["skill_path"]
+    external = tmp_path / "external-skill.md"
+    external.write_bytes(path.read_bytes())
+    path.unlink()
+    try:
+        path.symlink_to(external)
+    except OSError:
+        pytest.skip("symlinks are unavailable")
+
+    result = validate_agent_role_skills(root, policy_path.relative_to(root).as_posix())
+
+    assert result.valid is False
+    assert "unsafe_agent_skill_path" in {item["code"] for item in result.blockers}, result.blockers
+
+
+def test_role_skill_rejects_duplicate_physical_file_mapping_when_supported(tmp_path: Path) -> None:
+    root, policy_path = copy_role_skill_fixture(tmp_path)
+    source = root / role_contract("discovery-author")["skill_path"]
+    target = root / role_contract("delivery-qc")["skill_path"]
+    target.unlink()
+    try:
+        os.link(source, target)
+    except OSError:
+        pytest.skip("hard links are unavailable")
+    before = repository_snapshot(root)
+
+    result = validate_agent_role_skills(root, policy_path.relative_to(root).as_posix())
+
+    assert result.valid is False
+    assert "duplicate_agent_skill_path" in {item["code"] for item in result.blockers}, result.blockers
+    assert repository_snapshot(root) == before
+
+
+def test_validate_skills_cli_is_read_only_for_positive_and_negative_roots(tmp_path: Path) -> None:
+    root, _ = copy_role_skill_fixture(tmp_path)
+    before = repository_snapshot(root)
+
+    accepted = run_cli(root, "agent", "validate-skills")
+    assert accepted.returncode == 0, accepted.stdout
+    assert json.loads(accepted.stdout)["checked_agent_skills"] == 7
+    assert repository_snapshot(root) == before
+
+    (root / role_contract("delivery-qc")["skill_path"]).unlink()
+    rejected_before = repository_snapshot(root)
+    rejected = run_cli(root, "agent", "validate-skills")
+    assert rejected.returncode == 2, rejected.stdout
+    assert "missing_agent_skill" in {item["code"] for item in json.loads(rejected.stdout)["blockers"]}
+    assert repository_snapshot(root) == rejected_before
+
+
+def test_root_validate_reports_seven_checked_agent_skills_without_mutation() -> None:
+    before = repository_snapshot(ROOT)
+
+    completed = run_cli(ROOT, "validate")
+
+    assert completed.returncode == 0, completed.stdout
+    payload = json.loads(completed.stdout)
+    assert payload["checked_agent_roles"] == 7
+    assert payload["checked_agent_skills"] == 7
+    assert repository_snapshot(ROOT) == before

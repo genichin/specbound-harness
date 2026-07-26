@@ -1,0 +1,16 @@
+{
+  "authority": "independent-advanced-llm-reviewer",
+  "decided_at": "2026-07-26T00:55:43Z",
+  "decision": "approved_for_implementation",
+  "micro_spec_id": "ms-0004-003",
+  "micro_spec_path": ".specbound/micro-specs/req-0004/ms-0004-003.md",
+  "micro_spec_sha256": "a754d287ffe32fd233ace70afe8539583468da8ca33ecadb35f1b05a01820b11",
+  "permitted_next_action": "implement_bound_micro_spec_only",
+  "reason": "A single bounded fresh-context Bootstrap advisory review of exact SHA-256 a754d287ffe32fd233ace70afe8539583468da8ca33ecadb35f1b05a01820b11 returned PASS with no findings against req-0004-r1 AC-002. This digest-bound canonical Micro-SPEC review decision authorizes only the implementation scope in ms-0004-003; it does not claim execution of the not-yet-live canonical seven-role Reviewer runtime, IQC, adoption, Delivery, Merge, or Release authority.",
+  "requirement_id": "req-0004",
+  "requirement_path": ".specbound/requirements/req-0004/req-0004-r1.md",
+  "requirement_sha256": "495c04dc6c1f7b726ea7f654477bdc065c4ca67f2e5dd82797b7ad3fc723675a",
+  "revision": 1,
+  "risk": "high",
+  "schema_version": 1
+}
