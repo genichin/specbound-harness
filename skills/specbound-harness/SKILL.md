@@ -20,6 +20,34 @@ SpecBound is a provider-neutral, repository-local control-plane harness. It trea
 
 The opt-in, provider-neutral agent contract defines exactly seven roles. A configured Hermes adapter maps each invocation to one configured model alias, the role's exact skill bytes, and a fresh isolated one-shot context; the portable request/result schemas contain no Hermes, provider, profile, session, or workdir fields. When the contract is disabled, the manual lifecycle workflow remains valid without agent policy or role-skill artifacts. Validation is read-only and non-authorizing: neither a valid envelope nor a successful dispatch may issue confirmation, approval, review-decision, verified, Delivery, Merge, or Release authority. Enabling repository validation is not a live Hermes rollout; runtime rollout and credentials remain a separate explicit operator action.
 
+The executable contract is repository-backed. `policy.agent_contract` selects the
+policy at `.specbound/policies/agent-roles.yaml`; every policy role binds one
+exact `skills/<role-id>/SKILL.md` file and its SHA-256. Adopter templates remain
+default-disabled, while this harness enables the same contract for dogfood
+validation:
+
+```yaml
+policy:
+  agent_contract:
+    enabled: false  # true only after the repository owns the policy and all role skills
+    roles_path: .specbound/policies/agent-roles.yaml
+```
+
+The closed version-one role inventory is exactly:
+
+```text
+discovery-author
+requirement-author
+micro-spec-author
+independent-reviewer
+implementation
+iteration-qc
+delivery-qc
+```
+
+These are logical roles, not seven persistent profiles. The existing manual
+lifecycle skills remain separate guidance and are not members of this inventory.
+
 ## When to Use
 
 Use this skill when:
@@ -44,7 +72,10 @@ specbound.yaml
 .specbound/rejections/req-<id>-r<revision>.rejection.json
 .specbound/reconsiderations/req-<id>-r<revision>.reconsideration.json
 .specbound/approvals/req-<id>-r<revision>.approval.json
+.specbound/policies/agent-roles.yaml
+skills/<role-id>/SKILL.md
 .specbound/micro-specs/req-<id>/ms-<id>-<slice>.md
+.specbound/micro-spec-reviews/req-<id>/ms-<id>-<slice>.review.json
 .specbound/iteration-qc/req-<id>/iqc-<id>-<slice>-r<revision>.json
 .specbound/delivery-qc/dqc-<id>-r<revision>.json
 docs/requirements.md  # generated user-facing projection; never canonical
@@ -86,12 +117,19 @@ A valid confirmation authorizes only `draft_req_only`. It is not a REQ approval.
 
 ## Commands
 
+The three public, read-only agent-contract surfaces are `specbound agent validate-skills`,
+`specbound agent check-role-request`, and `specbound agent validate-result`. They validate
+repository-owned inputs and never dispatch an agent or issue authority.
+
 Use the repository's reproducible interpreter:
 
 ```bash
 .venv/bin/python -m specbound.cli context
 .venv/bin/python -m specbound.cli preflight
 .venv/bin/python -m specbound.cli validate
+.venv/bin/python -m specbound.cli agent validate-skills
+.venv/bin/python -m specbound.cli agent check-role-request --request-file <request.json> --reference-result-file <result.json>
+.venv/bin/python -m specbound.cli agent validate-result --result-file <result.json>
 .venv/bin/python -m specbound.cli docs requirements --check
 .venv/bin/python -m specbound.cli discovery confirm dcy-0001-r1 --authority repository-maintainer
 .venv/bin/python -m specbound.cli req reject req-0002-r1 --authority independent-advanced-llm-reviewer --reason "<substantive review finding>"
@@ -103,6 +141,30 @@ To test a repository explicitly, pass `--root` before the command:
 ```bash
 .venv/bin/python -m specbound.cli --root /path/to/repository validate
 ```
+
+### Installed-wheel verification
+
+Source success does not prove the shipped package. Build and install the wheel
+non-editably into a disposable environment, clear source overrides, and execute
+outside the checkout. Both `specbound.agent_contract.__file__` and
+`specbound.hermes_adapter.__file__` must resolve under that environment's
+`site-packages`, never repository `src/`. Compare the installed package bytes
+for `agent-roles`, `agent-result`, `hermes-adapter-config`, and
+`hermes-invocation` schemas with the repository schemas before running the same
+integration and adapter suites.
+
+```bash
+python -m pip wheel --wheel-dir dist ".[test]"
+python -m venv /tmp/specbound-wheel
+/tmp/specbound-wheel/bin/pip install --no-index --find-links dist specbound pytest
+unset PYTHONPATH
+cd /tmp
+/tmp/specbound-wheel/bin/python -I -c "import specbound.agent_contract as a, specbound.hermes_adapter as h; print(a.__file__); print(h.__file__); assert 'site-packages' in a.__file__; assert 'site-packages' in h.__file__"
+/tmp/specbound-wheel/bin/python -I -m pytest -c /dev/null -q /path/to/repository/tests/test_agent_integration.py /path/to/repository/tests/test_hermes_adapter.py
+```
+
+This procedure is verification evidence only. It does not dispatch an agent or
+authorize a lifecycle transition.
 
 ## Current scope
 
