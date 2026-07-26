@@ -1,0 +1,16 @@
+{
+  "authority": "independent-advanced-llm-reviewer",
+  "decided_at": "2026-07-26T09:15:28Z",
+  "decision": "approved_for_implementation",
+  "micro_spec_id": "ms-0004-005",
+  "micro_spec_path": ".specbound/micro-specs/req-0004/ms-0004-005.md",
+  "micro_spec_sha256": "cc7c5aa68e38b1c78f720d1faa78b394e693a0e6a194b14b5580f2fe85e7fc77",
+  "permitted_next_action": "implement_bound_micro_spec_only",
+  "reason": "A user-authorized second-and-final post-fix bounded Bootstrap advisory review of exact SHA-256 cc7c5aa68e38b1c78f720d1faa78b394e693a0e6a194b14b5580f2fe85e7fc77 passed with prior findings F001 and F002 closed, AC-009 and AC-010 covered, findings empty, and repository no-mutation. This digest-bound decision permits only implementation of AC-009 and AC-010 within ms-0004-005; it does not claim live Hermes adoption, canonical Independent Reviewer contract or IQC/DQC execution, Delivery, Merge, or Release authority.",
+  "requirement_id": "req-0004",
+  "requirement_path": ".specbound/requirements/req-0004/req-0004-r1.md",
+  "requirement_sha256": "495c04dc6c1f7b726ea7f654477bdc065c4ca67f2e5dd82797b7ad3fc723675a",
+  "revision": 1,
+  "risk": "high",
+  "schema_version": 1
+}
