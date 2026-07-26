@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://specbound.local/schemas/hermes-adapter-config.schema.json",
+  "title": "SpecBound Hermes adapter config v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "model_alias",
+    "workdir",
+    "required_dispatcher_capabilities",
+    "tool_category_map"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "model_alias": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,63}$"},
+    "workdir": {"const": "."},
+    "required_dispatcher_capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 8,
+      "maxItems": 8,
+      "items": {
+        "enum": [
+          "fresh_leaf_context",
+          "single_model_alias",
+          "exact_workdir",
+          "exact_skill_binding",
+          "tool_allowlist",
+          "path_boundary",
+          "no_context_reuse",
+          "structured_completion"
+        ]
+      }
+    },
+    "tool_category_map": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository-read",
+        "candidate-write",
+        "test-execute",
+        "filesystem-metadata"
+      ],
+      "properties": {
+        "repository-read": {"const": ["read_file", "search_files"]},
+        "candidate-write": {"const": ["patch", "write_file"]},
+        "test-execute": {"const": ["terminal"]},
+        "filesystem-metadata": {"const": ["search_files"]}
+      }
+    }
+  }
+}
