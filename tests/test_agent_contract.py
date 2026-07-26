@@ -2896,13 +2896,18 @@ def test_role_skill_inventory_fails_closed(tmp_path: Path, case: str, expected_c
 @pytest.mark.parametrize(
     ("field", "value", "expected_code"),
     [
+        ("required_inputs", ["user-intent"], "misaligned_agent_skill_contract"),
         ("allowed_tool_categories", ["repository-read", "candidate-write", "shell-execute"], "misaligned_agent_skill_contract"),
         ("allowed_path_patterns", ["**"], "misaligned_agent_skill_contract"),
         ("mutation_classes", ["repository_mutation"], "misaligned_agent_skill_contract"),
         ("output_kinds", ["agent-result", "canonical-record"], "misaligned_agent_skill_contract"),
         ("lifecycle_eligibility", ["draft", "approved"], "misaligned_agent_skill_contract"),
+        ("result_references", {"producer_result_ref": "optional", "reviewer_run_ref": "forbidden"}, "misaligned_agent_skill_contract"),
         ("permitted_next_actions", ["submit-candidate-for-review", "approve"], "misaligned_agent_skill_contract"),
+        ("forbidden_actions", ["authority-transition"], "misaligned_agent_skill_contract"),
         ("forbidden_claims", ["confirmation"], "misaligned_agent_skill_contract"),
+        ("policy_path", ".specbound/policies/other.yaml", "misaligned_agent_skill_identity"),
+        ("skill_path", "skills/requirement-author/SKILL.md", "misaligned_agent_skill_identity"),
         ("authority_type", "review-authority", "invalid_agent_skill_authority"),
         ("self_review", True, "invalid_agent_skill_authority"),
         ("self_approval", True, "invalid_agent_skill_authority"),
@@ -2930,6 +2935,7 @@ def test_role_skill_rejects_widened_or_authorizing_frontmatter(
         ("wrong-name", "misaligned_agent_skill_identity"),
         ("wrong-role", "misaligned_agent_skill_identity"),
         ("extra-contract-field", "malformed_agent_skill_frontmatter"),
+        ("malformed-frontmatter", "malformed_agent_skill_frontmatter"),
         ("missing-boundary", "invalid_agent_skill_body"),
         ("missing-heading", "invalid_agent_skill_body"),
         ("over-authorizing-phrase", "overbroad_agent_skill_claim"),
@@ -2954,6 +2960,8 @@ def test_role_skill_frontmatter_and_body_contract_is_closed(
             "discovery-author",
             lambda metadata, _body: metadata["metadata"]["specbound"].__setitem__("provider", "runtime-vendor"),
         )
+    elif case == "malformed-frontmatter":
+        path.write_text("---\nmetadata: [\n---\n# Broken\n", encoding="utf-8", newline="\n")
     else:
         text = path.read_text(encoding="utf-8")
         if case == "missing-boundary":
@@ -3002,6 +3010,24 @@ def test_role_skill_rejects_symlink_when_supported(tmp_path: Path) -> None:
 
     assert result.valid is False
     assert "unsafe_agent_skill_path" in {item["code"] for item in result.blockers}, result.blockers
+
+
+def test_role_skill_rejects_duplicate_physical_file_mapping_when_supported(tmp_path: Path) -> None:
+    root, policy_path = copy_role_skill_fixture(tmp_path)
+    source = root / role_contract("discovery-author")["skill_path"]
+    target = root / role_contract("delivery-qc")["skill_path"]
+    target.unlink()
+    try:
+        os.link(source, target)
+    except OSError:
+        pytest.skip("hard links are unavailable")
+    before = repository_snapshot(root)
+
+    result = validate_agent_role_skills(root, policy_path.relative_to(root).as_posix())
+
+    assert result.valid is False
+    assert "duplicate_agent_skill_path" in {item["code"] for item in result.blockers}, result.blockers
+    assert repository_snapshot(root) == before
 
 
 def test_validate_skills_cli_is_read_only_for_positive_and_negative_roots(tmp_path: Path) -> None:
