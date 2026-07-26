@@ -3,7 +3,7 @@ schema_version: 1
 id: ms-<id>-<slice>
 kind: micro-spec
 requirement:
-  path: docs/requirements/req-<id>/req-<id>-r<revision>.md
+  path: .specbound/requirements/req-<id>/req-<id>-r<revision>.md
   id: req-<id>
   revision: <revision>
   sha256: <exact-approved-req-sha256>

@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "result_id": "result-discovery-author",
+  "role_id": "discovery-author",
+  "task_kind": "discovery-author",
+  "execution_id": "execution-discovery-author",
+  "context_id": "context-discovery-author",
+  "model_alias": "worker-model",
+  "target": {
+    "path": ".specbound/discoveries/dcy-9001-r1.md",
+    "id": "dcy-9001",
+    "revision": 1,
+    "sha256": "2aae2bdd20f1a4c2ba17e9ae85cf787d18b72ceb40eaccaca513c941c780d82b"
+  },
+  "producer_result_ref": null,
+  "reviewer_run_ref": null,
+  "authority_type": "none",
+  "authority_action_id": null,
+  "context_provenance": {
+    "fresh_context": true,
+    "producer_transcript_inherited": false,
+    "session_memory_inherited": false,
+    "input_artifacts": [
+      {
+        "path": ".specbound/discoveries/dcy-9001-r1.md",
+        "id": "dcy-9001",
+        "revision": 1,
+        "sha256": "2aae2bdd20f1a4c2ba17e9ae85cf787d18b72ceb40eaccaca513c941c780d82b"
+      }
+    ]
+  },
+  "target_risk": "high",
+  "effective_task_risk": "high",
+  "tool_categories": [
+    "repository-read",
+    "candidate-write"
+  ],
+  "mutation_class": "candidate_write",
+  "changed_paths": [
+    ".specbound/discoveries/dcy-9100-r1.md"
+  ],
+  "output_kind": "agent-result",
+  "evidence": [
+    {
+      "slot": "target-binding",
+      "status": "provided",
+      "artifacts": [
+        {
+          "path": ".specbound/discoveries/dcy-9001-r1.md",
+          "id": "dcy-9001",
+          "revision": 1,
+          "sha256": "2aae2bdd20f1a4c2ba17e9ae85cf787d18b72ceb40eaccaca513c941c780d82b"
+        },
+        {
+          "path": ".specbound/discoveries/dcy-9100-r1.md",
+          "id": "dcy-9100",
+          "revision": 1,
+          "sha256": "986fb7c9704dc4e64ffd00b315bea838097a13fc2dbc22ce864adaaceb66e6d6"
+        }
+      ],
+      "commands": [],
+      "reason": null
+    },
+    {
+      "slot": "discovery-readiness",
+      "status": "provided",
+      "artifacts": [
+        {
+          "path": ".specbound/discoveries/dcy-9001-r1.md",
+          "id": "dcy-9001",
+          "revision": 1,
+          "sha256": "2aae2bdd20f1a4c2ba17e9ae85cf787d18b72ceb40eaccaca513c941c780d82b"
+        }
+      ],
+      "commands": [],
+      "reason": null
+    }
+  ],
+  "verdict": "pass",
+  "findings": [],
+  "permitted_next_action": "submit-candidate-for-review",
+  "claims": []
+}

@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "discovery_path": ".specbound/discoveries/dcy-9002-r1.md",
+  "discovery_id": "dcy-9002",
+  "revision": 1,
+  "reviewed_sha256": "f21b947768ff3230aab3667447f2cb732a83c72cc404d277881f3c7d3985509c",
+  "sha256": "a954f3486d25ae36b6b6ab79f3c9d9703fefdbf7bdae912f28de94a754bc9599",
+  "risk_class": "high",
+  "authority": "fixture-maintainer",
+  "confirmed_at": "2026-01-01T00:00:00Z",
+  "decision": "confirmed",
+  "permitted_next_action": "draft_req_only"
+}

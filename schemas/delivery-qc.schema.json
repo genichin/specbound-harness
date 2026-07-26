@@ -11,7 +11,7 @@
       "additionalProperties": false,
       "required": ["path", "id", "revision", "sha256"],
       "properties": {
-        "path": {"type": "string", "pattern": "^docs/requirements/req-[0-9]+/req-[0-9]+-r[1-9][0-9]*\\.md$"},
+        "path": {"type": "string", "pattern": "^\\.specbound/requirements/req-[0-9]+/req-[0-9]+-r[1-9][0-9]*\\.md$"},
         "id": {"type": "string", "pattern": "^req-[0-9]+$"},
         "revision": {"type": "integer", "minimum": 1},
         "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}

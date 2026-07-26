@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "role_id": "delivery-qc",
+  "task_kind": "delivery-qc",
+  "target": {
+    "path": ".specbound/iteration-qc/req-9007/iqc-9007-001-r1.json",
+    "id": "iqc-9007-001",
+    "revision": 1,
+    "sha256": "6297e1e6ee2b5bf0706860664a8a888ee25f677a085ac5022150bef0ddbd394d"
+  },
+  "current_state": "verified",
+  "inputs": {
+    "verified-iteration-qc-set": "input:verified-iteration-qc-set",
+    "approved-requirement": "input:approved-requirement",
+    "exact-target": "input:exact-target",
+    "current-state": "input:current-state"
+  },
+  "requested_capabilities": {
+    "paths": [
+      ".specbound/delivery-qc/dqc-9100-r1.json"
+    ],
+    "tool_categories": [
+      "repository-read",
+      "candidate-write",
+      "test-execute",
+      "filesystem-metadata"
+    ],
+    "mutation_classes": [
+      "evidence_write"
+    ],
+    "output_kinds": [
+      "agent-result"
+    ],
+    "actions": [
+      "request-delivery-decision"
+    ]
+  },
+  "producer_result_ref": {
+    "result_id": "result-iteration-qc",
+    "role_id": "iteration-qc",
+    "execution_id": "execution-iteration-qc",
+    "context_id": "context-iteration-qc",
+    "sha256": "5f80a8dce98f92b7a12028bf144fb94019b3a4b9f659c8023b1e04f2a31ed632"
+  },
+  "reviewer_run_ref": {
+    "result_id": "result-independent-reviewer",
+    "role_id": "independent-reviewer",
+    "execution_id": "execution-independent-reviewer",
+    "context_id": "context-independent-reviewer",
+    "sha256": "0dd28adf6f26daa10f456c3bc7e46e2f74feec6fa2faac109d84e8020ad2eb4d"
+  }
+}

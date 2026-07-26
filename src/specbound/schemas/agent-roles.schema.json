@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://specbound.local/schemas/agent-roles.schema.json",
+  "title": "SpecBound provider-neutral agent roles policy v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "roles"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "roles": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": {"$ref": "#/$defs/role"}
+    }
+  },
+  "$defs": {
+    "safePathPattern": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*//)(?!.*(?:^|/)\\.(?:/|$))(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+    },
+    "role": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role_id", "task_kind", "required_inputs", "allowed_path_patterns",
+        "allowed_tool_categories", "mutation_classes", "output_kinds",
+        "lifecycle_eligibility", "result_references", "evidence_slots",
+        "permitted_next_actions", "forbidden_actions", "forbidden_claims"
+      ],
+      "properties": {
+        "role_id": {"enum": ["discovery-author", "requirement-author", "micro-spec-author", "independent-reviewer", "implementation", "iteration-qc", "delivery-qc"]},
+        "task_kind": {"enum": ["discovery-author", "requirement-author", "micro-spec-author", "independent-reviewer", "implementation", "iteration-qc", "delivery-qc"]},
+        "required_inputs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "allowed_path_patterns": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/safePathPattern"}},
+        "allowed_tool_categories": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["repository-read", "candidate-write", "test-execute", "filesystem-metadata"]}},
+        "mutation_classes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["none", "candidate_write", "repository_mutation", "evidence_write"]}},
+        "output_kinds": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["agent-result"]}},
+        "lifecycle_eligibility": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["draft", "in_review", "confirmed", "approved", "approved_for_implementation", "implemented", "verified", "delivery_evidence_ready"]}},
+        "result_references": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["producer_result_ref", "reviewer_run_ref"],
+          "properties": {
+            "producer_result_ref": {"enum": ["required", "optional", "forbidden"]},
+            "reviewer_run_ref": {"enum": ["required", "optional", "forbidden"]}
+          }
+        },
+        "evidence_slots": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["slot", "requirement", "not_applicable_allowed"],
+            "properties": {
+              "slot": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+              "requirement": {"enum": ["required", "optional"]},
+              "not_applicable_allowed": {"type": "boolean"}
+            }
+          }
+        },
+        "permitted_next_actions": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}},
+        "forbidden_actions": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}},
+        "forbidden_claims": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}}
+      }
+    }
+  }
+}

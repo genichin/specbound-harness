@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "role_id": "requirement-author",
+  "task_kind": "requirement-author",
+  "target": {
+    "path": ".specbound/discoveries/dcy-9002-r1.md",
+    "id": "dcy-9002",
+    "revision": 1,
+    "sha256": "a954f3486d25ae36b6b6ab79f3c9d9703fefdbf7bdae912f28de94a754bc9599"
+  },
+  "current_state": "blocked",
+  "inputs": {
+    "confirmed-discovery": "input:confirmed-discovery",
+    "exact-target": "input:exact-target"
+  },
+  "requested_capabilities": {
+    "paths": [
+      ".specbound/requirements/req-9100/req-9100-r1.md"
+    ],
+    "tool_categories": [
+      "repository-read",
+      "candidate-write"
+    ],
+    "mutation_classes": [
+      "candidate_write"
+    ],
+    "output_kinds": [
+      "agent-result"
+    ],
+    "actions": [
+      "submit-candidate-for-review"
+    ]
+  },
+  "producer_result_ref": null,
+  "reviewer_run_ref": null
+}

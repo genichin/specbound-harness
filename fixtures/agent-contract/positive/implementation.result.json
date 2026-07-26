@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "result_id": "result-implementation",
+  "role_id": "implementation",
+  "task_kind": "implementation",
+  "execution_id": "execution-implementation",
+  "context_id": "context-implementation",
+  "model_alias": "worker-model",
+  "target": {
+    "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
+    "id": "ms-9005-001",
+    "revision": null,
+    "sha256": "377b38aaf142c7210fcc5e80e0e3d47a684568425c38b15e7e42c23ad1ca30e8"
+  },
+  "producer_result_ref": null,
+  "reviewer_run_ref": {
+    "result_id": "result-independent-reviewer",
+    "role_id": "independent-reviewer",
+    "execution_id": "execution-independent-reviewer",
+    "context_id": "context-independent-reviewer",
+    "sha256": "0dd28adf6f26daa10f456c3bc7e46e2f74feec6fa2faac109d84e8020ad2eb4d"
+  },
+  "authority_type": "none",
+  "authority_action_id": null,
+  "context_provenance": {
+    "fresh_context": true,
+    "producer_transcript_inherited": false,
+    "session_memory_inherited": false,
+    "input_artifacts": [
+      {
+        "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
+        "id": "ms-9005-001",
+        "revision": null,
+        "sha256": "377b38aaf142c7210fcc5e80e0e3d47a684568425c38b15e7e42c23ad1ca30e8"
+      }
+    ]
+  },
+  "target_risk": "high",
+  "effective_task_risk": "high",
+  "tool_categories": [
+    "repository-read",
+    "candidate-write",
+    "test-execute",
+    "filesystem-metadata"
+  ],
+  "mutation_class": "repository_mutation",
+  "changed_paths": [
+    "src/fixture_impl.py"
+  ],
+  "output_kind": "agent-result",
+  "evidence": [
+    {
+      "slot": "target-binding",
+      "status": "provided",
+      "artifacts": [
+        {
+          "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
+          "id": "ms-9005-001",
+          "revision": null,
+          "sha256": "377b38aaf142c7210fcc5e80e0e3d47a684568425c38b15e7e42c23ad1ca30e8"
+        },
+        {
+          "path": "src/fixture_impl.py",
+          "id": "fixture_impl",
+          "revision": null,
+          "sha256": "1e8526dce23b1e9ab2b49e0c59cdbe3e13641af8687ff57ce07616c98fdeb02b"
+        }
+      ],
+      "commands": [],
+      "reason": null
+    },
+    {
+      "slot": "test-results",
+      "status": "provided",
+      "artifacts": [
+        {
+          "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
+          "id": "ms-9005-001",
+          "revision": null,
+          "sha256": "377b38aaf142c7210fcc5e80e0e3d47a684568425c38b15e7e42c23ad1ca30e8"
+        }
+      ],
+      "commands": [
+        {
+          "command": "fixture-check",
+          "result": "passed",
+          "exit_code": 0
+        }
+      ],
+      "reason": null
+    },
+    {
+      "slot": "rollback-inventory",
+      "status": "provided",
+      "artifacts": [
+        {
+          "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
+          "id": "ms-9005-001",
+          "revision": null,
+          "sha256": "377b38aaf142c7210fcc5e80e0e3d47a684568425c38b15e7e42c23ad1ca30e8"
+        }
+      ],
+      "commands": [],
+      "reason": null
+    }
+  ],
+  "verdict": "pass",
+  "findings": [],
+  "permitted_next_action": "request-iteration-qc",
+  "claims": []
+}

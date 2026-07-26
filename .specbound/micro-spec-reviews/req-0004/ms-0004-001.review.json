@@ -1,0 +1,16 @@
+{
+  "authority": "independent-advanced-llm-reviewer",
+  "decided_at": "2026-07-24T23:50:46Z",
+  "decision": "approved_for_implementation",
+  "micro_spec_id": "ms-0004-001",
+  "micro_spec_path": ".specbound/micro-specs/req-0004/ms-0004-001.md",
+  "micro_spec_sha256": "1513ff1d6fafc8c84026b2cbf921a144d66a460ad564f5da01090d39d5031d19",
+  "permitted_next_action": "implement_bound_micro_spec_only",
+  "reason": "The accountable user explicitly designated independent-advanced-llm-reviewer as the high-risk Micro-SPEC review authority after a fresh-context Bootstrap advisory re-review passed exact SHA-256 1513ff1d6fafc8c84026b2cbf921a144d66a460ad564f5da01090d39d5031d19 with no remaining findings; deterministic validation and Ubuntu CI run 30134208455 passed. This separate authority action permits only implementation of the exact bound Micro-SPEC.",
+  "requirement_id": "req-0004",
+  "requirement_path": ".specbound/requirements/req-0004/req-0004-r1.md",
+  "requirement_sha256": "495c04dc6c1f7b726ea7f654477bdc065c4ca67f2e5dd82797b7ad3fc723675a",
+  "revision": 1,
+  "risk": "high",
+  "schema_version": 1
+}

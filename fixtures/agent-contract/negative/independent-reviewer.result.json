@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "result_id": "result-independent-reviewer",
+  "role_id": "independent-reviewer",
+  "task_kind": "independent-reviewer",
+  "execution_id": "execution-independent-reviewer",
+  "context_id": "context-independent-reviewer",
+  "model_alias": "advanced-review-model",
+  "target": {
+    "path": ".specbound/requirements/req-9004/req-9004-r1.md",
+    "id": "req-9004",
+    "revision": 1,
+    "sha256": "8adea15f98b57ef9fbe39355944b3e4665d0aa0cda2d8143cac684a749411679"
+  },
+  "producer_result_ref": {
+    "result_id": "result-implementation",
+    "role_id": "implementation",
+    "execution_id": "execution-implementation",
+    "context_id": "context-implementation",
+    "sha256": "aa05c0f66f3e47cfcad2cda41e8a09f12da0ca0684caf9a3169ec79e10fd3c8f"
+  },
+  "reviewer_run_ref": null,
+  "authority_type": "none",
+  "authority_action_id": null,
+  "context_provenance": {
+    "fresh_context": true,
+    "producer_transcript_inherited": false,
+    "session_memory_inherited": false,
+    "input_artifacts": [
+      {
+        "path": ".specbound/requirements/req-9004/req-9004-r1.md",
+        "id": "req-9004",
+        "revision": 1,
+        "sha256": "8adea15f98b57ef9fbe39355944b3e4665d0aa0cda2d8143cac684a749411679"
+      }
+    ]
+  },
+  "target_risk": "high",
+  "effective_task_risk": "high",
+  "tool_categories": [
+    "repository-read"
+  ],
+  "mutation_class": "none",
+  "changed_paths": [],
+  "output_kind": "agent-result",
+  "evidence": [
+    {
+      "slot": "target-binding",
+      "status": "provided",
+      "artifacts": [
+        {
+          "path": ".specbound/requirements/req-9004/req-9004-r1.md",
+          "id": "req-9004",
+          "revision": 1,
+          "sha256": "8adea15f98b57ef9fbe39355944b3e4665d0aa0cda2d8143cac684a749411679"
+        }
+      ],
+      "commands": [],
+      "reason": null
+    },
+    {
+      "slot": "review-findings",
+      "status": "provided",
+      "artifacts": [
+        {
+          "path": ".specbound/requirements/req-9004/req-9004-r1.md",
+          "id": "req-9004",
+          "revision": 1,
+          "sha256": "8adea15f98b57ef9fbe39355944b3e4665d0aa0cda2d8143cac684a749411679"
+        }
+      ],
+      "commands": [],
+      "reason": null
+    }
+  ],
+  "verdict": "pass",
+  "findings": [],
+  "permitted_next_action": "request-authority-action",
+  "claims": [
+    "approval"
+  ]
+}

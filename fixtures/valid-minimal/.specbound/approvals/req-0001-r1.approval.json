@@ -1,8 +1,8 @@
 {
-  "requirement_path": "docs/requirements/req-0001/req-0001-r1.md",
+  "requirement_path": ".specbound/requirements/req-0001/req-0001-r1.md",
   "requirement_id": "req-0001",
   "revision": 1,
-  "sha256": "0927a3aa7922f1f6145154fc924cdc640cb9462f9d62f4c44ddcc11790b4bbaa",
+  "sha256": "3a4aea96e5e57018bc2515173fc5b49e56659e60b33190da2195d871115cf83f",
   "risk": "low",
   "authority": "delegated-lead"
 }

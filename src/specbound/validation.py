@@ -14,6 +14,8 @@ from typing import Any
 
 import yaml
 
+from .agent_contract import validate_agent_roles_policy
+
 REQUIREMENT_RE = re.compile(r"^(req-[0-9]+)-r([1-9][0-9]*)\.md$")
 DISCOVERY_RE = re.compile(r"^(dcy-[0-9]+)-r([1-9][0-9]*)\.md$")
 DISCOVERY_CONFIRMATION_RE = re.compile(r"^(dcy-[0-9]+)-r([1-9][0-9]*)\.confirmation\.json$")
@@ -26,7 +28,7 @@ MICRO_SPEC_REVIEW_RE = re.compile(r"^ms-([0-9]+)-(0*[1-9][0-9]*)\.review\.json$"
 ITERATION_QC_RE = re.compile(r"^iqc-([0-9]+)-(0*[1-9][0-9]*)-r([1-9][0-9]*)\.json$")
 DELIVERY_QC_RE = re.compile(r"^dqc-([0-9]+)-r([1-9][0-9]*)\.json$")
 REQUIRED_ROOTS = {
-    "requirements_root": "docs/requirements",
+    "requirements_root": ".specbound/requirements",
     "discoveries_root": ".specbound/discoveries",
     "control_root": ".specbound",
     "approvals_root": ".specbound/approvals",
@@ -40,6 +42,13 @@ REQUIRED_ROOTS = {
     "iteration_qc_root": ".specbound/iteration-qc",
     "delivery_qc_root": ".specbound/delivery-qc",
 }
+
+
+def canonical_requirement_relative(requirement_id: str, revision: int | str) -> str:
+    """Return the single canonical repository-relative path for a REQ revision."""
+    return f"{REQUIRED_ROOTS['requirements_root']}/{requirement_id}/{requirement_id}-r{revision}.md"
+
+
 REQUIREMENT_PATTERN = "req-<id>/req-<id>-r<revision>.md"
 DISCOVERY_PATTERN = "dcy-<id>-r<revision>.md"
 MICRO_SPEC_PATTERN = "req-<id>/ms-<id>-<slice>.md"
@@ -134,6 +143,7 @@ class Result:
     checked_micro_specs: int = 0
     checked_iteration_qc: int = 0
     checked_delivery_qc: int = 0
+    checked_agent_roles: int = 0
 
     @property
     def valid(self) -> bool:
@@ -153,6 +163,7 @@ class Result:
             "checked_micro_specs": self.checked_micro_specs,
             "checked_iteration_qc": self.checked_iteration_qc,
             "checked_delivery_qc": self.checked_delivery_qc,
+            "checked_agent_roles": self.checked_agent_roles,
             "blockers": self.blockers,
         }
 
@@ -296,6 +307,20 @@ def preflight(root: Path) -> Result:
             "policy.delivery_qc_authorities_by_risk must map each non-empty risk to a non-empty list of non-empty authority strings",
         )
     _validate_control_plane_adoption_config(result, policy)
+    agent_contract = policy.get("agent_contract") if isinstance(policy, dict) else None
+    if agent_contract is not None:
+        if (
+            not isinstance(agent_contract, dict)
+            or set(agent_contract) != {"enabled", "roles_path"}
+            or not isinstance(agent_contract.get("enabled"), bool)
+            or not isinstance(agent_contract.get("roles_path"), str)
+            or not _safe_relative(agent_contract.get("roles_path"))
+        ):
+            result.block(
+                "malformed_config",
+                "specbound.yaml",
+                "policy.agent_contract must contain exactly boolean enabled and a safe repository-relative roles_path",
+            )
     return result
 
 
@@ -349,7 +374,7 @@ def _validate_control_plane_adoption_config(result: Result, policy: Any) -> None
             or revision < 1
             or not isinstance(digest, str)
             or not re.fullmatch(r"[a-f0-9]{64}", digest)
-            or path != f"{REQUIRED_ROOTS['requirements_root']}/{requirement_id}/{requirement_id}-r{revision}.md"
+            or path != canonical_requirement_relative(requirement_id, revision)
         ):
             result.block("malformed_config", "specbound.yaml", "control-plane adoption entry must bind one canonical REQ snapshot")
             continue
@@ -423,7 +448,7 @@ def _atomic_replace_text(path: Path, text: str) -> None:
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     temporary_path = Path(temporary_name)
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(text)
             handle.flush()
             os.fsync(handle.fileno())
@@ -592,7 +617,7 @@ def _validate_requirement_review_submission(root: Path, path: Path, result: Resu
         result.block("invalid_review_submission_path", relative, "expected req-<id>-r<revision>.review-submission.json")
         return
     requirement_id, revision_text = match.groups()
-    requirement_relative = f"docs/requirements/{requirement_id}/{requirement_id}-r{revision_text}.md"
+    requirement_relative = canonical_requirement_relative(requirement_id, revision_text)
     requirement_path = root / requirement_relative
     try:
         submission = json.loads(path.read_text(encoding="utf-8"))
@@ -668,7 +693,7 @@ def _validate_requirement_rejection(
         result.block("invalid_rejection_path", relative, "expected req-<id>-r<revision>.rejection.json")
         return
     requirement_id, revision_text = match.groups()
-    requirement_relative = f"docs/requirements/{requirement_id}/{requirement_id}-r{revision_text}.md"
+    requirement_relative = canonical_requirement_relative(requirement_id, revision_text)
     requirement_path = root / requirement_relative
     try:
         rejection = json.loads(path.read_text(encoding="utf-8"))
@@ -832,7 +857,7 @@ def create_requirement_draft(root: Path, discovery_target: str, requirement_targ
     requirement_id, requirement_revision_text = requirement_match.groups()
     discovery_relative = f".specbound/discoveries/{discovery_target}.md"
     confirmation_relative = f".specbound/confirmations/{discovery_target}.confirmation.json"
-    requirement_relative = f"docs/requirements/{requirement_id}/{requirement_target}.md"
+    requirement_relative = canonical_requirement_relative(requirement_id, requirement_revision_text)
     before = validate(root)
     if not before.valid:
         parent_blocker = next(
@@ -951,7 +976,7 @@ def create_requirement_draft(root: Path, discovery_target: str, requirement_targ
         except OSError as exc:
             raise RequirementDraftError("requirement_write_failed", requirement_relative, str(exc)) from exc
         try:
-            with os.fdopen(requirement_fd, "w", encoding="utf-8") as handle:
+            with os.fdopen(requirement_fd, "w", encoding="utf-8", newline="\n") as handle:
                 handle.write(text)
                 handle.flush()
                 os.fsync(handle.fileno())
@@ -1515,7 +1540,7 @@ def _validate_delivery_qc_aggregation(
     requirement_number, revision_text = name_match.groups()
     requirement_id = f"req-{requirement_number}"
     revision = int(revision_text)
-    requirement_relative = f"docs/requirements/{requirement_id}/{requirement_id}-r{revision}.md"
+    requirement_relative = canonical_requirement_relative(requirement_id, revision)
     expected_keys = {
         "schema_version",
         "requirement",
@@ -1950,7 +1975,7 @@ def check_requirement_readiness(root: Path, target: str) -> Result:
         result.block("invalid_requirement_target", target, "target must be req-<id>-r<revision>")
         return result
     requirement_id, revision_text = match.groups()
-    relative = f"docs/requirements/{requirement_id}/{target}.md"
+    relative = canonical_requirement_relative(requirement_id, revision_text)
     path = root / relative
     symlink = _first_symlink_component(root, path)
     if symlink:
@@ -2059,7 +2084,7 @@ def _publish_review_submission_record(directory: Path, name: str, text: str) -> 
     try:
         record_fd = os.open(".", os.O_WRONLY | os.O_TMPFILE, 0o666, dir_fd=directory_fd)
         try:
-            with os.fdopen(record_fd, "w", encoding="utf-8") as handle:
+            with os.fdopen(record_fd, "w", encoding="utf-8", newline="\n") as handle:
                 handle.write(text)
                 handle.flush()
                 os.fsync(handle.fileno())
@@ -2088,7 +2113,7 @@ def submit_requirement_for_review(root: Path, target: str) -> Path:
     match = REQUIREMENT_RE.fullmatch(f"{target}.md")
     assert match is not None
     requirement_id, revision_text = match.groups()
-    relative = f"docs/requirements/{requirement_id}/{target}.md"
+    relative = canonical_requirement_relative(requirement_id, revision_text)
     submission_relative = f".specbound/review-submissions/{target}.review-submission.json"
     requirement_path, submission_path = root / relative, root / submission_relative
     for path, label in ((requirement_path, "REQ"), (submission_path.parent, "review-submission directory")):
@@ -2185,7 +2210,7 @@ def reject_requirement(root: Path, target: str, authority: str, reason: str) -> 
         raise RequirementRejectionError("invalid_requirement_target", target, "target must be req-<id>-r<revision>")
     requirement_id, revision_text = match.groups()
     revision = int(revision_text)
-    requirement_relative = f"docs/requirements/{requirement_id}/{target}.md"
+    requirement_relative = canonical_requirement_relative(requirement_id, revision_text)
     rejection_relative = f".specbound/rejections/{target}.rejection.json"
     before = validate(root)
     if not before.valid:
@@ -2377,6 +2402,11 @@ def validate(root: Path, claim: str | None = None, requirement: str | None = Non
     if not result.valid:
         return result
     config = _load_config(root)
+    agent_contract = config["policy"].get("agent_contract")
+    if isinstance(agent_contract, dict) and agent_contract.get("enabled") is True:
+        policy_result = validate_agent_roles_policy(root, agent_contract["roles_path"])
+        result.checked_agent_roles = policy_result.checked_roles
+        result.blockers.extend(policy_result.blockers)
     adopted_requirements = _adopted_requirement_entries(root, config, result)
     allowed_authorities_by_risk = {
         risk_class: set(authorities)

@@ -1,6 +1,6 @@
 version: 1
 canonical:
-  requirements_root: docs/requirements
+  requirements_root: .specbound/requirements
   discoveries_root: .specbound/discoveries
   control_root: .specbound
   approvals_root: .specbound/approvals
@@ -19,6 +19,9 @@ canonical:
   iteration_qc_pattern: "req-<id>/iqc-<id>-<slice>-r<revision>.json"
   delivery_qc_pattern: "dqc-<id>-r<revision>.json"
 policy:
+  agent_contract:
+    enabled: true
+    roles_path: .specbound/policies/agent-roles.yaml
   approved_status: approved
   confirmed_discovery_status: confirmed
   discovery_confirmation_revision_policy: latest_only_with_explicit_exception

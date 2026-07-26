@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "result_id": "result-micro-spec-author",
+  "role_id": "micro-spec-author",
+  "task_kind": "micro-spec-author",
+  "execution_id": "execution-micro-spec-author",
+  "context_id": "context-micro-spec-author",
+  "model_alias": "worker-model",
+  "target": {
+    "path": ".specbound/requirements/req-9003/req-9003-r1.md",
+    "id": "req-9003",
+    "revision": 1,
+    "sha256": "b4480dec114995a1beb0ad8f25b2e7aad9ebdd50a2a6df1fec2bb7a6f69e1ca5"
+  },
+  "producer_result_ref": null,
+  "reviewer_run_ref": null,
+  "authority_type": "none",
+  "authority_action_id": null,
+  "context_provenance": {
+    "fresh_context": true,
+    "producer_transcript_inherited": false,
+    "session_memory_inherited": false,
+    "input_artifacts": [
+      {
+        "path": ".specbound/requirements/req-9003/req-9003-r1.md",
+        "id": "req-9003",
+        "revision": 1,
+        "sha256": "b4480dec114995a1beb0ad8f25b2e7aad9ebdd50a2a6df1fec2bb7a6f69e1ca5"
+      }
+    ]
+  },
+  "target_risk": "high",
+  "effective_task_risk": "high",
+  "tool_categories": [
+    "repository-read",
+    "candidate-write"
+  ],
+  "mutation_class": "candidate_write",
+  "changed_paths": [
+    ".specbound/micro-specs/req-9100/ms-9100-001.md"
+  ],
+  "output_kind": "agent-result",
+  "evidence": [
+    {
+      "slot": "target-binding",
+      "status": "provided",
+      "artifacts": [
+        {
+          "path": ".specbound/requirements/req-9003/req-9003-r1.md",
+          "id": "req-9003",
+          "revision": 1,
+          "sha256": "b4480dec114995a1beb0ad8f25b2e7aad9ebdd50a2a6df1fec2bb7a6f69e1ca5"
+        },
+        {
+          "path": ".specbound/micro-specs/req-9100/ms-9100-001.md",
+          "id": "ms-9100-001",
+          "revision": null,
+          "sha256": "3a1cf3b474bc8031c0d78f672139215075d0d8d456d762a2886bab0f4295105b"
+        }
+      ],
+      "commands": [],
+      "reason": null
+    },
+    {
+      "slot": "selected-ac-coverage",
+      "status": "provided",
+      "artifacts": [
+        {
+          "path": ".specbound/requirements/req-9003/req-9003-r1.md",
+          "id": "req-9003",
+          "revision": 1,
+          "sha256": "b4480dec114995a1beb0ad8f25b2e7aad9ebdd50a2a6df1fec2bb7a6f69e1ca5"
+        }
+      ],
+      "commands": [],
+      "reason": null
+    }
+  ],
+  "verdict": "pass",
+  "findings": [],
+  "permitted_next_action": "submit-candidate-for-review",
+  "claims": []
+}

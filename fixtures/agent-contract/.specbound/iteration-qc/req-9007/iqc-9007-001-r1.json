@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "micro_spec": {
+    "path": ".specbound/micro-specs/req-9007/ms-9007-001.md",
+    "id": "ms-9007-001",
+    "sha256": "1e6e6aa268d4162db528e26c7174ee3fb098d728e7fcaf5f2117d1144da36f80"
+  },
+  "selected_acceptance_criteria": [
+    "AC-001"
+  ],
+  "remaining_acceptance_criteria": [
+    "AC-002"
+  ],
+  "verification": [
+    {
+      "command": "pytest -q",
+      "result": "passed",
+      "exit_code": 0
+    }
+  ],
+  "verdict": "verified"
+}

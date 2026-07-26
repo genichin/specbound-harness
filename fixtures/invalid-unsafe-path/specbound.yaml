@@ -1,6 +1,6 @@
 version: 1
 canonical:
-  requirements_root: docs/requirements
+  requirements_root: .specbound/requirements
   discoveries_root: .specbound/discoveries
   control_root: .specbound
   approvals_root: .specbound/approvals
@@ -129,3 +129,6 @@ policy:
   control_plane_adoption:
     schema_version: 1
     requirements: []
+  agent_contract:
+    enabled: true
+    roles_path: .specbound/policies/agent-roles.yaml

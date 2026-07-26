@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "result_id": "result-delivery-qc",
+  "role_id": "delivery-qc",
+  "task_kind": "delivery-qc",
+  "execution_id": "execution-delivery-qc",
+  "context_id": "context-delivery-qc",
+  "model_alias": "worker-model",
+  "target": {
+    "path": ".specbound/iteration-qc/req-9007/iqc-9007-001-r1.json",
+    "id": "iqc-9007-001",
+    "revision": 1,
+    "sha256": "6297e1e6ee2b5bf0706860664a8a888ee25f677a085ac5022150bef0ddbd394d"
+  },
+  "producer_result_ref": {
+    "result_id": "result-iteration-qc",
+    "role_id": "iteration-qc",
+    "execution_id": "execution-iteration-qc",
+    "context_id": "context-iteration-qc",
+    "sha256": "5f80a8dce98f92b7a12028bf144fb94019b3a4b9f659c8023b1e04f2a31ed632"
+  },
+  "reviewer_run_ref": {
+    "result_id": "result-independent-reviewer",
+    "role_id": "independent-reviewer",
+    "execution_id": "execution-independent-reviewer",
+    "context_id": "context-independent-reviewer",
+    "sha256": "0dd28adf6f26daa10f456c3bc7e46e2f74feec6fa2faac109d84e8020ad2eb4d"
+  },
+  "authority_type": "none",
+  "authority_action_id": null,
+  "context_provenance": {
+    "fresh_context": true,
+    "producer_transcript_inherited": false,
+    "session_memory_inherited": false,
+    "input_artifacts": [
+      {
+        "path": ".specbound/iteration-qc/req-9007/iqc-9007-001-r1.json",
+        "id": "iqc-9007-001",
+        "revision": 1,
+        "sha256": "6297e1e6ee2b5bf0706860664a8a888ee25f677a085ac5022150bef0ddbd394d"
+      }
+    ]
+  },
+  "target_risk": "high",
+  "effective_task_risk": "high",
+  "tool_categories": [
+    "repository-read",
+    "candidate-write",
+    "test-execute",
+    "filesystem-metadata"
+  ],
+  "mutation_class": "evidence_write",
+  "changed_paths": [
+    ".specbound/delivery-qc/dqc-9100-r1.json"
+  ],
+  "output_kind": "agent-result",
+  "evidence": [
+    {
+      "slot": "target-binding",
+      "status": "provided",
+      "artifacts": [
+        {
+          "path": ".specbound/iteration-qc/req-9007/iqc-9007-001-r1.json",
+          "id": "iqc-9007-001",
+          "revision": 1,
+          "sha256": "6297e1e6ee2b5bf0706860664a8a888ee25f677a085ac5022150bef0ddbd394d"
+        },
+        {
+          "path": ".specbound/delivery-qc/dqc-9100-r1.json",
+          "id": "dqc-9100",
+          "revision": 1,
+          "sha256": "ad054599b59b549d12cdfab693dbb6e3cb9961c01f700d62edf84baf9a59ccd6"
+        }
+      ],
+      "commands": [],
+      "reason": null
+    },
+    {
+      "slot": "complete-ac-coverage",
+      "status": "provided",
+      "artifacts": [
+        {
+          "path": ".specbound/iteration-qc/req-9007/iqc-9007-001-r1.json",
+          "id": "iqc-9007-001",
+          "revision": 1,
+          "sha256": "6297e1e6ee2b5bf0706860664a8a888ee25f677a085ac5022150bef0ddbd394d"
+        }
+      ],
+      "commands": [],
+      "reason": null
+    },
+    {
+      "slot": "regression-evidence",
+      "status": "provided",
+      "artifacts": [
+        {
+          "path": ".specbound/iteration-qc/req-9007/iqc-9007-001-r1.json",
+          "id": "iqc-9007-001",
+          "revision": 1,
+          "sha256": "6297e1e6ee2b5bf0706860664a8a888ee25f677a085ac5022150bef0ddbd394d"
+        }
+      ],
+      "commands": [
+        {
+          "command": "fixture-check",
+          "result": "passed",
+          "exit_code": 0
+        }
+      ],
+      "reason": null
+    }
+  ],
+  "verdict": "pass",
+  "findings": [],
+  "permitted_next_action": "request-delivery-decision",
+  "claims": []
+}

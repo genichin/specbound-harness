@@ -6,8 +6,10 @@ import argparse
 import json
 from pathlib import Path
 
+from .agent_contract import validate_configured_agent_result, validate_configured_role_request
 from .validation import (
     ConfirmationError,
+    REQUIRED_ROOTS,
     RequirementDraftError,
     RequirementReviewSubmissionError,
     check_requirement_readiness,
@@ -21,6 +23,11 @@ from .validation import (
 from .requirement_lifecycle import RequirementLifecycleError, approve_requirement, record_review_decision, reconsider_requirement, reject_requirement
 from .micro_spec_lifecycle import MicroSpecReviewError, record_micro_spec_review
 from .issuance_request import prevalidate_issuance_request, publish_issuance
+from .requirement_docs import (
+    REQUIREMENTS_DOCUMENT,
+    RequirementsDocumentError,
+    update_requirements_document,
+)
 
 
 def _emit(payload: object) -> None:
@@ -37,6 +44,17 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("context", help="show the discovered repository root and canonical paths")
     commands.add_parser("preflight", help="validate SpecBound configuration")
+    docs = commands.add_parser("docs", help="generate user-facing documentation from canonical artifacts")
+    docs_commands = docs.add_subparsers(dest="docs_command", required=True)
+    docs_requirements = docs_commands.add_parser(
+        "requirements",
+        help="generate the user-facing latest requirement index",
+    )
+    docs_requirements.add_argument(
+        "--check",
+        action="store_true",
+        help="fail without writing when docs/requirements.md is missing or stale",
+    )
     validate_command = commands.add_parser("validate", help="validate canonical lifecycle artifacts or a scoped adopted claim")
     validate_command.add_argument("--claim", choices=("iteration", "delivery"), help="validate one adopted evidence claim")
     validate_command.add_argument("--requirement", help="exact adopted REQ: req-<id>-r<revision> (required with --claim)")
@@ -82,6 +100,19 @@ def build_parser() -> argparse.ArgumentParser:
     micro_spec_review.add_argument("--decision", required=True, choices=("approved_for_implementation", "rework", "blocked"))
     micro_spec_review.add_argument("--reason", required=True, help="substantive review rationale")
 
+    agent = commands.add_parser("agent", help="read-only validation of provider-neutral agent contracts")
+    agent_commands = agent.add_subparsers(dest="agent_command", required=True)
+    check_role_request = agent_commands.add_parser(
+        "check-role-request",
+        help="fail closed before execution when a role request exceeds the active policy",
+    )
+    check_role_request.add_argument("--request-file", type=Path, required=True)
+    validate_result = agent_commands.add_parser(
+        "validate-result",
+        help="validate a closed, digest-bound agent result without mutation",
+    )
+    validate_result.add_argument("--result-file", type=Path, required=True)
+
     discovery = commands.add_parser("discovery", help="operate on canonical Discovery artifacts")
     discovery_commands = discovery.add_subparsers(dest="discovery_command", required=True)
     confirm = discovery_commands.add_parser("confirm", help="create a non-overwritable Discovery confirmation record")
@@ -106,7 +137,7 @@ def main(argv: list[str] | None = None) -> int:
         _emit(
             {
                 "root": str(root),
-                "requirements_root": "docs/requirements",
+                "requirements_root": REQUIRED_ROOTS["requirements_root"],
                 "discoveries_root": ".specbound/discoveries",
                 "discovery_confirmations_root": ".specbound/confirmations",
                 "micro_specs_root": ".specbound/micro-specs",
@@ -121,8 +152,37 @@ def main(argv: list[str] | None = None) -> int:
         _emit(result.payload())
         return 0 if result.valid else 2
 
+    if args.command == "docs" and args.docs_command == "requirements":
+        try:
+            changed, count = update_requirements_document(root, check=args.check)
+        except RequirementsDocumentError as exc:
+            _emit({"valid": False, "blockers": [{"code": exc.code, "path": exc.path, "detail": exc.detail}]})
+            return 2
+        except OSError as exc:
+            _emit({"valid": False, "blockers": [{"code": "requirements_document_write_failed", "path": REQUIREMENTS_DOCUMENT, "detail": str(exc)}]})
+            return 2
+        output = {
+            "valid": True,
+            "requirements_document": REQUIREMENTS_DOCUMENT,
+            "requirements": count,
+        }
+        if not args.check:
+            output["changed"] = changed
+        _emit(output)
+        return 0
+
     if args.command == "validate":
         result = validate(root, claim=args.claim, requirement=args.requirement)
+        _emit(result.payload())
+        return 0 if result.valid else 2
+
+    if args.command == "agent" and args.agent_command == "check-role-request":
+        result = validate_configured_role_request(root, args.request_file)
+        _emit(result.payload())
+        return 0 if result.valid else 2
+
+    if args.command == "agent" and args.agent_command == "validate-result":
+        result = validate_configured_agent_result(root, args.result_file)
         _emit(result.payload())
         return 0 if result.valid else 2
 

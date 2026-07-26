@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "result_id": "result-iteration-qc",
+  "role_id": "iteration-qc",
+  "task_kind": "iteration-qc",
+  "execution_id": "execution-iteration-qc",
+  "context_id": "context-iteration-qc",
+  "model_alias": "worker-model",
+  "target": {
+    "path": ".specbound/micro-specs/req-9006/ms-9006-001.md",
+    "id": "ms-9006-001",
+    "revision": null,
+    "sha256": "87fcf8c7410e56dc182cd43270837e0deebc0e54438a02cfc4571f6c1b2f7a39"
+  },
+  "producer_result_ref": {
+    "result_id": "result-implementation",
+    "role_id": "implementation",
+    "execution_id": "execution-implementation",
+    "context_id": "context-implementation",
+    "sha256": "aa05c0f66f3e47cfcad2cda41e8a09f12da0ca0684caf9a3169ec79e10fd3c8f"
+  },
+  "reviewer_run_ref": {
+    "result_id": "result-independent-reviewer",
+    "role_id": "independent-reviewer",
+    "execution_id": "execution-independent-reviewer",
+    "context_id": "context-independent-reviewer",
+    "sha256": "0dd28adf6f26daa10f456c3bc7e46e2f74feec6fa2faac109d84e8020ad2eb4d"
+  },
+  "authority_type": "none",
+  "authority_action_id": null,
+  "context_provenance": {
+    "fresh_context": true,
+    "producer_transcript_inherited": false,
+    "session_memory_inherited": false,
+    "input_artifacts": [
+      {
+        "path": ".specbound/micro-specs/req-9006/ms-9006-001.md",
+        "id": "ms-9006-001",
+        "revision": null,
+        "sha256": "87fcf8c7410e56dc182cd43270837e0deebc0e54438a02cfc4571f6c1b2f7a39"
+      }
+    ]
+  },
+  "target_risk": "high",
+  "effective_task_risk": "high",
+  "tool_categories": [
+    "repository-read",
+    "candidate-write",
+    "test-execute",
+    "filesystem-metadata"
+  ],
+  "mutation_class": "evidence_write",
+  "changed_paths": [
+    ".specbound/iteration-qc/req-9100/iqc-9100-001-r1.json"
+  ],
+  "output_kind": "agent-result",
+  "evidence": [
+    {
+      "slot": "target-binding",
+      "status": "provided",
+      "artifacts": [
+        {
+          "path": ".specbound/micro-specs/req-9006/ms-9006-001.md",
+          "id": "ms-9006-001",
+          "revision": null,
+          "sha256": "87fcf8c7410e56dc182cd43270837e0deebc0e54438a02cfc4571f6c1b2f7a39"
+        },
+        {
+          "path": ".specbound/iteration-qc/req-9100/iqc-9100-001-r1.json",
+          "id": "iqc-9100-001",
+          "revision": 1,
+          "sha256": "a973aa8ad41d65e311830c8b30900fa330f18b3e665e2b55a5b3cdfdcaeb76c9"
+        }
+      ],
+      "commands": [],
+      "reason": null
+    },
+    {
+      "slot": "focused-verification",
+      "status": "provided",
+      "artifacts": [
+        {
+          "path": ".specbound/micro-specs/req-9006/ms-9006-001.md",
+          "id": "ms-9006-001",
+          "revision": null,
+          "sha256": "87fcf8c7410e56dc182cd43270837e0deebc0e54438a02cfc4571f6c1b2f7a39"
+        }
+      ],
+      "commands": [
+        {
+          "command": "fixture-check",
+          "result": "passed",
+          "exit_code": 0
+        }
+      ],
+      "reason": null
+    }
+  ],
+  "verdict": "pass",
+  "findings": [],
+  "permitted_next_action": "request-delivery-qc",
+  "claims": [
+    "approval"
+  ]
+}

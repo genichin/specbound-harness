@@ -1,0 +1,9 @@
+version: 1
+policy:
+  agent_contract:
+    enabled: true
+    roles_path: .specbound/policies/agent-roles.yaml
+  micro_spec_review_authorities_by_risk:
+    high: [fixture-maintainer]
+  discovery_confirmation_authorities_by_risk:
+    high: [fixture-maintainer]

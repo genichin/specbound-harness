@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "result_id": "result-requirement-author",
+  "role_id": "requirement-author",
+  "task_kind": "requirement-author",
+  "execution_id": "execution-requirement-author",
+  "context_id": "context-requirement-author",
+  "model_alias": "worker-model",
+  "target": {
+    "path": ".specbound/discoveries/dcy-9002-r1.md",
+    "id": "dcy-9002",
+    "revision": 1,
+    "sha256": "a954f3486d25ae36b6b6ab79f3c9d9703fefdbf7bdae912f28de94a754bc9599"
+  },
+  "producer_result_ref": null,
+  "reviewer_run_ref": null,
+  "authority_type": "none",
+  "authority_action_id": null,
+  "context_provenance": {
+    "fresh_context": true,
+    "producer_transcript_inherited": false,
+    "session_memory_inherited": false,
+    "input_artifacts": [
+      {
+        "path": ".specbound/discoveries/dcy-9002-r1.md",
+        "id": "dcy-9002",
+        "revision": 1,
+        "sha256": "a954f3486d25ae36b6b6ab79f3c9d9703fefdbf7bdae912f28de94a754bc9599"
+      }
+    ]
+  },
+  "target_risk": "high",
+  "effective_task_risk": "high",
+  "tool_categories": [
+    "repository-read",
+    "candidate-write"
+  ],
+  "mutation_class": "candidate_write",
+  "changed_paths": [
+    ".specbound/requirements/req-9100/req-9100-r1.md"
+  ],
+  "output_kind": "agent-result",
+  "evidence": [
+    {
+      "slot": "target-binding",
+      "status": "provided",
+      "artifacts": [
+        {
+          "path": ".specbound/discoveries/dcy-9002-r1.md",
+          "id": "dcy-9002",
+          "revision": 1,
+          "sha256": "a954f3486d25ae36b6b6ab79f3c9d9703fefdbf7bdae912f28de94a754bc9599"
+        },
+        {
+          "path": ".specbound/requirements/req-9100/req-9100-r1.md",
+          "id": "req-9100",
+          "revision": 1,
+          "sha256": "cb89cc93ffb881eda8d4b4c44212cdfa2e1d6936bef18e12e12db1b83f8b896c"
+        }
+      ],
+      "commands": [],
+      "reason": null
+    },
+    {
+      "slot": "acceptance-criteria",
+      "status": "provided",
+      "artifacts": [
+        {
+          "path": ".specbound/discoveries/dcy-9002-r1.md",
+          "id": "dcy-9002",
+          "revision": 1,
+          "sha256": "a954f3486d25ae36b6b6ab79f3c9d9703fefdbf7bdae912f28de94a754bc9599"
+        }
+      ],
+      "commands": [],
+      "reason": null
+    }
+  ],
+  "verdict": "pass",
+  "findings": [],
+  "permitted_next_action": "submit-candidate-for-review",
+  "claims": [
+    "approval"
+  ]
+}

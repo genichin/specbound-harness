@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://specbound.local/schemas/agent-result.schema.json",
+  "title": "SpecBound provider-neutral agent result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "result_id", "role_id", "task_kind", "execution_id", "context_id", "model_alias",
+    "target", "producer_result_ref", "reviewer_run_ref", "authority_type", "authority_action_id",
+    "context_provenance", "target_risk", "effective_task_risk", "tool_categories", "mutation_class",
+    "changed_paths", "output_kind", "evidence", "verdict", "findings", "permitted_next_action", "claims"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "result_id": {"type": "string", "minLength": 1},
+    "role_id": {"$ref": "#/$defs/roleId"},
+    "task_kind": {"$ref": "#/$defs/roleId"},
+    "execution_id": {"type": "string", "minLength": 1},
+    "context_id": {"type": "string", "minLength": 1},
+    "model_alias": {"type": "string", "minLength": 1},
+    "target": {"$ref": "#/$defs/artifactRef"},
+    "producer_result_ref": {"$ref": "#/$defs/nullableResultRef"},
+    "reviewer_run_ref": {"$ref": "#/$defs/nullableResultRef"},
+    "authority_type": {"const": "none"},
+    "authority_action_id": {"type": "null"},
+    "context_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fresh_context", "producer_transcript_inherited", "session_memory_inherited", "input_artifacts"],
+      "properties": {
+        "fresh_context": {"type": "boolean"},
+        "producer_transcript_inherited": {"type": "boolean"},
+        "session_memory_inherited": {"type": "boolean"},
+        "input_artifacts": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/artifactRef"}}
+      }
+    },
+    "target_risk": {"$ref": "#/$defs/risk"},
+    "effective_task_risk": {"$ref": "#/$defs/risk"},
+    "tool_categories": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "mutation_class": {"enum": ["none", "candidate_write", "repository_mutation", "evidence_write"]},
+    "changed_paths": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/safePath"}},
+    "output_kind": {"const": "agent-result"},
+    "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
+    "verdict": {"enum": ["pass", "rework", "blocked"]},
+    "findings": {"type": "array", "items": {"$ref": "#/$defs/finding"}},
+    "permitted_next_action": {"type": ["string", "null"], "minLength": 1},
+    "claims": {"type": "array", "uniqueItems": true, "items": {"enum": ["confirmation", "approval", "review-decision", "verified", "delivery"]}}
+  },
+  "$defs": {
+    "roleId": {
+      "enum": ["discovery-author", "requirement-author", "micro-spec-author", "independent-reviewer", "implementation", "iteration-qc", "delivery-qc"]
+    },
+    "safePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*//)(?!.*(?:^|/)\\.(?:/|$))(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+    },
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "id", "revision", "sha256"],
+      "properties": {
+        "path": {"$ref": "#/$defs/safePath"},
+        "id": {"type": "string", "minLength": 1},
+        "revision": {"type": ["integer", "null"], "minimum": 1},
+        "sha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "resultRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result_id", "role_id", "execution_id", "context_id", "sha256"],
+      "properties": {
+        "result_id": {"type": "string", "minLength": 1},
+        "role_id": {"$ref": "#/$defs/roleId"},
+        "execution_id": {"type": "string", "minLength": 1},
+        "context_id": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "nullableResultRef": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/resultRef"}]},
+    "risk": {"enum": ["low", "medium", "high", "critical"]},
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "result", "exit_code"],
+      "properties": {
+        "command": {"type": "string", "minLength": 1},
+        "result": {"enum": ["passed", "failed"]},
+        "exit_code": {"type": "integer"}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slot", "status", "artifacts", "commands", "reason"],
+      "properties": {
+        "slot": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+        "status": {"enum": ["provided", "not_applicable"]},
+        "artifacts": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/artifactRef"}},
+        "commands": {"type": "array", "items": {"$ref": "#/$defs/command"}},
+        "reason": {"type": ["string", "null"]}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "provided"}}},
+          "then": {
+            "properties": {"reason": {"type": "null"}},
+            "anyOf": [
+              {"properties": {"artifacts": {"minItems": 1}}},
+              {"properties": {"commands": {"minItems": 1}}}
+            ]
+          }
+        },
+        {
+          "if": {"properties": {"status": {"const": "not_applicable"}}},
+          "then": {
+            "properties": {
+              "artifacts": {"maxItems": 0},
+              "commands": {"maxItems": 0},
+              "reason": {"type": "string", "minLength": 10}
+            }
+          }
+        }
+      ]
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["severity", "code", "path", "detail"],
+      "properties": {
+        "severity": {"enum": ["info", "low", "medium", "high", "critical"]},
+        "code": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "path": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/safePath"}]},
+        "detail": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

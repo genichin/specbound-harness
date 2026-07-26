@@ -13,7 +13,7 @@
     "micro_spec_path": {"type": "string"},
     "micro_spec_id": {"type": "string", "pattern": "^ms-[0-9]+-[1-9][0-9]*$"},
     "micro_spec_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-    "requirement_path": {"type": "string"},
+    "requirement_path": {"type": "string", "pattern": "^\\.specbound/requirements/req-[0-9]+/req-[0-9]+-r[1-9][0-9]*\\.md$"},
     "requirement_id": {"type": "string", "pattern": "^req-[0-9]+$"},
     "revision": {"type": "integer", "minimum": 1},
     "requirement_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},

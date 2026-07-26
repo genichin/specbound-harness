@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "requirement_path": ".specbound/requirements/req-9004/req-9004-r1.md",
+  "requirement_id": "req-9004",
+  "revision": 1,
+  "draft_sha256": "a0476b13661840d12d7aec22d560f57338473857bc61222206a89d41a5088fa2",
+  "reviewed_sha256": "8adea15f98b57ef9fbe39355944b3e4665d0aa0cda2d8143cac684a749411679",
+  "risk": "high",
+  "owner": "fixture-owner",
+  "submitted_at": "2026-01-01T00:00:00Z",
+  "decision": "submitted_for_review",
+  "permitted_next_action": "review_decision_only"
+}

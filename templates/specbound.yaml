@@ -1,7 +1,7 @@
 # Copy this file into an adopting repository root.
 version: 1
 canonical:
-  requirements_root: docs/requirements
+  requirements_root: .specbound/requirements
   discoveries_root: .specbound/discoveries
   control_root: .specbound
   approvals_root: .specbound/approvals
@@ -9,6 +9,7 @@ canonical:
   review_submissions_root: .specbound/review-submissions
   review_decisions_root: .specbound/review-decisions
   reconsiderations_root: .specbound/reconsiderations
+  micro_spec_reviews_root: .specbound/micro-spec-reviews
   discovery_confirmations_root: .specbound/confirmations
   # .specbound/micro-specs/req-<id>/ms-<id>-<slice>.md
   # .specbound/iteration-qc/req-<id>/iqc-<id>-<slice>-r<revision>.json
@@ -22,6 +23,10 @@ canonical:
   iteration_qc_pattern: "req-<id>/iqc-<id>-<slice>-r<revision>.json"
   delivery_qc_pattern: "dqc-<id>-r<revision>.json"
 policy:
+  # Provider-neutral role contract is opt-in for adopting repositories.
+  agent_contract:
+    enabled: false
+    roles_path: .specbound/policies/agent-roles.yaml
   approved_status: approved
   confirmed_discovery_status: confirmed
   discovery_confirmation_revision_policy: latest_only_with_explicit_exception
@@ -93,6 +98,21 @@ policy:
     - confirmed_at
     - decision
     - permitted_next_action
+  required_micro_spec_review_fields:
+    - schema_version
+    - micro_spec_path
+    - micro_spec_id
+    - micro_spec_sha256
+    - requirement_path
+    - requirement_id
+    - revision
+    - requirement_sha256
+    - risk
+    - authority
+    - decided_at
+    - decision
+    - reason
+    - permitted_next_action
   discovery_confirmation_authorities_by_risk:
     low:
       - repository-maintainer
@@ -131,6 +151,13 @@ policy:
       - repository-maintainer
     high:
       - repository-maintainer
+      - independent-advanced-llm-reviewer
+  micro_spec_review_authorities_by_risk:
+    low:
+      - repository-maintainer
+    medium:
+      - repository-maintainer
+    high:
       - independent-advanced-llm-reviewer
   delivery_qc_authorities_by_risk:
     low:

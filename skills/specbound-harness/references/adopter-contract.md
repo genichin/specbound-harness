@@ -5,9 +5,11 @@ An adopting repository must place `specbound.yaml` at its root. The bootstrap va
 ```text
 .specbound/discoveries/dcy-<numeric-id>-r<revision>.md
 .specbound/confirmations/dcy-<numeric-id>-r<revision>.confirmation.json
-docs/requirements/req-<numeric-id>/req-<numeric-id>-r<revision>.md
+.specbound/requirements/req-<numeric-id>/req-<numeric-id>-r<revision>.md
 .specbound/approvals/req-<numeric-id>-r<revision>.approval.json
 ```
+
+`docs/requirements.md` is a generated, user-facing projection of the latest canonical REQ revisions. It is not lifecycle state. Run `specbound docs requirements` after changing canonical REQ display metadata and enforce freshness with `specbound docs requirements --check` in CI.
 
 A Discovery confirmation binds `schema_version`, `discovery_path`, `discovery_id`, `revision`, `sha256`, `risk_class`, `authority`, `confirmed_at`, `decision`, and `permitted_next_action`. After an explicit accountable decision, create it with `specbound discovery confirm dcy-<id>-r<revision> --authority <allowlisted-authority>`. The confirmer must be allowlisted for that Discovery's risk class by `policy.discovery_confirmation_authorities_by_risk`; its only permitted action is `draft_req_only`. `policy.discovery_confirmation_revision_policy: latest_only_with_explicit_exception` rejects a new confirmation of a lower revision while a higher revision exists unless an auditable supersession exception is recorded.
 

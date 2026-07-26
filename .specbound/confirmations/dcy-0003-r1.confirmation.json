@@ -5,9 +5,9 @@
   "discovery_id": "dcy-0003",
   "discovery_path": ".specbound/discoveries/dcy-0003-r1.md",
   "permitted_next_action": "draft_req_only",
-  "reviewed_sha256": "4f1afd9d3b4aae1e4c2ff2f9892371d6c9dc9746373958ce864700ff00b8f561",
+  "reviewed_sha256": "1cf0ae921f138cffd7e8db1421602ed1a1d9d6f29b975b67bcdb697ce16d5277",
   "revision": 1,
   "risk_class": "high",
   "schema_version": 1,
-  "sha256": "86160557cfb010c4a499bb3846ec32c56a0ee0d16996ac12b32bf2457e92494d"
+  "sha256": "00693b045cc159f482741635d29bb5cc710042f743450df3d111230307dd0b34"
 }

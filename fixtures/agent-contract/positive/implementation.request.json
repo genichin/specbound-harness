@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "role_id": "implementation",
+  "task_kind": "implementation",
+  "target": {
+    "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
+    "id": "ms-9005-001",
+    "revision": null,
+    "sha256": "377b38aaf142c7210fcc5e80e0e3d47a684568425c38b15e7e42c23ad1ca30e8"
+  },
+  "current_state": "approved_for_implementation",
+  "inputs": {
+    "reviewed-micro-spec": "input:reviewed-micro-spec",
+    "review-record": "input:review-record",
+    "exact-target": "input:exact-target",
+    "current-state": "input:current-state"
+  },
+  "requested_capabilities": {
+    "paths": [
+      "src/fixture_impl.py"
+    ],
+    "tool_categories": [
+      "repository-read",
+      "candidate-write",
+      "test-execute",
+      "filesystem-metadata"
+    ],
+    "mutation_classes": [
+      "repository_mutation"
+    ],
+    "output_kinds": [
+      "agent-result"
+    ],
+    "actions": [
+      "request-iteration-qc"
+    ]
+  },
+  "producer_result_ref": null,
+  "reviewer_run_ref": {
+    "result_id": "result-independent-reviewer",
+    "role_id": "independent-reviewer",
+    "execution_id": "execution-independent-reviewer",
+    "context_id": "context-independent-reviewer",
+    "sha256": "0dd28adf6f26daa10f456c3bc7e46e2f74feec6fa2faac109d84e8020ad2eb4d"
+  }
+}

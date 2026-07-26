@@ -18,9 +18,33 @@ jobs:
       - name: Install source and test
         run: python -m pip install -e ".[test]"
       - name: Test
-        run: python -m pytest
+        run: |
+          set +e
+          python -m pytest --junitxml=pytest-results.xml
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            python - <<'PY'
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("pytest-results.xml").getroot()
+          for case in root.iter("testcase"):
+              problem = case.find("failure")
+              if problem is None:
+                  problem = case.find("error")
+              if problem is None:
+                  continue
+              test_id = f"{case.get('classname', '')}::{case.get('name', '')}"
+              detail = " ".join((problem.text or problem.get("message", "")).split())
+              print(f"::error file=.github,title=pytest failure::{test_id}: {detail[:4000]}")
+          PY
+          fi
+          exit "$status"
+      - name: Preflight bootstrap harness
+        run: specbound preflight
       - name: Validate bootstrap harness
         run: specbound validate
+      - name: Verify generated requirement documentation
+        run: specbound docs requirements --check
       - name: Build wheel
         run: python -m pip wheel --wheel-dir dist ".[test]"
       - name: Validate installed wheel
@@ -28,5 +52,10 @@ jobs:
           python -m venv /tmp/specbound-wheel
           /tmp/specbound-wheel/bin/pip install --no-index --find-links dist specbound
           /tmp/specbound-wheel/bin/specbound --root fixtures/valid-minimal validate
+          /tmp/specbound-wheel/bin/specbound --root fixtures/agent-contract agent check-role-request --request-file fixtures/agent-contract/positive/implementation.request.json
+          /tmp/specbound-wheel/bin/specbound --root fixtures/agent-contract agent validate-result --result-file fixtures/agent-contract/positive/implementation.result.json
+          if /tmp/specbound-wheel/bin/specbound --root fixtures/agent-contract agent check-role-request --request-file fixtures/agent-contract/negative/implementation.request.json; then echo 'negative role request was accepted' >&2; exit 1; fi
+          if /tmp/specbound-wheel/bin/specbound --root fixtures/agent-contract agent validate-result --result-file fixtures/agent-contract/negative/implementation.result.json; then echo 'negative agent result was accepted' >&2; exit 1; fi
+          /tmp/specbound-wheel/bin/specbound --root . docs requirements --check
       - name: Harness validation
         run: python -m specbound.cli validate

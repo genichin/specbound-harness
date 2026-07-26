@@ -1,6 +1,8 @@
 ---
 id: req-<numeric-id>
 revision: <positive-integer>
+title: <사용자 친화적인 요구사항명>
+summary: <사용자 관점의 한 문장 설명>
 status: draft
 risk: <parent-risk-class>
 owner: <accountable-owner>
