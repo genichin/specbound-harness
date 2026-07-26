@@ -1129,14 +1129,16 @@ def _canonical_artifact_risk(
         metadata = _artifact_metadata(target_path)
     except (OSError, UnicodeError, yaml.YAMLError, ValueError):
         return fail("malformed_artifact_lineage", "canonical risk metadata cannot be parsed")
-    recorded = metadata.get("risk", metadata.get("risk_class"))
-    if recorded not in RISK_ORDER:
-        return fail("invalid_artifact_risk", f"canonical artifact risk must be one of {RISK_ORDER}")
-
     try:
         relative = target_path.relative_to(root).as_posix()
     except ValueError:
         return fail("invalid_artifact_lineage", "canonical risk target is outside the repository")
+    recorded = metadata.get("risk", metadata.get("risk_class"))
+    inherits_risk = relative.startswith(".specbound/micro-specs/")
+    if recorded is not None and recorded not in RISK_ORDER:
+        return fail("invalid_artifact_risk", f"canonical artifact risk must be one of {RISK_ORDER}")
+    if recorded is None and not inherits_risk:
+        return fail("invalid_artifact_risk", f"canonical artifact risk must be one of {RISK_ORDER}")
     required_parent = None
     if relative.startswith(".specbound/requirements/"):
         required_parent = "parent_discovery"
@@ -1148,7 +1150,7 @@ def _canonical_artifact_risk(
     if required_parent is not None and required_parent not in declared:
         return fail("missing_artifact_lineage", f"canonical {required_parent} binding is required")
 
-    risks = [recorded]
+    risks = [recorded] if recorded is not None else []
     for name in declared:
         binding = metadata.get(name)
         if not isinstance(binding, dict):
@@ -1212,7 +1214,7 @@ def _canonical_artifact_risk(
                 )
             parent_risk = confirmed_parent_risk
         risks.append(parent_risk)
-        if RISK_ORDER.index(recorded) < RISK_ORDER.index(parent_risk):
+        if recorded is not None and RISK_ORDER.index(recorded) < RISK_ORDER.index(parent_risk):
             fail("artifact_risk_downgrade", f"child risk {recorded!r} is below parent risk {parent_risk!r}")
     return RISK_ORDER[max(RISK_ORDER.index(risk) for risk in risks)]
 
@@ -1335,6 +1337,8 @@ def _retained_requirement_lifecycle_is_valid(
     }
     present: dict[str, tuple[str, dict[str, Any]]] = {}
     try:
+        from .validation import PLACEHOLDER_RE
+
         target_path = _safe_repository_path(root, target["path"])
         metadata = _artifact_metadata(target_path)
         config_path = _safe_repository_path(root, "specbound.yaml")
@@ -1360,6 +1364,7 @@ def _retained_requirement_lifecycle_is_valid(
                 or record.get("authority") not in allowed
                 or not isinstance(record.get("reason"), str)
                 or not record["reason"].strip()
+                or PLACEHOLDER_RE.search(record["reason"])
                 or not _valid_timestamp(record.get(timestamp_field))
                 or any(not isinstance(record.get(field), str) or not re.fullmatch(r"[0-9a-f]{64}", record[field]) for field in digest_fields)
                 or (expected_decision is not None and record.get("decision") != expected_decision)
@@ -1549,7 +1554,40 @@ def _derive_current_state(
         if not _canonical_state_record_matches(root, parent, "confirmed", check):
             return None
         return "confirmed"
-    if for_result and role_id == "independent-reviewer" and producer_reference_valid:
+    if (
+        for_result
+        and role_id == "independent-reviewer"
+        and producer_reference_valid
+        and target["path"].startswith(".specbound/requirements/")
+    ):
+        metadata = _artifact_metadata(path)
+        state = metadata.get("status")
+        if not isinstance(state, str) or not state:
+            if outcome is not None:
+                outcome.block("missing_canonical_state", target["path"], "reviewed requirement lacks a canonical status")
+            return None
+        if not _canonical_state_record_matches(root, target, state, outcome):
+            return None
+        return state
+    if (
+        for_result
+        and role_id == "independent-reviewer"
+        and producer_reference_valid
+        and target["path"].startswith(".specbound/discoveries/")
+    ):
+        metadata = _artifact_metadata(path)
+        state = metadata.get("status")
+        if state == "in_review":
+            return "in_review"
+        if isinstance(state, str) and _canonical_state_record_matches(root, target, state, outcome):
+            return state
+        return None
+    if (
+        for_result
+        and role_id == "independent-reviewer"
+        and producer_reference_valid
+        and target["path"].startswith(".specbound/micro-specs/")
+    ):
         return "in_review"
     if for_result and role_id == "micro-spec-author" and target["path"].startswith(".specbound/micro-specs/"):
         metadata = _artifact_metadata(path)
