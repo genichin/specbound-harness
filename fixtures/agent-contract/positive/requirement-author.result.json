@@ -3,6 +3,8 @@
   "result_id": "result-requirement-author",
   "role_id": "requirement-author",
   "task_kind": "requirement-author",
+  "planned_execution_id": "execution-requirement-author",
+  "planned_context_id": "context-requirement-author",
   "execution_id": "execution-requirement-author",
   "context_id": "context-requirement-author",
   "model_alias": "worker-model",

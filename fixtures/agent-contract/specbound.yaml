@@ -7,3 +7,5 @@ policy:
     high: [fixture-maintainer]
   discovery_confirmation_authorities_by_risk:
     high: [fixture-maintainer]
+  requirement_approval_authorities_by_risk:
+    high: [fixture-maintainer]

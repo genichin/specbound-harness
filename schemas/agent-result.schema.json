@@ -5,7 +5,8 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schema_version", "result_id", "role_id", "task_kind", "execution_id", "context_id", "model_alias",
+    "schema_version", "result_id", "role_id", "task_kind", "planned_execution_id", "planned_context_id",
+    "execution_id", "context_id", "model_alias",
     "target", "producer_result_ref", "reviewer_run_ref", "authority_type", "authority_action_id",
     "context_provenance", "target_risk", "effective_task_risk", "tool_categories", "mutation_class",
     "changed_paths", "output_kind", "evidence", "verdict", "findings", "permitted_next_action", "claims"
@@ -15,6 +16,8 @@
     "result_id": {"type": "string", "minLength": 1},
     "role_id": {"$ref": "#/$defs/roleId"},
     "task_kind": {"$ref": "#/$defs/roleId"},
+    "planned_execution_id": {"type": "string", "minLength": 1},
+    "planned_context_id": {"type": "string", "minLength": 1},
     "execution_id": {"type": "string", "minLength": 1},
     "context_id": {"type": "string", "minLength": 1},
     "model_alias": {"type": "string", "minLength": 1},
@@ -80,7 +83,7 @@
       }
     },
     "nullableResultRef": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/resultRef"}]},
-    "risk": {"enum": ["low", "medium", "high", "critical"]},
+    "risk": {"enum": ["low", "medium", "high"]},
     "command": {
       "type": "object",
       "additionalProperties": false,

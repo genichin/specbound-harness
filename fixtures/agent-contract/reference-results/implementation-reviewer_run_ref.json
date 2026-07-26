@@ -9,17 +9,17 @@
   "context_id": "context-independent-reviewer",
   "model_alias": "advanced-review-model",
   "target": {
-    "path": ".specbound/requirements/req-9004/req-9004-r1.md",
-    "id": "req-9004",
-    "revision": 1,
-    "sha256": "e78c02b27a3f82c8d159a317bd0e00b35083fb7b4fc3eb76758a8c14fc5ae3b6"
+    "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
+    "id": "ms-9005-001",
+    "revision": null,
+    "sha256": "00b5af7477c3ffb6ed612542ebd710730e30736d1c3b95e7365aa5b332b251c4"
   },
   "producer_result_ref": {
-    "result_id": "result-requirement-author",
-    "role_id": "requirement-author",
-    "execution_id": "execution-requirement-author",
-    "context_id": "context-requirement-author",
-    "sha256": "4cb69f57bab33cc16d8bc79b936c594553b02c99ef3bfcbcfeef51fe502b4891"
+    "result_id": "result-micro-spec-author-implementation",
+    "role_id": "micro-spec-author",
+    "execution_id": "execution-micro-spec-author-implementation",
+    "context_id": "context-micro-spec-author-implementation",
+    "sha256": "f0c0fd5a1833a6fd08c1b5e2082fadaed8f84b2479d5e75fda0fca3307ca51c1"
   },
   "reviewer_run_ref": null,
   "authority_type": "none",
@@ -30,16 +30,16 @@
     "session_memory_inherited": false,
     "input_artifacts": [
       {
-        "path": ".specbound/requirements/req-9004/req-9004-r1.md",
-        "id": "req-9004",
-        "revision": 1,
-        "sha256": "e78c02b27a3f82c8d159a317bd0e00b35083fb7b4fc3eb76758a8c14fc5ae3b6"
+        "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
+        "id": "ms-9005-001",
+        "revision": null,
+        "sha256": "00b5af7477c3ffb6ed612542ebd710730e30736d1c3b95e7365aa5b332b251c4"
       },
       {
-        "path": "reference-results/independent-reviewer-producer_result_ref.json",
-        "id": "result-requirement-author",
+        "path": "reference-results/implementation-reviewer-producer_result_ref.json",
+        "id": "result-micro-spec-author-implementation",
         "revision": null,
-        "sha256": "4cb69f57bab33cc16d8bc79b936c594553b02c99ef3bfcbcfeef51fe502b4891"
+        "sha256": "f0c0fd5a1833a6fd08c1b5e2082fadaed8f84b2479d5e75fda0fca3307ca51c1"
       }
     ]
   },
@@ -57,10 +57,10 @@
       "status": "provided",
       "artifacts": [
         {
-          "path": ".specbound/requirements/req-9004/req-9004-r1.md",
-          "id": "req-9004",
-          "revision": 1,
-          "sha256": "e78c02b27a3f82c8d159a317bd0e00b35083fb7b4fc3eb76758a8c14fc5ae3b6"
+          "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
+          "id": "ms-9005-001",
+          "revision": null,
+          "sha256": "00b5af7477c3ffb6ed612542ebd710730e30736d1c3b95e7365aa5b332b251c4"
         }
       ],
       "commands": [],
@@ -71,10 +71,10 @@
       "status": "provided",
       "artifacts": [
         {
-          "path": ".specbound/requirements/req-9004/req-9004-r1.md",
-          "id": "req-9004",
-          "revision": 1,
-          "sha256": "e78c02b27a3f82c8d159a317bd0e00b35083fb7b4fc3eb76758a8c14fc5ae3b6"
+          "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
+          "id": "ms-9005-001",
+          "revision": null,
+          "sha256": "00b5af7477c3ffb6ed612542ebd710730e30736d1c3b95e7365aa5b332b251c4"
         }
       ],
       "commands": [],
@@ -85,10 +85,10 @@
       "status": "provided",
       "artifacts": [
         {
-          "path": ".specbound/requirements/req-9004/req-9004-r1.md",
-          "id": "req-9004",
-          "revision": 1,
-          "sha256": "e78c02b27a3f82c8d159a317bd0e00b35083fb7b4fc3eb76758a8c14fc5ae3b6"
+          "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
+          "id": "ms-9005-001",
+          "revision": null,
+          "sha256": "00b5af7477c3ffb6ed612542ebd710730e30736d1c3b95e7365aa5b332b251c4"
         }
       ],
       "commands": [],

@@ -3,29 +3,19 @@
   "result_id": "result-delivery-qc",
   "role_id": "delivery-qc",
   "task_kind": "delivery-qc",
+  "planned_execution_id": "execution-delivery-qc",
+  "planned_context_id": "context-delivery-qc",
   "execution_id": "execution-delivery-qc",
   "context_id": "context-delivery-qc",
   "model_alias": "worker-model",
   "target": {
-    "path": ".specbound/iteration-qc/req-9007/iqc-9007-001-r1.json",
-    "id": "iqc-9007-001",
+    "path": ".specbound/requirements/req-9007/req-9007-r1.md",
+    "id": "req-9007",
     "revision": 1,
-    "sha256": "6297e1e6ee2b5bf0706860664a8a888ee25f677a085ac5022150bef0ddbd394d"
+    "sha256": "9ccb5bc7434e3d3011f55e750ab316f2f166e7c849459a68c1132f7eea9970ad"
   },
-  "producer_result_ref": {
-    "result_id": "result-iteration-qc",
-    "role_id": "iteration-qc",
-    "execution_id": "execution-iteration-qc",
-    "context_id": "context-iteration-qc",
-    "sha256": "5f80a8dce98f92b7a12028bf144fb94019b3a4b9f659c8023b1e04f2a31ed632"
-  },
-  "reviewer_run_ref": {
-    "result_id": "result-independent-reviewer",
-    "role_id": "independent-reviewer",
-    "execution_id": "execution-independent-reviewer",
-    "context_id": "context-independent-reviewer",
-    "sha256": "0dd28adf6f26daa10f456c3bc7e46e2f74feec6fa2faac109d84e8020ad2eb4d"
-  },
+  "producer_result_ref": null,
+  "reviewer_run_ref": null,
   "authority_type": "none",
   "authority_action_id": null,
   "context_provenance": {
@@ -34,10 +24,16 @@
     "session_memory_inherited": false,
     "input_artifacts": [
       {
+        "path": ".specbound/requirements/req-9007/req-9007-r1.md",
+        "id": "req-9007",
+        "revision": 1,
+        "sha256": "9ccb5bc7434e3d3011f55e750ab316f2f166e7c849459a68c1132f7eea9970ad"
+      },
+      {
         "path": ".specbound/iteration-qc/req-9007/iqc-9007-001-r1.json",
         "id": "iqc-9007-001",
         "revision": 1,
-        "sha256": "6297e1e6ee2b5bf0706860664a8a888ee25f677a085ac5022150bef0ddbd394d"
+        "sha256": "6bc93ef1c3ce30f445c648b7e9dada0db1aadf309aa092e6b2f40d356f24fbbf"
       }
     ]
   },
@@ -60,10 +56,10 @@
       "status": "provided",
       "artifacts": [
         {
-          "path": ".specbound/iteration-qc/req-9007/iqc-9007-001-r1.json",
-          "id": "iqc-9007-001",
+          "path": ".specbound/requirements/req-9007/req-9007-r1.md",
+          "id": "req-9007",
           "revision": 1,
-          "sha256": "6297e1e6ee2b5bf0706860664a8a888ee25f677a085ac5022150bef0ddbd394d"
+          "sha256": "9ccb5bc7434e3d3011f55e750ab316f2f166e7c849459a68c1132f7eea9970ad"
         },
         {
           "path": ".specbound/delivery-qc/dqc-9100-r1.json",
@@ -83,7 +79,7 @@
           "path": ".specbound/iteration-qc/req-9007/iqc-9007-001-r1.json",
           "id": "iqc-9007-001",
           "revision": 1,
-          "sha256": "6297e1e6ee2b5bf0706860664a8a888ee25f677a085ac5022150bef0ddbd394d"
+          "sha256": "6bc93ef1c3ce30f445c648b7e9dada0db1aadf309aa092e6b2f40d356f24fbbf"
         }
       ],
       "commands": [],
@@ -97,7 +93,7 @@
           "path": ".specbound/iteration-qc/req-9007/iqc-9007-001-r1.json",
           "id": "iqc-9007-001",
           "revision": 1,
-          "sha256": "6297e1e6ee2b5bf0706860664a8a888ee25f677a085ac5022150bef0ddbd394d"
+          "sha256": "6bc93ef1c3ce30f445c648b7e9dada0db1aadf309aa092e6b2f40d356f24fbbf"
         }
       ],
       "commands": [

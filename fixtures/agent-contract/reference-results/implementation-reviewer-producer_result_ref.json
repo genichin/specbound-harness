@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "result_id": "result-micro-spec-author-implementation",
+  "role_id": "micro-spec-author",
+  "task_kind": "micro-spec-author",
+  "planned_execution_id": "execution-micro-spec-author-implementation",
+  "planned_context_id": "context-micro-spec-author-implementation",
+  "execution_id": "execution-micro-spec-author-implementation",
+  "context_id": "context-micro-spec-author-implementation",
+  "model_alias": "worker-model",
+  "target": {
+    "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
+    "id": "ms-9005-001",
+    "revision": null,
+    "sha256": "00b5af7477c3ffb6ed612542ebd710730e30736d1c3b95e7365aa5b332b251c4"
+  },
+  "producer_result_ref": null,
+  "reviewer_run_ref": null,
+  "authority_type": "none",
+  "authority_action_id": null,
+  "context_provenance": {
+    "fresh_context": true,
+    "producer_transcript_inherited": false,
+    "session_memory_inherited": false,
+    "input_artifacts": [
+      {
+        "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
+        "id": "ms-9005-001",
+        "revision": null,
+        "sha256": "00b5af7477c3ffb6ed612542ebd710730e30736d1c3b95e7365aa5b332b251c4"
+      }
+    ]
+  },
+  "target_risk": "high",
+  "effective_task_risk": "high",
+  "tool_categories": [
+    "repository-read",
+    "candidate-write"
+  ],
+  "mutation_class": "candidate_write",
+  "changed_paths": [
+    ".specbound/micro-specs/req-9005/ms-9005-001.md"
+  ],
+  "output_kind": "agent-result",
+  "evidence": [
+    {
+      "slot": "target-binding",
+      "status": "provided",
+      "artifacts": [
+        {
+          "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
+          "id": "ms-9005-001",
+          "revision": null,
+          "sha256": "00b5af7477c3ffb6ed612542ebd710730e30736d1c3b95e7365aa5b332b251c4"
+        }
+      ],
+      "commands": [],
+      "reason": null
+    },
+    {
+      "slot": "selected-ac-coverage",
+      "status": "provided",
+      "artifacts": [
+        {
+          "path": ".specbound/micro-specs/req-9005/ms-9005-001.md",
+          "id": "ms-9005-001",
+          "revision": null,
+          "sha256": "00b5af7477c3ffb6ed612542ebd710730e30736d1c3b95e7365aa5b332b251c4"
+        }
+      ],
+      "commands": [],
+      "reason": null
+    }
+  ],
+  "verdict": "pass",
+  "findings": [],
+  "permitted_next_action": "submit-candidate-for-review",
+  "claims": []
+}

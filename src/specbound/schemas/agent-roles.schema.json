@@ -4,9 +4,34 @@
   "title": "SpecBound provider-neutral agent roles policy v1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "roles"],
+  "required": ["schema_version", "risk_order", "evidence_applicability", "transition_crosswalk", "roles"],
   "properties": {
     "schema_version": {"const": 1},
+    "risk_order": {"const": ["low", "medium", "high"]},
+    "evidence_applicability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["none", "candidate_write", "repository_mutation", "evidence_write", "authority_transition", "external_mutation"],
+      "properties": {
+        "none": {"$ref": "#/$defs/supportedMutation"},
+        "candidate_write": {"$ref": "#/$defs/supportedMutation"},
+        "repository_mutation": {"$ref": "#/$defs/supportedMutation"},
+        "evidence_write": {"$ref": "#/$defs/supportedMutation"},
+        "authority_transition": {"$ref": "#/$defs/unsupportedMutation"},
+        "external_mutation": {"$ref": "#/$defs/unsupportedMutation"}
+      }
+    },
+    "transition_crosswalk": {
+      "const": {
+        "discovery-confirmation": {"selector": "discovery_confirmation_authorities_by_risk", "writer": "create_discovery_confirmation", "risk_input": "canonical_artifact_risk"},
+        "requirement-review-decision": {"selector": "requirement_review_decision_authorities_by_risk", "writer": "record_review_decision", "risk_input": "canonical_artifact_risk"},
+        "requirement-rejection": {"selector": "requirement_review_authorities_by_risk", "writer": "reject_requirement", "risk_input": "canonical_artifact_risk"},
+        "requirement-reconsideration": {"selector": "requirement_reconsideration_authorities_by_risk", "writer": "reconsider_requirement", "risk_input": "canonical_artifact_risk"},
+        "requirement-approval": {"selector": "requirement_approval_authorities_by_risk", "writer": "approve_requirement", "risk_input": "canonical_artifact_risk"},
+        "micro-spec-review": {"selector": "micro_spec_review_authorities_by_risk", "writer": "record_micro_spec_review", "risk_input": "canonical_artifact_risk"},
+        "delivery-qc-verification": {"selector": "delivery_qc_authorities_by_risk", "writer": "publish_issuance", "risk_input": "canonical_artifact_risk"}
+      }
+    },
     "roles": {
       "type": "array",
       "minItems": 7,
@@ -15,6 +40,37 @@
     }
   },
   "$defs": {
+    "supportedMutation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supported"],
+      "properties": {"supported": {"const": true}}
+    },
+    "unsupportedMutation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supported"],
+      "properties": {"supported": {"const": false}}
+    },
+    "evidenceRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "conditional"],
+      "properties": {
+        "required": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}},
+        "conditional": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}}
+      }
+    },
+    "referenceEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed_roles", "target_binding", "required_verdict"],
+      "properties": {
+        "allowed_roles": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["discovery-author", "requirement-author", "micro-spec-author", "independent-reviewer", "implementation", "iteration-qc", "delivery-qc"]}},
+        "target_binding": {"enum": ["exact-target", "exact-parent"]},
+        "required_verdict": {"const": "pass"}
+      }
+    },
     "safePathPattern": {
       "type": "string",
       "minLength": 1,
@@ -24,14 +80,25 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "role_id", "task_kind", "required_inputs", "allowed_path_patterns",
+        "role_id", "task_kind", "task_risk_floor", "evidence_requirements_by_risk", "required_inputs", "allowed_path_patterns",
         "allowed_tool_categories", "mutation_classes", "output_kinds",
-        "lifecycle_eligibility", "result_references", "evidence_slots",
+        "lifecycle_eligibility", "result_references", "reference_edges", "evidence_slots",
         "permitted_next_actions", "forbidden_actions", "forbidden_claims"
       ],
       "properties": {
         "role_id": {"enum": ["discovery-author", "requirement-author", "micro-spec-author", "independent-reviewer", "implementation", "iteration-qc", "delivery-qc"]},
         "task_kind": {"enum": ["discovery-author", "requirement-author", "micro-spec-author", "independent-reviewer", "implementation", "iteration-qc", "delivery-qc"]},
+        "task_risk_floor": {"enum": ["low", "medium", "high"]},
+        "evidence_requirements_by_risk": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["low", "medium", "high"],
+          "properties": {
+            "low": {"$ref": "#/$defs/evidenceRule"},
+            "medium": {"$ref": "#/$defs/evidenceRule"},
+            "high": {"$ref": "#/$defs/evidenceRule"}
+          }
+        },
         "required_inputs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "allowed_path_patterns": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/safePathPattern"}},
         "allowed_tool_categories": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["repository-read", "candidate-write", "test-execute", "filesystem-metadata"]}},
@@ -45,6 +112,15 @@
           "properties": {
             "producer_result_ref": {"enum": ["required", "optional", "forbidden"]},
             "reviewer_run_ref": {"enum": ["required", "optional", "forbidden"]}
+          }
+        },
+        "reference_edges": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["producer_result_ref", "reviewer_run_ref"],
+          "properties": {
+            "producer_result_ref": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/referenceEdge"}]},
+            "reviewer_run_ref": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/referenceEdge"}]}
           }
         },
         "evidence_slots": {

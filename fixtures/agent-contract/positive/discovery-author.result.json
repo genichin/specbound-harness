@@ -3,6 +3,8 @@
   "result_id": "result-discovery-author",
   "role_id": "discovery-author",
   "task_kind": "discovery-author",
+  "planned_execution_id": "execution-discovery-author",
+  "planned_context_id": "context-discovery-author",
   "execution_id": "execution-discovery-author",
   "context_id": "context-discovery-author",
   "model_alias": "worker-model",

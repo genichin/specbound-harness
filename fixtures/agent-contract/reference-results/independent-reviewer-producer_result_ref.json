@@ -9,10 +9,10 @@
   "context_id": "context-requirement-author",
   "model_alias": "worker-model",
   "target": {
-    "path": ".specbound/discoveries/dcy-9002-r1.md",
-    "id": "dcy-9002",
+    "path": ".specbound/requirements/req-9004/req-9004-r1.md",
+    "id": "req-9004",
     "revision": 1,
-    "sha256": "a954f3486d25ae36b6b6ab79f3c9d9703fefdbf7bdae912f28de94a754bc9599"
+    "sha256": "e78c02b27a3f82c8d159a317bd0e00b35083fb7b4fc3eb76758a8c14fc5ae3b6"
   },
   "producer_result_ref": null,
   "reviewer_run_ref": null,
@@ -24,10 +24,10 @@
     "session_memory_inherited": false,
     "input_artifacts": [
       {
-        "path": ".specbound/discoveries/dcy-9002-r1.md",
-        "id": "dcy-9002",
+        "path": ".specbound/requirements/req-9004/req-9004-r1.md",
+        "id": "req-9004",
         "revision": 1,
-        "sha256": "a954f3486d25ae36b6b6ab79f3c9d9703fefdbf7bdae912f28de94a754bc9599"
+        "sha256": "e78c02b27a3f82c8d159a317bd0e00b35083fb7b4fc3eb76758a8c14fc5ae3b6"
       }
     ]
   },
@@ -39,7 +39,7 @@
   ],
   "mutation_class": "candidate_write",
   "changed_paths": [
-    ".specbound/requirements/req-9100/req-9100-r1.md"
+    ".specbound/requirements/req-9004/req-9004-r1.md"
   ],
   "output_kind": "agent-result",
   "evidence": [
@@ -48,16 +48,10 @@
       "status": "provided",
       "artifacts": [
         {
-          "path": ".specbound/discoveries/dcy-9002-r1.md",
-          "id": "dcy-9002",
+          "path": ".specbound/requirements/req-9004/req-9004-r1.md",
+          "id": "req-9004",
           "revision": 1,
-          "sha256": "a954f3486d25ae36b6b6ab79f3c9d9703fefdbf7bdae912f28de94a754bc9599"
-        },
-        {
-          "path": ".specbound/requirements/req-9100/req-9100-r1.md",
-          "id": "req-9100",
-          "revision": 1,
-          "sha256": "cb89cc93ffb881eda8d4b4c44212cdfa2e1d6936bef18e12e12db1b83f8b896c"
+          "sha256": "e78c02b27a3f82c8d159a317bd0e00b35083fb7b4fc3eb76758a8c14fc5ae3b6"
         }
       ],
       "commands": [],
@@ -68,10 +62,10 @@
       "status": "provided",
       "artifacts": [
         {
-          "path": ".specbound/discoveries/dcy-9002-r1.md",
-          "id": "dcy-9002",
+          "path": ".specbound/requirements/req-9004/req-9004-r1.md",
+          "id": "req-9004",
           "revision": 1,
-          "sha256": "a954f3486d25ae36b6b6ab79f3c9d9703fefdbf7bdae912f28de94a754bc9599"
+          "sha256": "e78c02b27a3f82c8d159a317bd0e00b35083fb7b4fc3eb76758a8c14fc5ae3b6"
         }
       ],
       "commands": [],
@@ -81,7 +75,5 @@
   "verdict": "pass",
   "findings": [],
   "permitted_next_action": "submit-candidate-for-review",
-  "claims": [
-    "approval"
-  ]
+  "claims": []
 }

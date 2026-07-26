@@ -1,0 +1,16 @@
+{
+  "authority": "independent-advanced-llm-reviewer",
+  "decided_at": "2026-07-25T09:05:58Z",
+  "decision": "approved_for_implementation",
+  "micro_spec_id": "ms-0004-002",
+  "micro_spec_path": ".specbound/micro-specs/req-0004/ms-0004-002.md",
+  "micro_spec_sha256": "36c726eb325c9667ef12b04454a5917798148dec88cda63643c3ee8ad7617a31",
+  "permitted_next_action": "implement_bound_micro_spec_only",
+  "reason": "Fresh-context Bootstrap advisory re-review #3 found no blocking finding against req-0004-r1 AC-004 through AC-006; exact Micro-SPEC SHA-256 36c726eb325c9667ef12b04454a5917798148dec88cda63643c3ee8ad7617a31 is implementation-ready within the stated bootstrap and non-authority boundaries.",
+  "requirement_id": "req-0004",
+  "requirement_path": ".specbound/requirements/req-0004/req-0004-r1.md",
+  "requirement_sha256": "495c04dc6c1f7b726ea7f654477bdc065c4ca67f2e5dd82797b7ad3fc723675a",
+  "revision": 1,
+  "risk": "high",
+  "schema_version": 1
+}
