@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "model_alias": "worker-model",
+  "workdir": ".",
+  "required_dispatcher_capabilities": [
+    "fresh_leaf_context",
+    "single_model_alias",
+    "exact_workdir",
+    "exact_skill_binding",
+    "tool_allowlist",
+    "path_boundary",
+    "no_context_reuse",
+    "structured_completion"
+  ],
+  "tool_category_map": {
+    "repository-read": ["read_file", "search_files"],
+    "candidate-write": ["patch", "write_file"],
+    "test-execute": ["terminal"],
+    "filesystem-metadata": ["search_files"]
+  }
+}

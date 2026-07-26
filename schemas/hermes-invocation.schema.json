@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://specbound.local/schemas/hermes-invocation.schema.json",
+  "title": "SpecBound one-shot Hermes invocation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "config_file", "request_file", "reference_result_files"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "config_file": {"$ref": "#/$defs/safePath"},
+    "request_file": {"$ref": "#/$defs/safePath"},
+    "reference_result_files": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/safePath"}
+    },
+    "result_destination": {"$ref": "#/$defs/safePath"}
+  },
+  "$defs": {
+    "safePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*//)(?!.*(?:^|/)\\.(?:/|$))(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+    }
+  }
+}

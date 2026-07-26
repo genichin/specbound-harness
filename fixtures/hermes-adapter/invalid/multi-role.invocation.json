@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "config_file": "hermes-adapter/config.json",
+  "request_file": "positive/implementation.request.json",
+  "reference_result_files": [],
+  "roles": ["implementation", "iteration-qc"]
+}

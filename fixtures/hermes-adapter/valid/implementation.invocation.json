@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "config_file": "hermes-adapter/config.json",
+  "request_file": "positive/implementation.request.json",
+  "reference_result_files": [
+    "reference-results/implementation-reviewer_run_ref.json",
+    "reference-results/implementation-reviewer-producer_result_ref.json"
+  ]
+}
