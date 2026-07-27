@@ -15,8 +15,8 @@ ADOPTER_CONTRACT = ROOT / "skills/specbound-harness/references/adopter-contract.
 
 EXPECTED_GOVERNANCE_SHA256 = {
     POLICY: "45359f14618a84bbeb3e2a63af746b71130c3e3280a95d0a9258776f9e173110",
-    EXCEPTION_INDEX: "ef80689ba42089b1afab55af3600ccc1fe1cf20fc7f3ca70483018bd888b0ee8",
-    EXCEPTION_RECORD: "1c8791a045460f06e679d8f388851e5bb9732999e2fea6e8c7aaba87c0bed5ba",
+    EXCEPTION_INDEX: "9cbb9731e07f4f72a4a82dfdea4807a8a205721ce922eb29d3c9a35653d92214",
+    EXCEPTION_RECORD: "804213562c56e1647fd26313b87192328f4e0c20482399112adefcb94a40534f",
     EXCEPTION_TEMPLATE: "f793dc2d6f4009e6af64f708edb48369dd8843a92e424645d6b368ef3cc250ca",
     REPO_SKILL: "50dbeeff51a24a69c1e15d79f6fee73d4a584f83b1d5e69db69a9378885a2504",
     ADOPTER_CONTRACT: "5c99fa8bf576a2aa36719c11ace732a058fd395e7e86a83cdf7de952c29677b2",
@@ -114,9 +114,16 @@ def test_break_glass_contract_forbids_implicit_or_evidence_bypass() -> None:
         assert forbidden in policy
 
     index = _text(EXCEPTION_INDEX)
-    assert "Active exceptions: 1" in index
+    assert "Active exceptions: 0" in index
     assert "No exception is implicit." in index
     assert "does not authorize" in index
+
+    exception = _text(EXCEPTION_RECORD)
+    assert "- Status: `closed`" in exception
+    assert "- Final status: `closed`" in exception
+    assert "7ae473c15097a2288e310fc41b676480c6908581" in exception
+    assert "permitted_next_action: review_decision_only" in exception
+    assert "Canonical changes_requested state: not recorded" in exception
 
     template = _text(EXCEPTION_TEMPLATE)
     for heading in (

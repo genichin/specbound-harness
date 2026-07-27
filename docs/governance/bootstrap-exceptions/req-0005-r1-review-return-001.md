@@ -5,7 +5,7 @@
 ## Identity and exact target
 
 - Exception ID: `req-0005-r1-review-return-001`
-- Status: `active`
+- Status: `closed`
 - Transition: `in_review -> changes_requested -> same-revision in_review resubmission`
 - Target artifact: `.specbound/requirements/req-0005/req-0005-r1.md`
 - Target ID/revision: `req-0005-r1`
@@ -67,8 +67,8 @@ Canonical changes_requested state: not recorded
 
 ## Closeout
 
-- Final status: `active`
-- Action evidence: `not run`
-- Canonical retry/canary evidence: `not run`
+- Final status: `closed`
+- Action evidence: same-revision amendment commit `c5ce8e7dcb4d30a1faf9cc2b68038ca565eb417c`; amended draft SHA-256 `f831c2bb51511a057f03653b7e23a70c4aaaeb91cf1e625798e3d65db15b7d54`; Issue #11 return log `return_count=1`; second-and-final fresh-context Bootstrap advisory `PASS` bound to that draft SHA. The local Windows canonical retry failed before mutation because `os.O_DIRECTORY` is unavailable; rollback was verified with the same draft SHA and no submission target.
+- Canonical retry/canary evidence: unchanged canonical `specbound req to-in-review req-0005-r1` executed on Ubuntu in GitHub Actions run `30274810732` (`https://github.com/genichin/specbound-harness/actions/runs/30274810732`) from trigger commit `3dd12b879e7474a8ba03ea79fe4b021a42adb741`; generated transition commit `7ae473c15097a2288e310fc41b676480c6908581`; resulting `in_review` target SHA-256 `ad02ca16bf017cc291c05a54b6ed099105c6cdd651aadfe5d8dbb7a5c68fa463`; review-submission SHA-256 `87118a673fe5205fe4a1e17ee235813931c06c9f60048a15d77b3778602e4e48` binding draft SHA `f831c2bb51511a057f03653b7e23a70c4aaaeb91cf1e625798e3d65db15b7d54` to reviewed SHA `ad02ca16bf017cc291c05a54b6ed099105c6cdd651aadfe5d8dbb7a5c68fa463` with `permitted_next_action: review_decision_only`; root and generated-document validation passed. This is a canonical non-authorizing review submission, not approval or canary evidence.
 - Historical treatment: `Bootstrap provenance preserved; no retrospective promotion`
-- Closed by/source: `not closed`
+- Closed by/source: `repository-maintainer`; `discord:1531305410823458876`
