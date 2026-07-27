@@ -1,0 +1,12 @@
+{
+  "authority": "repository-maintainer",
+  "decided_at": "2026-07-28T00:41:47.806487+09:00",
+  "decision": "approval_ready",
+  "reason": "The accountable user explicitly directed use of the current REQ lifecycle in Discord message 1531325545730539530 for the exact submitted req-0005-r1 snapshot after a fresh-context Bootstrap advisory review found no blocking defect and deterministic repository validation passed. This decision does not claim Canonical Independent Reviewer contract execution and does not grant approval, implementation, adoption, Delivery, Merge, or Release authority.",
+  "requirement_id": "req-0005",
+  "requirement_path": ".specbound/requirements/req-0005/req-0005-r1.md",
+  "reviewed_sha256": "ad02ca16bf017cc291c05a54b6ed099105c6cdd651aadfe5d8dbb7a5c68fa463",
+  "revision": 1,
+  "risk": "high",
+  "schema_version": 1
+}
