@@ -1,0 +1,13 @@
+{
+  "approved_at": "2026-07-28T00:51:49.251984+09:00",
+  "authority": "repository-maintainer",
+  "decision": "approved",
+  "reason": "The accountable user explicitly directed the next current-lifecycle action in Discord message 1531328029547303123 after the exact req-0005-r1 in-review snapshot received an approval_ready decision, remained digest-identical to its canonical review submission, passed deterministic repository validation, and passed exact-head CI. This approval authorizes only the next action permitted by the approved REQ governance and does not itself authorize implementation, adoption, canonical IQC/DQC publication, Delivery, Merge, Release, or rollout.",
+  "requirement_id": "req-0005",
+  "requirement_path": ".specbound/requirements/req-0005/req-0005-r1.md",
+  "reviewed_sha256": "ad02ca16bf017cc291c05a54b6ed099105c6cdd651aadfe5d8dbb7a5c68fa463",
+  "revision": 1,
+  "risk": "high",
+  "schema_version": 1,
+  "sha256": "fa483adbf3155a138aaa7507faa96b7a0997c06df0ee645013fbaf7dcad8a545"
+}
