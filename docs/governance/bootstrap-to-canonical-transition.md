@@ -7,6 +7,7 @@ This is the repository-local transition policy for `specbound-harness`. It gover
 - **Official name:** `Bootstrap-to-Canonical Transition Policy`
 - **Transition baseline:** `2722bcd50938ed7a43011fe3d4793e521ef9f997`
 - **Accountable decision source:** `discord:1531116736534020167`
+- **Temporary REQ review-return decision source:** `discord:1531284648511012916`
 - **Scope:** this repository only; it is not automatically part of the general adopter contract.
 - **Authority classification:** repository-local Bootstrap governance decision. This document does not create a new canonical lifecycle artifact family or claim that a not-yet-implemented transition executed.
 
@@ -64,7 +65,8 @@ This matrix applies from the effective policy commit until a later reviewed poli
 | Discovery candidate authoring and move to `in_review` | non-authorizing candidate work | Use the canonical path/template and validate candidate bytes | No dedicated Discovery draft/review-submission writer exists. |
 | Independent Discovery review | `BOOTSTRAP_ADVISORY` | Fresh context, exact candidate binding, no mutation, advisory label | Expires only after an operational reviewer execution/result path is adopted and can be proven live. |
 | Discovery confirmation | `CANONICAL_REQUIRED` | Use `specbound discovery confirm` and the configured risk authority | Failure requires rework unless an eligible break-glass control-plane defect is proven. |
-| REQ draft, readiness, review submission, decision, rejection, reconsideration, and approval | `CANONICAL_REQUIRED` | Use the implemented `specbound req` commands and exact records | Manual approval/status mutation is forbidden. |
+| REQ draft, readiness, review submission, approval-ready decision, terminal rejection/reconsideration, and approval | `CANONICAL_REQUIRED` | Use the implemented `specbound req` commands and exact records | Manual approval/status mutation is forbidden. |
+| Non-terminal REQ review return and same-revision amendment/resubmission | `BOOTSTRAP_AUTHORITY_EXCEPTION` until implemented | Use the temporary §5.1 procedure only under an exact per-artifact exception; do not issue a terminal `rejected` decision for ordinary review feedback | Remove this row and §5.1 after the `changes_requested` writer/validator path is implemented, adopted, and proven by a new canary review loop. |
 | Micro-SPEC candidate authoring | non-authorizing candidate work | Bind an exact approved REQ and use the canonical path/contract | Live publication remains narrower than candidate authoring. |
 | Micro-SPEC review decision | `CANONICAL_REQUIRED` | Use `specbound micro-spec review-decision` and configured authority | Advisory review alone cannot authorize implementation. |
 | Implementation authorization boundary | `CANONICAL_REQUIRED` | Implement only the exact reviewed Micro-SPEC authorized by its canonical review decision | No canonical implementation-completion record exists. |
@@ -76,6 +78,37 @@ This matrix applies from the effective policy commit until a later reviewed poli
 | Live Hermes runtime rollout | optional external operation | Keep provider-neutral contract and repository validation separate from rollout | Fake/stub adapter evidence is not live execution. |
 
 No active exception is created by this matrix. The default for every unsupported row is `UNSUPPORTED_BLOCKED` until an exact exception record is approved.
+
+### 5.1 Temporary `changes_requested` review-return procedure
+
+This subsection is a temporary Bootstrap bridge for the control-plane gap tracked by GitHub Issue `#11`. It governs only ordinary review feedback on a non-approved REQ that must be edited and resubmitted under the same numeric revision. The intended lifecycle is:
+
+```text
+draft -> in_review -> changes_requested -> in_review -> approved
+```
+
+`changes_requested` is non-authorizing and has the same permitted authoring work as `draft`: edit the same revision, run readiness/validation, and resubmit it for fresh review. It does not create approval, implementation, adoption, IQC/DQC, Delivery, Merge, or Release authority. `rejected` remains reserved for an accountable terminal decision that ends the proposal.
+
+Until the dedicated status, writer, validator, and resubmission path exist, `changes_requested` is a Bootstrap operational state rather than a supported REQ frontmatter value. Do not write the unsupported value into the canonical artifact. For validator compatibility, one exact per-artifact `BOOTSTRAP_AUTHORITY_EXCEPTION` may permit this bounded procedure:
+
+1. Stop after the review requests changes; do not create a canonical `rejected` review decision, rejection record, or reconsideration record.
+2. Record only the repository-relative REQ identity and monotonically increasing `n`th return count in the linked issue/work log. This informational log is not canonical evidence, carries no SHA-256 or authority semantics, and cannot affect validation or approval eligibility.
+3. Bind the exception to the exact non-approved REQ and permit only one return to editable same-revision work plus one resubmission. The exception must forbid approval, implementation, downstream lifecycle claims, unrelated artifact mutation, and revision expansion.
+4. Preserve the previous valid `in_review` artifact and non-authorizing review-submission bytes in Git history, then use `status: draft` as the temporary frontmatter compatibility representation and remove only the active singleton review-submission record that prevents draft validation. This manual compatibility mutation is permitted only by the exact exception and must leave the repository valid; it is not a canonical `changes_requested` transition.
+5. Edit the same REQ revision, run `req check-readiness` and repository validation, then use the implemented canonical `req to-in-review` writer to create the next active non-authorizing submission record for the new bytes.
+6. After final fresh review, use the implemented approval-ready decision and approval writers normally. The review-return count and Bootstrap exception do not substitute for that exact approval path.
+
+Every report for this bridge must say `Canonical changes_requested state: not recorded`. A review-return log, Git history, advisory result, deleted active singleton record, or Bootstrap exception must never be relabelled as canonical review evidence.
+
+This subsection and its matrix row expire together only after all of the following are complete:
+
+1. `changes_requested` is an implemented REQ status with a rollback-safe return writer and same-revision resubmission writer;
+2. validation supports the complete `in_review -> changes_requested -> in_review` loop without deleting or overwriting authority-bearing history;
+3. source, installed-wheel, and supported Ubuntu CI behavior pass for the exact implementation;
+4. an explicit adoption decision and a new non-historical REQ canary complete the real loop;
+5. every active exception using this subsection is closed and removed from the active ledger.
+
+After those conditions pass, delete §5.1 and the temporary matrix row in the same reviewed policy change. Do not retain this Bootstrap path as a fallback.
 
 ## 6. Exception ledger
 

@@ -13,7 +13,7 @@ REPO_SKILL = ROOT / "skills/specbound-harness/SKILL.md"
 ADOPTER_CONTRACT = ROOT / "skills/specbound-harness/references/adopter-contract.md"
 
 EXPECTED_GOVERNANCE_SHA256 = {
-    POLICY: "eb615188e8283e6884f01a5bdc4832134079a2baffa53e5a927cb871417d466e",
+    POLICY: "45359f14618a84bbeb3e2a63af746b71130c3e3280a95d0a9258776f9e173110",
     EXCEPTION_INDEX: "c27fa756e539239b191d8a3ad4c7e55e70087002eac9bed92e277f04b8fab70d",
     EXCEPTION_TEMPLATE: "f793dc2d6f4009e6af64f708edb48369dd8843a92e424645d6b368ef3cc250ca",
     REPO_SKILL: "50dbeeff51a24a69c1e15d79f6fee73d4a584f83b1d5e69db69a9378885a2504",
@@ -129,3 +129,28 @@ def test_break_glass_contract_forbids_implicit_or_evidence_bypass() -> None:
     assert "candidate/evidence/authority failure" in template
     assert "Canonical state: not recorded" in template
     assert "Bootstrap provenance preserved; no retrospective promotion" in template
+
+
+def test_temporary_changes_requested_bridge_is_bounded_and_self_expiring() -> None:
+    policy = _text(POLICY)
+
+    for required in (
+        "Temporary REQ review-return decision source:** `discord:1531284648511012916`",
+        "Non-terminal REQ review return and same-revision amendment/resubmission",
+        "`BOOTSTRAP_AUTHORITY_EXCEPTION` until implemented",
+        "draft -> in_review -> changes_requested -> in_review -> approved",
+        "`changes_requested` is non-authorizing and has the same permitted authoring work as `draft`",
+        "`rejected` remains reserved for an accountable terminal decision that ends the proposal.",
+        "do not create a canonical `rejected` review decision, rejection record, or reconsideration record",
+        "monotonically increasing `n`th return count",
+        "This informational log is not canonical evidence, carries no SHA-256 or authority semantics",
+        "use `status: draft` as the temporary frontmatter compatibility representation",
+        "Canonical changes_requested state: not recorded",
+        "delete §5.1 and the temporary matrix row in the same reviewed policy change",
+        "Do not retain this Bootstrap path as a fallback.",
+    ):
+        assert required in policy
+
+    assert "one exact per-artifact `BOOTSTRAP_AUTHORITY_EXCEPTION`" in policy
+    assert "same REQ revision" in policy
+    assert "an explicit adoption decision and a new non-historical REQ canary complete the real loop" in policy
