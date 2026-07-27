@@ -2,7 +2,7 @@
 
 This directory contains repository-local Bootstrap exception records governed by [`Bootstrap-to-Canonical Transition Policy`](../bootstrap-to-canonical-transition.md).
 
-**Active exceptions: 0**
+**Active exceptions: 1**
 
 No exception is implicit. This index does not authorize a lifecycle transition, implementation, canonical publication, adoption, Delivery, Merge, Release, or external mutation.
 
@@ -19,4 +19,4 @@ No exception is implicit. This index does not authorize a lifecycle transition, 
 
 | Exception | Transition | Target | Status | Expiry |
 | --- | --- | --- | --- | --- |
-| None | — | — | — | — |
+| [`req-0005-r1-review-return-001.md`](req-0005-r1-review-return-001.md) | `in_review -> changes_requested -> same-revision in_review resubmission` | `.specbound/requirements/req-0005/req-0005-r1.md` | `active` | Close after one successful same-revision resubmission; retire policy bridge after Issue #11 implementation/adoption/canary. |

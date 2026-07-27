@@ -8,13 +8,15 @@ ROOT = Path(__file__).resolve().parents[1]
 POLICY = ROOT / "docs/governance/bootstrap-to-canonical-transition.md"
 EXCEPTION_DIR = ROOT / "docs/governance/bootstrap-exceptions"
 EXCEPTION_INDEX = EXCEPTION_DIR / "README.md"
+EXCEPTION_RECORD = EXCEPTION_DIR / "req-0005-r1-review-return-001.md"
 EXCEPTION_TEMPLATE = ROOT / "templates/bootstrap-exception.md"
 REPO_SKILL = ROOT / "skills/specbound-harness/SKILL.md"
 ADOPTER_CONTRACT = ROOT / "skills/specbound-harness/references/adopter-contract.md"
 
 EXPECTED_GOVERNANCE_SHA256 = {
     POLICY: "45359f14618a84bbeb3e2a63af746b71130c3e3280a95d0a9258776f9e173110",
-    EXCEPTION_INDEX: "c27fa756e539239b191d8a3ad4c7e55e70087002eac9bed92e277f04b8fab70d",
+    EXCEPTION_INDEX: "ef80689ba42089b1afab55af3600ccc1fe1cf20fc7f3ca70483018bd888b0ee8",
+    EXCEPTION_RECORD: "ba1987de730b2709a0cb0773d3091f33c825a088eb29ee63b01f4de41352b328",
     EXCEPTION_TEMPLATE: "f793dc2d6f4009e6af64f708edb48369dd8843a92e424645d6b368ef3cc250ca",
     REPO_SKILL: "50dbeeff51a24a69c1e15d79f6fee73d4a584f83b1d5e69db69a9378885a2504",
     ADOPTER_CONTRACT: "5c99fa8bf576a2aa36719c11ace732a058fd395e7e86a83cdf7de952c29677b2",
@@ -29,7 +31,10 @@ def test_transition_policy_exact_artifacts_are_digest_guarded() -> None:
     for path, expected in EXPECTED_GOVERNANCE_SHA256.items():
         assert sha256(path.read_bytes()).hexdigest() == expected
 
-    assert {path.name for path in EXCEPTION_DIR.iterdir() if path.is_file()} == {"README.md"}
+    assert {path.name for path in EXCEPTION_DIR.iterdir() if path.is_file()} == {
+        "README.md",
+        "req-0005-r1-review-return-001.md",
+    }
 
 
 def test_transition_policy_is_repo_local_and_canonical_first() -> None:
@@ -109,7 +114,7 @@ def test_break_glass_contract_forbids_implicit_or_evidence_bypass() -> None:
         assert forbidden in policy
 
     index = _text(EXCEPTION_INDEX)
-    assert "Active exceptions: 0" in index
+    assert "Active exceptions: 1" in index
     assert "No exception is implicit." in index
     assert "does not authorize" in index
 
