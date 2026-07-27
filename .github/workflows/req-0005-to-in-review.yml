@@ -1,0 +1,42 @@
+name: One-shot REQ-0005 review submission
+
+on:
+  push:
+    branches:
+      - requirement/req-0005-live-qc-cutover
+
+permissions:
+  contents: write
+
+jobs:
+  submit-review:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install package
+        run: python -m pip install -e .
+      - name: Validate exact draft readiness
+        run: |
+          python -m specbound.cli --root . req check-readiness req-0005-r1
+          python -m specbound.cli --root . validate
+          test "$(sha256sum .specbound/requirements/req-0005/req-0005-r1.md | cut -d' ' -f1)" = "70cfb23a54bd4c097c513533c394e90400f942d8cfc3612c87e57438a36476b7"
+      - name: Submit canonical review handoff
+        run: |
+          python -m specbound.cli --root . req to-in-review req-0005-r1
+          python -m specbound.cli --root . validate
+          python -m specbound.cli --root . docs requirements
+          python -m specbound.cli --root . docs requirements --check
+      - name: Commit transition artifacts
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .specbound/requirements/req-0005/req-0005-r1.md .specbound/review-submissions docs/requirements.md
+          git diff --cached --check
+          git commit -m "docs(req): submit req-0005 for review"
+          git push
