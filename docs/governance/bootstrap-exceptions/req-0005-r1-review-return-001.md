@@ -42,9 +42,9 @@ Exactly one bounded action is permitted:
 
 `For req-0005-r1 only, execute one review-return/amendment/resubmission transaction: log return_count=1 on GitHub Issue #11; use status: draft as the temporary changes_requested compatibility representation; remove the active singleton review-submission; amend only the three enumerated review blockers in the same r1; pass readiness and repository validation; and resubmit through req to-in-review.`
 
-- Allowed paths/systems: `.specbound/requirements/req-0005/req-0005-r1.md`; `.specbound/review-submissions/req-0005-r1.review-submission.json`; `docs/governance/bootstrap-exceptions/req-0005-r1-review-return-001.md`; `docs/governance/bootstrap-exceptions/README.md`; GitHub Issue `#11` return-count log only.
-- Required evidence: pre-action target/review-submission digests; Issue `#11` log with `req-0005-r1 return_count=1`; readiness, repository validation, generated-doc, skill-validation, focused policy test and exact diff checks; new active review-submission binding after resubmission.
-- Rollback/containment: before resubmission, restore the exact target and review-submission bytes from commit `34bad066cbd736cdf1ecef07963e5c2bc8154fc3` if any required check fails; keep this exception active with failure evidence and stop. After successful resubmission, do not edit the new `in_review` bytes and close this exception as consumed.
+- Allowed paths/systems: `.specbound/requirements/req-0005/req-0005-r1.md`; `.specbound/review-submissions/req-0005-r1.review-submission.json`; `docs/requirements.md` as the generated non-authorizing status projection only; `docs/governance/bootstrap-exceptions/req-0005-r1-review-return-001.md`; `docs/governance/bootstrap-exceptions/README.md`; GitHub Issue `#11` return-count log only.
+- Required evidence: pre-action target/review-submission digests; Issue `#11` log with `req-0005-r1 return_count=1`; readiness, repository validation, regenerated requirement-index check, skill-validation, focused policy test and exact diff checks; new active review-submission binding after resubmission.
+- Rollback/containment: before resubmission, restore the exact target, review-submission, and generated requirement-index bytes from commit `34bad066cbd736cdf1ecef07963e5c2bc8154fc3` if any required check fails; keep this exception active with failure evidence and stop. After successful resubmission, do not edit the new `in_review` bytes and close this exception as consumed.
 
 ## Forbidden claims
 
