@@ -2,7 +2,7 @@
 
 SpecBound is a provider-neutral, repository-local control-plane harness for binding implementation claims to revisioned, approved requirements.
 
-## Bootstrap slice
+## Implemented control-plane slice
 
 This initial slice supplies:
 
@@ -26,6 +26,8 @@ The portable public validation surface is `specbound agent validate-skills`, `sp
 ## Lifecycle governance
 
 The repository's human operating model for issue intake through release is defined in [Issue SDLC](docs/governance/issue-sdlc.md). It uses SPEC-driven micro-iterations: each bounded Micro-SPEC maps to approved acceptance criteria, is focusedly verified, and advances only with iteration QC evidence.
+
+This repository's temporary self-hosting boundary is governed by the [Bootstrap-to-Canonical Transition Policy](docs/governance/bootstrap-to-canonical-transition.md). It makes every implemented and applicable canonical transition mandatory, keeps unsupported transitions blocked unless an exact accountable Bootstrap exception exists, and permits break-glass only for a reproducible control-plane defect or unavailability—not for invalid candidate bytes, missing evidence, stale bindings, or insufficient authority. The policy is repository-local and does not automatically extend the adopter contract.
 
 The user-facing [Requirement list](docs/requirements.md) is generated from the latest revision of each canonical REQ under `.specbound/requirements/`. The generated list is a readable projection, not a second source of truth; edit REQ `title` and `summary` metadata, then regenerate it instead of editing the list directly. The one-time exact-path and digest rebinding is documented in [Canonical requirements root migration](docs/governance/requirements-root-migration.md).
 

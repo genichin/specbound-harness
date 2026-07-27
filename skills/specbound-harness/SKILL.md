@@ -1,7 +1,7 @@
 ---
 name: specbound-harness
 description: "Use when drafting or reviewing canonical Discovery/REQ artifacts, or validating SpecBound confirmation, approval, and rejection bindings before governed implementation or delivery claims."
-version: 0.8.0
+version: 0.9.0
 author: SpecBound Harness
 license: MIT
 metadata:
@@ -56,7 +56,7 @@ Use this skill when:
 - reviewing Discovery evidence, lineage, risk, and REQ-drafting readiness;
 - validating a Discovery confirmation or REQ approval binding;
 - diagnosing a SpecBound blocker in CI or locally; or
-- preparing an adopting repository for the implemented bootstrap slice.
+- preparing an adopting repository for the implemented control-plane slice.
 
 Do not use it as a substitute for an explicit confirmation/approval record, authorized actor, or passing `specbound validate` result.
 
@@ -168,7 +168,11 @@ authorize a lifecycle transition.
 
 ## Current scope
 
-The implemented bootstrap slice validates configuration, canonical non-symlink paths, Discovery frontmatter/evidence, content-addressed Discovery confirmation binding, canonical REQ paths/frontmatter, content-addressed approval and rejection bindings, and SHA-256 digests. Canonical Micro-SPECs at `.specbound/micro-specs/req-<id>/ms-<id>-<slice>.md` additionally require the exact approved parent REQ path/ID/revision/SHA-256 binding, a unique non-empty subset of the parent’s listed `AC-<id>` values, and substantive objective/scope/non-goals/baseline/verification/QC-exit planning sections (plus rollback/containment for high-risk parents):
+When operating inside the `specbound-harness` source repository and `docs/governance/bootstrap-to-canonical-transition.md` exists, follow that repository-local **Bootstrap-to-Canonical Transition Policy** before starting or advancing lifecycle work. It makes implemented and applicable canonical gates mandatory, blocks unsupported transitions unless an exact accountable Bootstrap exception is active, and limits break-glass to a reproducible control-plane defect or supported-platform unavailability. It cannot bypass invalid candidate bytes, missing evidence, stale bindings, insufficient authority, or out-of-scope work. Preserve advisory and historical Bootstrap labels, and report `Canonical state: not recorded` whenever the canonical transition did not execute.
+
+When this reusable skill is used in an adopting repository, the `specbound-harness` transition policy does not apply and must not be inferred, copied, or treated as authority. Follow only the adopter contract plus that repository's own explicit governance and adoption decisions; a nonexistent `docs/governance/bootstrap-to-canonical-transition.md` is not a blocker for adopters.
+
+The implemented control-plane slice validates configuration, canonical non-symlink paths, Discovery frontmatter/evidence, content-addressed Discovery confirmation binding, canonical REQ paths/frontmatter, content-addressed approval and rejection bindings, and SHA-256 digests. Canonical Micro-SPECs at `.specbound/micro-specs/req-<id>/ms-<id>-<slice>.md` additionally require the exact approved parent REQ path/ID/revision/SHA-256 binding, a unique non-empty subset of the parent’s listed `AC-<id>` values, and substantive objective/scope/non-goals/baseline/verification/QC-exit planning sections (plus rollback/containment for high-risk parents):
 
 ```yaml
 requirement:

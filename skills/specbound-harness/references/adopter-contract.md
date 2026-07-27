@@ -1,6 +1,6 @@
-# SpecBound adopter contract — bootstrap slice
+# SpecBound adopter contract — implemented control-plane slice
 
-An adopting repository must place `specbound.yaml` at its root. The bootstrap validator accepts only this canonical topology:
+An adopting repository must place `specbound.yaml` at its root. The current validator accepts only this canonical topology:
 
 ## Agent-contract boundary
 

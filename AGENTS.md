@@ -4,8 +4,17 @@
 
 - This repository owns the portable SpecBound CLI, schemas, templates, fixtures, CI, and repository-backed skill source.
 - `temp/` is ignored planning/reference material, never validator input or canonical lifecycle state.
-- The canonical REQ root for the implemented bootstrap slice is `.specbound/requirements/`; `docs/requirements.md` is a generated user-facing projection, not lifecycle state.
+- The canonical REQ root for the implemented control-plane slice is `.specbound/requirements/`; `docs/requirements.md` is a generated user-facing projection, not lifecycle state.
 - A skill provides workflow guidance only. `specbound` CLI exit status and CI are enforcement authority.
+
+## Bootstrap-to-Canonical transition
+
+- Follow `docs/governance/bootstrap-to-canonical-transition.md` before starting or advancing lifecycle work in this repository.
+- Use every implemented and applicable canonical writer, record, validator, and configured authority. Bootstrap is not a blanket alternate path.
+- Treat unsupported transitions as blocked unless an exact approved record is active under `docs/governance/bootstrap-exceptions/`.
+- A canonical failure is eligible for break-glass only when direct evidence proves a control-plane defect or supported-platform unavailability. Invalid candidate bytes, missing evidence, stale/digest-mismatched bindings, insufficient authority, and out-of-scope work require rework or stop.
+- Keep advisory review, accountable authority, and canonical writer execution separate. Report `Canonical state: not recorded` whenever the canonical transition did not occur.
+- Preserve historical Bootstrap provenance. Cut over only prospectively after capability, adoption, and a new canonical canary succeed.
 
 ## Agent-contract boundary
 

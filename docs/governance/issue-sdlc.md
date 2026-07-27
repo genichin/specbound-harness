@@ -4,7 +4,7 @@
 
 This document defines the human operating model for an issue from intake through release. An issue is a **delivery container**, not a single implementation action. After a REQ is approved, delivery proceeds through small, SPEC-driven micro-iterations: each iteration selects a bounded slice of approved acceptance criteria, implements it, produces focused evidence, and either advances to the next slice or stops for re-planning.
 
-This document is the single human-readable authority for lifecycle semantics in this repository. It does **not** change the current bootstrap validator. `specbound` CLI and CI remain the enforcement authority for the REQ and approval bindings they currently implement. A future schema or validator may implement a rule in this document only through an explicit, reviewed change.
+This document is the single human-readable authority for lifecycle semantics in this repository. It does **not** change the currently implemented validator. `specbound` CLI and CI remain the enforcement authority for the bindings they currently implement. The repository-local [Bootstrap-to-Canonical Transition Policy](bootstrap-to-canonical-transition.md) classifies each transition as canonical-required, advisory, exception-bound, or blocked while this repository closes its self-hosting gap. A future schema or validator may implement a rule in this document only through an explicit, reviewed change.
 
 ## Agent-contract boundary
 
@@ -22,7 +22,7 @@ Agent evidence preserves the same lifecycle separations as the human workflow. A
 | Approval authority and approved snapshot | Approval record under `.specbound/approvals/` | Validates the exact approval binding. |
 | Bounded implementation intent for one delivery slice | Micro-SPEC and its implementation plan | Maps one iteration to approved acceptance criteria; it cannot expand the REQ. |
 | Focused verification and iteration QC evidence | The iteration's evidence and QC result | Establishes whether that slice may advance. |
-| Delivery, merge, and release evidence | Delivery systems and repository governance | Out of scope for the current bootstrap validator. |
+| Delivery, merge, and release evidence | Delivery systems and repository governance | Out of scope for the current validator. |
 
 An issue tracker state never substitutes for a SpecBound approval record. Conversely, an approved REQ does not mark an issue complete, authorize an unconstrained implementation, or authorize merge/release by itself.
 
@@ -123,10 +123,11 @@ valid approved REQ
 4. **One canonical owner per fact.** The tracker owns work lifecycle; the REQ owns requirement scope; the approval record owns approval facts; Micro-SPEC/QC/delivery systems own their evidence. Do not create synced duplicate state.
 5. **Risk-based authority.** Required approver and merge authority are determined by the repository's risk policy. A lower-risk change may use delegated authority only when that policy explicitly allows it; a higher-risk change requires the policy's elevated authority.
 6. **Blockers are explicit.** A blocker must state its source artifact or system, why the transition is unsafe, its owner, and the condition for removal. It is not resolved by changing a status label alone.
+7. **Break-glass is control-plane recovery, not evidence bypass.** A canonical transition may use an exact accountable Bootstrap exception only when a reproducible control-plane defect or supported-platform unavailability blocks otherwise valid input. Invalid candidates, missing evidence, stale bindings, authority failures, and scope/policy changes remain blocked or require rework/new Discovery. Follow `docs/governance/bootstrap-to-canonical-transition.md` and preserve `Canonical state: not recorded` for any bypassed transition.
 
 ## Current artifact contract
 
-The bootstrap implementation currently recognizes these lifecycle artifacts:
+The current implementation recognizes these lifecycle artifacts:
 
 ```text
 specbound.yaml
