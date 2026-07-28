@@ -1,0 +1,39 @@
+{
+  "adoption_id": "adp-0042-r1-iteration_qc",
+  "adoption_source_commit": "1111111111111111111111111111111111111111",
+  "authority": "repository-maintainer",
+  "authority_action_id": "immutable-authority-action-reference",
+  "authority_policy": {
+    "path": "specbound.yaml",
+    "selector": "control_plane_adoption_authorities_by_risk",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "canary_capability_baseline_at": "2026-07-01T00:00:00+00:00",
+  "canary_capability_baseline_commit": "2222222222222222222222222222222222222222",
+  "canary_work_attested_at": "2026-07-02T00:00:00+00:00",
+  "canary_work_attested_by": "repository-maintainer",
+  "canary_work_source_refs": [
+    {
+      "digest": "3333333333333333333333333333333333333333333333333333333333333333",
+      "digest_algorithm": "sha256",
+      "id": "urn:example:immutable-source-42",
+      "kind": "external"
+    }
+  ],
+  "canary_work_state": "not_started",
+  "context_id": "fresh-isolated-context-reference",
+  "decided_at": "2026-07-02T00:00:00+00:00",
+  "decision": "adopted_for_exact_canary",
+  "permitted_next_action": "approve_bootstrap_exception_for_exact_canary",
+  "reason": "The exact new requirement has no prior implementation or QC work.",
+  "requirement": {
+    "id": "req-0042",
+    "path": ".specbound/requirements/req-0042/req-0042-r1.md",
+    "revision": 1,
+    "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+  },
+  "risk": "high",
+  "schema_version": 1,
+  "scope_mode": "exact_canary",
+  "transition": "iteration_qc"
+}

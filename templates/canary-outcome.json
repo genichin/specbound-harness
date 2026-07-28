@@ -1,0 +1,21 @@
+{
+  "adoption": {
+    "path": ".specbound/adoptions/req-0042/adp-0042-r1-iteration_qc.json",
+    "sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+  },
+  "attempt_sequence": 1,
+  "authority": "repository-maintainer",
+  "authority_action_id": "fresh-canary-outcome-action-reference",
+  "bootstrap_exception": {
+    "path": "docs/governance/bootstrap-exceptions/req-0042-r1-iqc-canary.md",
+    "pre_close_commit": "6666666666666666666666666666666666666666",
+    "pre_close_sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+  },
+  "canary_outcome_id": "cny-0042-r1-iteration_qc-a1",
+  "context_id": "fresh-canary-outcome-context-reference",
+  "outcome": "passed",
+  "recorded_at": "2026-07-03T00:00:00+00:00",
+  "schema_version": 1,
+  "scope_mode": "exact_canary",
+  "transition": "iteration_qc"
+}

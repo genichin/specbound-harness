@@ -1,0 +1,78 @@
+{
+  "$defs": {
+    "policyBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {"const": "specbound.yaml"},
+        "selector": {"const": "control_plane_adoption_authorities_by_risk"},
+        "sha256": {"pattern": "^[a-f0-9]{64}$", "type": "string"}
+      },
+      "required": ["path", "sha256", "selector"],
+      "type": "object"
+    },
+    "requirementBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {"pattern": "^req-[0-9]+$", "type": "string"},
+        "path": {"pattern": "^\\.specbound/requirements/req-[0-9]+/req-[0-9]+-r[1-9][0-9]*\\.md$", "type": "string"},
+        "revision": {"minimum": 1, "type": "integer"},
+        "sha256": {"pattern": "^[a-f0-9]{64}$", "type": "string"}
+      },
+      "required": ["path", "id", "revision", "sha256"],
+      "type": "object"
+    },
+    "sourceRef": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {"const": "repository"},
+            "path": {"minLength": 1, "type": "string"},
+            "sha256": {"pattern": "^[a-f0-9]{64}$", "type": "string"}
+          },
+          "required": ["kind", "path", "sha256"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "digest": {"pattern": "^[a-f0-9]{64}$", "type": "string"},
+            "digest_algorithm": {"const": "sha256"},
+            "id": {"minLength": 1, "type": "string"},
+            "kind": {"const": "external"}
+          },
+          "required": ["kind", "id", "digest_algorithm", "digest"],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "adoption_id": {"pattern": "^adp-[0-9]+-r[1-9][0-9]*-(iteration_qc|delivery_qc)$", "type": "string"},
+    "adoption_source_commit": {"pattern": "^[a-f0-9]{40}$", "type": "string"},
+    "authority": {"minLength": 1, "type": "string"},
+    "authority_action_id": {"minLength": 1, "type": "string"},
+    "authority_policy": {"$ref": "#/$defs/policyBinding"},
+    "canary_capability_baseline_at": {"format": "date-time", "type": "string"},
+    "canary_capability_baseline_commit": {"pattern": "^[a-f0-9]{40}$", "type": "string"},
+    "canary_work_attested_at": {"format": "date-time", "type": "string"},
+    "canary_work_attested_by": {"minLength": 1, "type": "string"},
+    "canary_work_source_refs": {"items": {"$ref": "#/$defs/sourceRef"}, "minItems": 1, "type": "array"},
+    "canary_work_state": {"const": "not_started"},
+    "context_id": {"minLength": 1, "type": "string"},
+    "decided_at": {"format": "date-time", "type": "string"},
+    "decision": {"const": "adopted_for_exact_canary"},
+    "permitted_next_action": {"const": "approve_bootstrap_exception_for_exact_canary"},
+    "reason": {"minLength": 1, "type": "string"},
+    "requirement": {"$ref": "#/$defs/requirementBinding"},
+    "risk": {"enum": ["low", "medium", "high"]},
+    "schema_version": {"const": 1},
+    "scope_mode": {"const": "exact_canary"},
+    "transition": {"enum": ["iteration_qc", "delivery_qc"]}
+  },
+  "required": ["schema_version", "adoption_id", "requirement", "transition", "scope_mode", "risk", "authority", "authority_action_id", "context_id", "decision", "reason", "decided_at", "permitted_next_action", "adoption_source_commit", "canary_capability_baseline_commit", "canary_capability_baseline_at", "canary_work_state", "canary_work_attested_by", "canary_work_attested_at", "canary_work_source_refs", "authority_policy"],
+  "title": "SpecBound adoption decision v1",
+  "type": "object"
+}

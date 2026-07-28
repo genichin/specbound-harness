@@ -7,5 +7,9 @@ policy:
     high: [fixture-maintainer]
   discovery_confirmation_authorities_by_risk:
     high: [fixture-maintainer]
+  control_plane_adoption_authorities_by_risk:
+    inherit: discovery_confirmation_authorities_by_risk
+  control_plane_activation_authorities_by_risk:
+    inherit: discovery_confirmation_authorities_by_risk
   requirement_approval_authorities_by_risk:
     high: [fixture-maintainer]

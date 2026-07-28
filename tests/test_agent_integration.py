@@ -573,7 +573,8 @@ def test_template_is_default_disabled_while_repository_dogfood_is_not_live_adopt
 
     assert template["policy"]["agent_contract"]["enabled"] is False
     assert repository["policy"]["agent_contract"]["enabled"] is True
-    assert repository["policy"]["control_plane_adoption"]["requirements"] == []
+    assert "control_plane_adoption" not in repository["policy"]
+    assert "control_plane_adoption" not in template["policy"]
 
 
 def test_ci_installed_wheel_gate_is_isolated_and_complete() -> None:

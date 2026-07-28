@@ -1,0 +1,41 @@
+{
+  "$defs": {
+    "digestBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {"minLength": 1, "type": "string"},
+        "sha256": {"pattern": "^[a-f0-9]{64}$", "type": "string"}
+      },
+      "required": ["path", "sha256"],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "adoption": {"$ref": "#/$defs/digestBinding"},
+    "attempt_sequence": {"minimum": 1, "type": "integer"},
+    "authority": {"minLength": 1, "type": "string"},
+    "authority_action_id": {"minLength": 1, "type": "string"},
+    "bootstrap_exception": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {"pattern": "^docs/governance/bootstrap-exceptions/[^/]+\\.md$", "type": "string"},
+        "pre_close_commit": {"pattern": "^[a-f0-9]{40}$", "type": "string"},
+        "pre_close_sha256": {"pattern": "^[a-f0-9]{64}$", "type": "string"}
+      },
+      "required": ["path", "pre_close_sha256", "pre_close_commit"],
+      "type": "object"
+    },
+    "canary_outcome_id": {"pattern": "^cny-[0-9]+-r[1-9][0-9]*-(iteration_qc|delivery_qc)-a[1-9][0-9]*$", "type": "string"},
+    "context_id": {"minLength": 1, "type": "string"},
+    "outcome": {"enum": ["passed", "failed"]},
+    "recorded_at": {"format": "date-time", "type": "string"},
+    "schema_version": {"const": 1},
+    "scope_mode": {"const": "exact_canary"},
+    "transition": {"enum": ["iteration_qc", "delivery_qc"]}
+  },
+  "required": ["schema_version", "canary_outcome_id", "adoption", "bootstrap_exception", "transition", "scope_mode", "attempt_sequence", "outcome", "authority", "authority_action_id", "context_id", "recorded_at"],
+  "title": "SpecBound canary outcome v1",
+  "type": "object"
+}

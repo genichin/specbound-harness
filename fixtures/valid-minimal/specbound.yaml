@@ -13,11 +13,17 @@ canonical:
   micro_specs_root: .specbound/micro-specs
   iteration_qc_root: .specbound/iteration-qc
   delivery_qc_root: .specbound/delivery-qc
+  adoptions_root: .specbound/adoptions
+  canary_outcomes_root: .specbound/canary-outcomes
+  activations_root: .specbound/activations
   requirement_pattern: "req-<id>/req-<id>-r<revision>.md"
   discovery_pattern: "dcy-<id>-r<revision>.md"
   micro_spec_pattern: "req-<id>/ms-<id>-<slice>.md"
   iteration_qc_pattern: "req-<id>/iqc-<id>-<slice>-r<revision>.json"
   delivery_qc_pattern: "dqc-<id>-r<revision>.json"
+  adoption_pattern: "req-<id>/adp-<id>-r<revision>-<transition>.json"
+  canary_outcome_pattern: "req-<id>/cny-<id>-r<revision>-<transition>-a<sequence>.json"
+  activation_pattern: "req-<id>/act-<id>-r<revision>-<transition>.json"
 policy:
   agent_contract:
     enabled: true
@@ -129,6 +135,7 @@ policy:
   delivery_qc_authorities_by_risk:
     low:
       - fixture-maintainer
-  control_plane_adoption:
-    schema_version: 1
-    requirements: []
+  control_plane_adoption_authorities_by_risk:
+    inherit: discovery_confirmation_authorities_by_risk
+  control_plane_activation_authorities_by_risk:
+    inherit: discovery_confirmation_authorities_by_risk

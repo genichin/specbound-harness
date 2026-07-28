@@ -41,6 +41,9 @@ REQUIRED_ROOTS = {
     "micro_specs_root": ".specbound/micro-specs",
     "iteration_qc_root": ".specbound/iteration-qc",
     "delivery_qc_root": ".specbound/delivery-qc",
+    "adoptions_root": ".specbound/adoptions",
+    "canary_outcomes_root": ".specbound/canary-outcomes",
+    "activations_root": ".specbound/activations",
 }
 
 
@@ -54,6 +57,9 @@ DISCOVERY_PATTERN = "dcy-<id>-r<revision>.md"
 MICRO_SPEC_PATTERN = "req-<id>/ms-<id>-<slice>.md"
 ITERATION_QC_PATTERN = "req-<id>/iqc-<id>-<slice>-r<revision>.json"
 DELIVERY_QC_PATTERN = "dqc-<id>-r<revision>.json"
+ADOPTION_PATTERN = "req-<id>/adp-<id>-r<revision>-<transition>.json"
+CANARY_OUTCOME_PATTERN = "req-<id>/cny-<id>-r<revision>-<transition>-a<sequence>.json"
+ACTIVATION_PATTERN = "req-<id>/act-<id>-r<revision>-<transition>.json"
 LATEST_ONLY_WITH_EXCEPTION = "latest_only_with_explicit_exception"
 CONTROL_PLANE_ADOPTION_SCHEMA_VERSION = 1
 REQUIRED_APPROVAL_FIELDS = {
@@ -215,6 +221,9 @@ def preflight(root: Path) -> Result:
     _require_config_value(result, canonical, "micro_spec_pattern", MICRO_SPEC_PATTERN)
     _require_config_value(result, canonical, "iteration_qc_pattern", ITERATION_QC_PATTERN)
     _require_config_value(result, canonical, "delivery_qc_pattern", DELIVERY_QC_PATTERN)
+    _require_config_value(result, canonical, "adoption_pattern", ADOPTION_PATTERN)
+    _require_config_value(result, canonical, "canary_outcome_pattern", CANARY_OUTCOME_PATTERN)
+    _require_config_value(result, canonical, "activation_pattern", ACTIVATION_PATTERN)
 
     policy = config.get("policy")
     if not isinstance(policy, dict) or policy.get("approved_status") != "approved":
@@ -308,7 +317,8 @@ def preflight(root: Path) -> Result:
             "specbound.yaml",
             "policy.delivery_qc_authorities_by_risk must map each non-empty risk to a non-empty list of non-empty authority strings",
         )
-    _validate_control_plane_adoption_config(result, policy)
+    _validate_control_plane_authority_aliases(result, policy)
+    _validate_legacy_control_plane_adoption_config(result, policy)
     agent_contract = policy.get("agent_contract") if isinstance(policy, dict) else None
     if agent_contract is not None:
         if (
@@ -336,54 +346,32 @@ def _validate_required_field_config(
         result.block("malformed_config", "specbound.yaml", f"policy.{name} must include the bootstrap fields")
 
 
-def _validate_control_plane_adoption_config(result: Result, policy: Any) -> None:
-    """Validate the versioned, explicit control-plane adoption registry."""
-    adoption = policy.get("control_plane_adoption") if isinstance(policy, dict) else None
-    if not isinstance(adoption, dict) or set(adoption) != {"schema_version", "requirements"}:
-        result.block(
-            "malformed_config",
-            "specbound.yaml",
-            "policy.control_plane_adoption must contain exactly schema_version and requirements",
-        )
-        return
-    if adoption.get("schema_version") != CONTROL_PLANE_ADOPTION_SCHEMA_VERSION or isinstance(adoption.get("schema_version"), bool):
-        result.block(
-            "malformed_config",
-            "specbound.yaml",
-            "policy.control_plane_adoption.schema_version must equal integer 1",
-        )
-    requirements = adoption.get("requirements")
-    if not isinstance(requirements, list):
-        result.block("malformed_config", "specbound.yaml", "policy.control_plane_adoption.requirements must be a list")
-        return
-    seen: set[tuple[str, int]] = set()
-    for entry in requirements:
-        if not isinstance(entry, dict) or set(entry) != {"path", "id", "revision", "sha256"}:
+def _validate_control_plane_authority_aliases(result: Result, policy: Any) -> None:
+    expected = {"inherit": "discovery_confirmation_authorities_by_risk"}
+    for name in (
+        "control_plane_adoption_authorities_by_risk",
+        "control_plane_activation_authorities_by_risk",
+    ):
+        value = policy.get(name) if isinstance(policy, dict) else None
+        if value != expected:
             result.block(
                 "malformed_config",
                 "specbound.yaml",
-                "each control-plane adoption entry must contain exactly path, id, revision, and sha256",
+                f"policy.{name} must equal the exact discovery-confirmation authority alias",
             )
-            continue
-        path, requirement_id, revision, digest = entry["path"], entry["id"], entry["revision"], entry["sha256"]
-        if (
-            not isinstance(path, str)
-            or not _safe_relative(path)
-            or not isinstance(requirement_id, str)
-            or not re.fullmatch(r"req-[0-9]+", requirement_id)
-            or not isinstance(revision, int)
-            or isinstance(revision, bool)
-            or revision < 1
-            or not isinstance(digest, str)
-            or not re.fullmatch(r"[a-f0-9]{64}", digest)
-            or path != canonical_requirement_relative(requirement_id, revision)
-        ):
-            result.block("malformed_config", "specbound.yaml", "control-plane adoption entry must bind one canonical REQ snapshot")
-            continue
-        identity = (requirement_id, revision)
-        if identity in seen:
-            result.block("malformed_config", "specbound.yaml", "control-plane adoption entries must be unique by REQ id/revision")
-        seen.add(identity)
+
+
+def _validate_legacy_control_plane_adoption_config(result: Result, policy: Any) -> None:
+    """Allow only the historical empty registry shape; it establishes no state."""
+    if not isinstance(policy, dict) or "control_plane_adoption" not in policy:
+        return
+    adoption = policy["control_plane_adoption"]
+    if adoption != {"schema_version": CONTROL_PLANE_ADOPTION_SCHEMA_VERSION, "requirements": []}:
+        result.block(
+            "malformed_config",
+            "specbound.yaml",
+            "legacy policy.control_plane_adoption must equal the exact empty compatibility shape",
+        )
 
 
 def _safe_relative(path: str) -> bool:
@@ -2284,8 +2272,11 @@ def reject_requirement(root: Path, target: str, authority: str, reason: str) -> 
 
 
 def _adopted_requirement_entries(root: Path, config: dict[str, Any], result: Result) -> dict[str, dict[str, Any]]:
-    """Return exact adopted REQ snapshots, rejecting stale or non-approved entries."""
-    entries = config["policy"]["control_plane_adoption"]["requirements"]
+    """Read only the exact empty legacy registry until the derived resolver lands."""
+    legacy = config["policy"].get("control_plane_adoption")
+    if legacy is None:
+        return {}
+    entries = legacy["requirements"]
     adopted: dict[str, dict[str, Any]] = {}
     for entry in entries:
         requirement_id = entry["id"]

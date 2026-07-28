@@ -1,0 +1,58 @@
+{
+  "$defs": {
+    "digestBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {"minLength": 1, "type": "string"},
+        "sha256": {"pattern": "^[a-f0-9]{64}$", "type": "string"}
+      },
+      "required": ["path", "sha256"],
+      "type": "object"
+    },
+    "policyBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {"const": "specbound.yaml"},
+        "selector": {"const": "control_plane_activation_authorities_by_risk"},
+        "sha256": {"pattern": "^[a-f0-9]{64}$", "type": "string"}
+      },
+      "required": ["path", "sha256", "selector"],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "activation_id": {"pattern": "^act-[0-9]+-r[1-9][0-9]*-(iteration_qc|delivery_qc)$", "type": "string"},
+    "adoption": {"$ref": "#/$defs/digestBinding"},
+    "authority": {"minLength": 1, "type": "string"},
+    "authority_action_id": {"minLength": 1, "type": "string"},
+    "authority_policy": {"$ref": "#/$defs/policyBinding"},
+    "bootstrap_exception": {
+      "additionalProperties": false,
+      "properties": {
+        "closeout_commit": {"pattern": "^[a-f0-9]{40}$", "type": "string"},
+        "closed_sha256": {"pattern": "^[a-f0-9]{64}$", "type": "string"},
+        "path": {"pattern": "^docs/governance/bootstrap-exceptions/[^/]+\\.md$", "type": "string"},
+        "pre_close_commit": {"pattern": "^[a-f0-9]{40}$", "type": "string"},
+        "pre_close_sha256": {"pattern": "^[a-f0-9]{64}$", "type": "string"}
+      },
+      "required": ["path", "pre_close_sha256", "pre_close_commit", "closed_sha256", "closeout_commit"],
+      "type": "object"
+    },
+    "bootstrap_exception_ledger": {"$ref": "#/$defs/digestBinding"},
+    "canary_outcome": {"$ref": "#/$defs/digestBinding"},
+    "context_id": {"minLength": 1, "type": "string"},
+    "decided_at": {"format": "date-time", "type": "string"},
+    "decision": {"const": "activated_for_prospective_scope"},
+    "passed_outcome_commit": {"pattern": "^[a-f0-9]{40}$", "type": "string"},
+    "prospective_baseline_at": {"format": "date-time", "type": "string"},
+    "prospective_baseline_commit": {"pattern": "^[a-f0-9]{40}$", "type": "string"},
+    "schema_version": {"const": 1},
+    "scope_mode": {"const": "prospective_after_baseline"},
+    "transition": {"enum": ["iteration_qc", "delivery_qc"]}
+  },
+  "required": ["schema_version", "activation_id", "adoption", "canary_outcome", "passed_outcome_commit", "transition", "scope_mode", "prospective_baseline_commit", "prospective_baseline_at", "bootstrap_exception", "bootstrap_exception_ledger", "authority_policy", "authority", "authority_action_id", "context_id", "decision", "decided_at"],
+  "title": "SpecBound activation decision v1",
+  "type": "object"
+}

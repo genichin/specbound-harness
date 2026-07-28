@@ -1,0 +1,38 @@
+{
+  "activation_id": "act-0042-r1-iteration_qc",
+  "adoption": {
+    "path": ".specbound/adoptions/req-0042/adp-0042-r1-iteration_qc.json",
+    "sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+  },
+  "authority": "repository-maintainer",
+  "authority_action_id": "fresh-activation-action-reference",
+  "authority_policy": {
+    "path": "specbound.yaml",
+    "selector": "control_plane_activation_authorities_by_risk",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "bootstrap_exception": {
+    "closed_sha256": "9999999999999999999999999999999999999999999999999999999999999999",
+    "closeout_commit": "8888888888888888888888888888888888888888",
+    "path": "docs/governance/bootstrap-exceptions/req-0042-r1-iqc-canary.md",
+    "pre_close_commit": "6666666666666666666666666666666666666666",
+    "pre_close_sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+  },
+  "bootstrap_exception_ledger": {
+    "path": "docs/governance/bootstrap-exceptions/README.md",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "canary_outcome": {
+    "path": ".specbound/canary-outcomes/req-0042/cny-0042-r1-iteration_qc-a1.json",
+    "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "context_id": "fresh-activation-context-reference",
+  "decided_at": "2026-07-05T00:00:00+00:00",
+  "decision": "activated_for_prospective_scope",
+  "passed_outcome_commit": "cccccccccccccccccccccccccccccccccccccccc",
+  "prospective_baseline_at": "2026-07-05T00:00:00+00:00",
+  "prospective_baseline_commit": "dddddddddddddddddddddddddddddddddddddddd",
+  "schema_version": 1,
+  "scope_mode": "prospective_after_baseline",
+  "transition": "iteration_qc"
+}
