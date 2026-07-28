@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import datetime, timezone
+import hashlib
+import importlib
 import json
+import os
 from pathlib import Path
+import subprocess
 
 from jsonschema import Draft202012Validator, ValidationError
 import pytest
@@ -40,6 +45,42 @@ def _schema(name: str) -> dict:
     schema = json.loads(root_path.read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(schema)
     return schema
+
+
+def _git_bytes(root: Path, *args: str, env: dict[str, str] | None = None) -> bytes:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=root,
+        env=env,
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    return completed.stdout
+
+
+def _git(root: Path, *args: str, env: dict[str, str] | None = None) -> str:
+    return _git_bytes(root, *args, env=env).decode("utf-8", errors="strict").strip()
+
+
+def _git_env(when: str) -> dict[str, str]:
+    return dict(
+        os.environ,
+        GIT_AUTHOR_NAME="SpecBound Test",
+        GIT_AUTHOR_EMAIL="specbound@example.invalid",
+        GIT_COMMITTER_NAME="SpecBound Test",
+        GIT_COMMITTER_EMAIL="specbound@example.invalid",
+        GIT_AUTHOR_DATE=when,
+        GIT_COMMITTER_DATE=when,
+    )
+
+
+def _init_git_repo(tmp_path: Path) -> Path:
+    root = tmp_path / "repo"
+    root.mkdir()
+    _git(root, "init", "--quiet", "--object-format=sha1")
+    _git(root, "config", "core.autocrlf", "false")
+    return root
 
 
 def _config(path: Path) -> dict:
@@ -249,3 +290,52 @@ def test_record_templates_are_canonical_closed_schema_instances(
 def test_root_validate_does_not_require_the_removed_manual_registry() -> None:
     result = validation.validate(ROOT)
     assert result.valid, result.blockers
+
+
+def test_freeze_git_evidence_binds_sha1_history_blobs_and_clean_head(
+    tmp_path: Path,
+) -> None:
+    root = _init_git_repo(tmp_path)
+    requirement = Path(".specbound/requirements/req-0042/req-0042-r1.md")
+    approval = Path(".specbound/approvals/req-0042-r1.approval.json")
+    source = Path("evidence/source.txt")
+    for relative, content in (
+        (requirement, "---\nid: req-0042\nrevision: 1\nstatus: approved\n---\n"),
+        (
+            approval,
+            '{"schema_version":1,"requirement_id":"req-0042",'
+            '"revision":1,"approved_at":"2026-07-01T00:00:00+00:00"}\n',
+        ),
+        (source, "immutable source\n"),
+    ):
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8", newline="\n")
+    _git(root, "add", "--", requirement.as_posix(), approval.as_posix(), source.as_posix())
+    _git(root, "commit", "--quiet", "-m", "introduce exact adoption inputs", env=_git_env("2026-07-01T00:00:00+00:00"))
+    head = _git(root, "rev-parse", "HEAD")
+
+    module_path = ROOT / "src/specbound/control_plane_adoption.py"
+    assert module_path.is_file(), "Git evidence adapter is not implemented"
+    module = importlib.import_module("specbound.control_plane_adoption")
+    result = module.freeze_git_evidence(
+        root,
+        requirement_path=requirement.as_posix(),
+        approval_path=approval.as_posix(),
+        baseline_commit=head,
+        baseline_at="2026-07-01T00:00:00+00:00",
+        repository_source_paths=(source.as_posix(),),
+    )
+
+    assert result.blockers == ()
+    assert result.object_format == "sha1"
+    assert result.head_commit == head
+    assert result.baseline_commit == head
+    assert result.baseline_at == datetime(2026, 7, 1, tzinfo=timezone.utc)
+    assert result.requirement_first_commit == head
+    assert result.approval_first_commit == head
+    for relative in (requirement, approval, source):
+        frozen_blob = _git_bytes(root, "show", f"{head}:{relative.as_posix()}")
+        assert result.blob_sha256[relative.as_posix()] == hashlib.sha256(
+            frozen_blob
+        ).hexdigest()
