@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
 import re
@@ -11,6 +11,12 @@ import subprocess
 
 
 _FULL_SHA1_RE = re.compile(r"[0-9a-f]{40}")
+_RFC3339_OFFSET_RE = re.compile(
+    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})"
+)
+_UTC_RFC3339_RE = re.compile(
+    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|\+00:00)"
+)
 
 
 @dataclass(frozen=True)
@@ -31,12 +37,25 @@ class FrozenGitEvidence:
     head_commit: str | None = None
     baseline_commit: str | None = None
     baseline_at: datetime | None = None
+    requirement_path: str | None = None
+    approval_path: str | None = None
     requirement_first_commit: str | None = None
     approval_first_commit: str | None = None
     blob_sha256: dict[str, str] = field(default_factory=dict)
 
     @property
     def valid(self) -> bool:
+        return not self.blockers
+
+
+@dataclass(frozen=True)
+class AdoptionEligibility:
+    """Read-only result for one frozen exact-canary eligibility decision."""
+
+    blockers: tuple[GitEvidenceBlocker, ...]
+
+    @property
+    def eligible(self) -> bool:
         return not self.blockers
 
 
@@ -73,9 +92,22 @@ def _safe_repository_path(value: str) -> bool:
 
 
 def _parse_utc_timestamp(value: str) -> datetime:
+    if _UTC_RFC3339_RE.fullmatch(value) is None:
+        raise ValueError("timestamp must be RFC3339 with an exact UTC offset")
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
         raise ValueError("timestamp must include a UTC offset")
+    if parsed.utcoffset() != timedelta(0):
+        raise ValueError("timestamp must use the UTC offset")
+    return parsed.astimezone(timezone.utc)
+
+
+def _parse_git_timestamp(value: str) -> datetime:
+    if _RFC3339_OFFSET_RE.fullmatch(value) is None:
+        raise ValueError("Git timestamp must be RFC3339 with an offset")
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        raise ValueError("Git timestamp must include an offset")
     return parsed.astimezone(timezone.utc)
 
 
@@ -122,12 +154,15 @@ def freeze_git_evidence(
             blockers=(GitEvidenceBlocker("not_git_repository", ".", error),)
         )
     if object_format != "sha1":
-        blockers.append(
-            GitEvidenceBlocker(
-                "unsupported_git_object_format",
-                ".git",
-                "control-plane adoption V1 requires exact sha1 Git object format",
-            )
+        return FrozenGitEvidence(
+            blockers=(
+                GitEvidenceBlocker(
+                    "unsupported_git_object_format",
+                    ".git",
+                    "control-plane adoption V1 requires exact sha1 Git object format",
+                ),
+            ),
+            object_format=object_format,
         )
 
     shallow, error = _git_text(root, "rev-parse", "--is-shallow-repository")
@@ -159,14 +194,24 @@ def freeze_git_evidence(
         blockers.append(
             GitEvidenceBlocker("git_query_failed", ".", detail or "could not inspect worktree")
         )
-    elif status.stdout:
-        blockers.append(
-            GitEvidenceBlocker(
-                "dirty_worktree",
-                ".",
-                "tracked and untracked worktree changes must be absent before evidence freeze",
+    else:
+        status_lines = tuple(line for line in status.stdout.splitlines() if line)
+        if any(not line.startswith(b"??") for line in status_lines):
+            blockers.append(
+                GitEvidenceBlocker(
+                    "dirty_tracked_worktree",
+                    ".",
+                    "tracked worktree changes must be absent before evidence freeze",
+                )
             )
-        )
+        if any(line.startswith(b"??") for line in status_lines):
+            blockers.append(
+                GitEvidenceBlocker(
+                    "untracked_worktree",
+                    ".",
+                    "untracked worktree changes must be absent before evidence freeze",
+                )
+            )
 
     verified_baseline: str | None = None
     if not _FULL_SHA1_RE.fullmatch(baseline_commit):
@@ -202,7 +247,7 @@ def freeze_git_evidence(
             )
         else:
             try:
-                derived_baseline_at = _parse_utc_timestamp(timestamp)
+                derived_baseline_at = _parse_git_timestamp(timestamp)
                 requested_baseline_at = _parse_utc_timestamp(baseline_at)
             except ValueError as exc:
                 blockers.append(
@@ -298,7 +343,123 @@ def freeze_git_evidence(
         head_commit=head_commit,
         baseline_commit=verified_baseline,
         baseline_at=derived_baseline_at,
+        requirement_path=requirement_path,
+        approval_path=approval_path,
         requirement_first_commit=requirement_first_commit,
         approval_first_commit=approval_first_commit,
         blob_sha256=blob_sha256,
     )
+
+
+def resolve_adoption_eligibility(
+    root: Path,
+    *,
+    evidence: FrozenGitEvidence,
+    approved_at: str,
+) -> AdoptionEligibility:
+    """Resolve eligibility from one immutable Git evidence snapshot."""
+
+    if evidence.blockers:
+        return AdoptionEligibility(blockers=evidence.blockers)
+    if (
+        evidence.baseline_commit is None
+        or evidence.baseline_at is None
+        or evidence.requirement_path is None
+        or evidence.approval_path is None
+    ):
+        return AdoptionEligibility(
+            blockers=(
+                GitEvidenceBlocker(
+                    "incomplete_git_evidence",
+                    "baseline_commit",
+                    "eligibility requires a frozen baseline, requirement path, and approval path",
+                ),
+            )
+        )
+
+    root = Path(root).resolve()
+    blockers: list[GitEvidenceBlocker] = []
+    for family, path, introduction_commit in (
+        (
+            "requirement",
+            evidence.requirement_path,
+            evidence.requirement_first_commit,
+        ),
+        ("approval", evidence.approval_path, evidence.approval_first_commit),
+    ):
+        history, error = _git_text(
+            root,
+            "rev-list",
+            "--full-history",
+            evidence.baseline_commit,
+            "--",
+            path,
+        )
+        if error is not None:
+            blockers.append(
+                GitEvidenceBlocker(
+                    "git_query_failed", path, error
+                )
+            )
+        elif history:
+            blockers.append(
+                GitEvidenceBlocker(
+                    f"{family}_existed_at_or_before_baseline",
+                    path,
+                    f"{family} path has history reachable from the capability baseline",
+                )
+            )
+        elif introduction_commit is None:
+            blockers.append(
+                GitEvidenceBlocker(
+                    "incomplete_git_evidence",
+                    path,
+                    f"{family} introduction commit is missing",
+                )
+            )
+        else:
+            introduced_at, error = _git_text(
+                root, "show", "-s", "--format=%cI", introduction_commit
+            )
+            if error is not None or introduced_at is None:
+                blockers.append(
+                    GitEvidenceBlocker(
+                        "git_query_failed",
+                        path,
+                        error or f"could not read {family} introduction timestamp",
+                    )
+                )
+            else:
+                try:
+                    parsed_introduced_at = _parse_git_timestamp(introduced_at)
+                except ValueError as exc:
+                    blockers.append(
+                        GitEvidenceBlocker(
+                            "invalid_introduction_timestamp", path, str(exc)
+                        )
+                    )
+                else:
+                    if parsed_introduced_at <= evidence.baseline_at:
+                        blockers.append(
+                            GitEvidenceBlocker(
+                                f"{family}_introduction_not_after_baseline",
+                                path,
+                                f"{family} introduction must be strictly after the capability baseline",
+                            )
+                        )
+    try:
+        parsed_approved_at = _parse_utc_timestamp(approved_at)
+    except ValueError as exc:
+        blockers.append(
+            GitEvidenceBlocker("invalid_approved_at", "approved_at", str(exc))
+        )
+    else:
+        if parsed_approved_at <= evidence.baseline_at:
+            blockers.append(
+                GitEvidenceBlocker(
+                    "approval_not_after_baseline",
+                    "approved_at",
+                    "approval timestamp must be strictly after the capability baseline",
+                )
+            )
+    return AdoptionEligibility(blockers=tuple(blockers))
