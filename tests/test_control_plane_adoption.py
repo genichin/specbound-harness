@@ -212,6 +212,29 @@ def test_adoption_decide_publishes_one_derived_canonical_record_in_copied_git(
     assert state is not None and state.path == target.as_posix()
 
 
+@pytest.mark.skipif(
+    os.name != "posix" or not all(hasattr(os, name) for name in ("O_DIRECTORY", "O_NOFOLLOW")),
+    reason="safe publication primitives are unavailable",
+)
+def test_adoption_publication_file_fsync_failure_removes_owned_leaf(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = ".specbound/adoptions/req-0042/adp-0042-r1-iteration_qc.json"
+    (tmp_path / ".specbound/adoptions/req-0042").mkdir(parents=True)
+    module = importlib.import_module("specbound.control_plane_adoption")
+
+    def fail_fsync(_: int) -> None:
+        raise OSError("injected file fsync failure")
+
+    monkeypatch.setattr(module.os, "fsync", fail_fsync)
+    blocker = module._publish_adoption_leaf(tmp_path, target, b"{}\n")
+
+    assert blocker is not None
+    assert blocker.code == "adoption_publication_failed"
+    assert not (tmp_path / target).exists()
+
+
 def _commit_minimal_adoption_inputs(
     root: Path,
     *,
