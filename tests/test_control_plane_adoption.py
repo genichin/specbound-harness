@@ -9,6 +9,7 @@ import inspect
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 
 from jsonschema import Draft202012Validator, ValidationError
@@ -83,6 +84,131 @@ def _init_git_repo(tmp_path: Path) -> Path:
     _git(root, "init", "--quiet", "--object-format=sha1")
     _git(root, "config", "core.autocrlf", "false")
     return root
+
+
+def test_adoption_decide_refuses_unsupported_platform_before_mutation(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = _init_git_repo(tmp_path)
+    (root / "specbound.yaml").write_bytes((ROOT / "specbound.yaml").read_bytes())
+    adoption_root = root / ".specbound/adoptions/req-0042"
+    adoption_root.mkdir(parents=True)
+    cli = importlib.import_module("specbound.cli")
+
+    exit_code = cli.main(
+        [
+            "--root",
+            str(root),
+            "adoption",
+            "decide",
+            "req-0042-r1",
+            "--transition",
+            "iteration_qc",
+            "--authority",
+            "repository-maintainer",
+            "--authority-action-id",
+            "act-ref-adoption-0042-r1",
+            "--context-id",
+            "ctx-adoption-0042-r1",
+            "--capability-baseline-commit",
+            "0" * 40,
+            "--reason",
+            "Exercise the exact prospective IQC adoption boundary.",
+            "--source-ref-json",
+            '{"kind":"external","id":"ticket:42","digest":"sha256:42"}',
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 2
+    assert payload["blockers"][0]["code"] == "unsupported_platform"
+    assert not list(adoption_root.iterdir())
+
+
+@pytest.mark.skipif(
+    os.name != "posix" or not all(hasattr(os, name) for name in ("O_DIRECTORY", "O_NOFOLLOW")),
+    reason="safe publication primitives are unavailable",
+)
+def test_adoption_decide_publishes_one_derived_canonical_record_in_copied_git(
+    tmp_path: Path,
+) -> None:
+    source_parent = tmp_path / "source"
+    source_parent.mkdir()
+    source = _init_git_repo(source_parent)
+    config_bytes = (ROOT / "specbound.yaml").read_bytes()
+    (source / "specbound.yaml").write_bytes(config_bytes)
+    source_ref = Path("docs/evidence/canary-source.txt")
+    (source / source_ref).parent.mkdir(parents=True)
+    source_bytes = b"exact canary source\n"
+    (source / source_ref).write_bytes(source_bytes)
+    _git(source, "add", "--", "specbound.yaml", source_ref.as_posix())
+    _git(source, "commit", "--quiet", "-m", "baseline", env=_git_env("2026-06-30T00:00:00+00:00"))
+    baseline = _git(source, "rev-parse", "HEAD")
+
+    requirement = Path(".specbound/requirements/req-0042/req-0042-r1.md")
+    requirement_bytes = b"---\nid: req-0042\nrevision: 1\nrisk: high\nstatus: approved\n---\n"
+    (source / requirement).parent.mkdir(parents=True)
+    (source / requirement).write_bytes(requirement_bytes)
+    approval = Path(".specbound/approvals/req-0042-r1.approval.json")
+    _write_canonical_json(source, approval, {
+        "approved_at": "2026-07-01T00:00:00+00:00",
+        "authority": "repository-maintainer",
+        "requirement_id": "req-0042",
+        "requirement_path": requirement.as_posix(),
+        "revision": 1,
+        "risk": "high",
+        "schema_version": 1,
+        "sha256": hashlib.sha256(requirement_bytes).hexdigest(),
+    })
+    _git(source, "add", "--", requirement.as_posix(), approval.as_posix())
+    _git(source, "commit", "--quiet", "-m", "approve", env=_git_env("2026-07-01T00:00:00+00:00"))
+    source_commit = _git(source, "rev-parse", "HEAD")
+
+    copied = tmp_path / "copied-git"
+    shutil.copytree(source, copied)
+    target = Path(".specbound/adoptions/req-0042/adp-0042-r1-iteration_qc.json")
+    (copied / target.parent).mkdir(parents=True)
+    module = importlib.import_module("specbound.control_plane_adoption")
+    assert not ({"output_path", "decided_at", "source_commit", "attester", "policy_selector"} & set(inspect.signature(module.decide_adoption).parameters))
+
+    result = module.decide_adoption(
+        copied,
+        "req-0042-r1",
+        "iteration_qc",
+        "repository-maintainer",
+        "act-ref-adoption-0042-r1",
+        "ctx-adoption-0042-r1",
+        baseline,
+        "Exercise the exact prospective IQC adoption boundary.",
+        (
+            json.dumps({"kind": "external", "id": "urn:ticket:42", "digest_algorithm": "sha256", "digest": "2" * 64}),
+            json.dumps({"kind": "repository", "path": source_ref.as_posix()}),
+        ),
+    )
+
+    assert result.valid
+    assert [path.relative_to(copied).as_posix() for path in (copied / ".specbound/adoptions").rglob("*.json")] == [target.as_posix()]
+    payload = (copied / target).read_bytes()
+    record = json.loads(payload)
+    assert payload == (json.dumps(record, sort_keys=True, indent=2, ensure_ascii=False) + "\n").encode()
+    Draft202012Validator(_schema("adoption-decision.schema.json")).validate(record)
+    assert record["adoption_source_commit"] == source_commit
+    assert record["decided_at"] == "2026-07-01T00:00:00+00:00"
+    assert record["canary_work_attested_at"] == record["decided_at"]
+    assert record["canary_work_attested_by"] == "repository-maintainer"
+    assert record["authority_policy"] == {
+        "path": "specbound.yaml",
+        "selector": "control_plane_adoption_authorities_by_risk",
+        "sha256": hashlib.sha256(config_bytes).hexdigest(),
+    }
+    assert record["canary_work_source_refs"] == [
+        {"digest": "2" * 64, "digest_algorithm": "sha256", "id": "urn:ticket:42", "kind": "external"},
+        {"kind": "repository", "path": source_ref.as_posix(), "sha256": hashlib.sha256(source_bytes).hexdigest()},
+    ]
+    state, blockers = module.resolve_adoption_read_state(copied, target.as_posix())
+    assert blockers == ()
+    assert state is not None and state.path == target.as_posix()
 
 
 def _commit_minimal_adoption_inputs(

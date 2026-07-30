@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
+import errno
 import json
+import os
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
@@ -173,6 +175,250 @@ class GitEvidenceBlocker:
     code: str
     path: str
     detail: str
+
+
+@dataclass(frozen=True)
+class AdoptionDecisionResult:
+    blockers: tuple[GitEvidenceBlocker, ...]
+
+    @property
+    def valid(self) -> bool:
+        return not self.blockers
+
+    def payload(self) -> dict[str, object]:
+        return {
+            "valid": self.valid,
+            "blockers": [
+                {
+                    "code": blocker.code,
+                    "path": blocker.path,
+                    "detail": blocker.detail,
+                }
+                for blocker in self.blockers
+            ],
+        }
+
+
+def _publish_adoption_leaf(root: Path, target: str, content: bytes) -> GitEvidenceBlocker | None:
+    """Exclusively publish one leaf through existing no-follow directories."""
+
+    parts = PurePosixPath(target).parts
+    parent_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    leaf_fd: int | None = None
+    owned: tuple[int, int] | None = None
+    try:
+        for part in parts[:-1]:
+            try:
+                next_fd = os.open(
+                    part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd
+                )
+            except OSError as exc:
+                return GitEvidenceBlocker(
+                    "unsafe_adoption_target",
+                    target,
+                    "canonical adoption parent must already exist without symlinks"
+                    if exc.errno == errno.ENOENT else str(exc),
+                )
+            os.close(parent_fd)
+            parent_fd = next_fd
+        try:
+            leaf_fd = os.open(
+                parts[-1],
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                0o644,
+                dir_fd=parent_fd,
+            )
+        except FileExistsError:
+            return GitEvidenceBlocker(
+                "duplicate_adoption_target", target, "canonical adoption target already exists"
+            )
+        state = os.fstat(leaf_fd)
+        owned = (state.st_dev, state.st_ino)
+        with os.fdopen(leaf_fd, "wb", closefd=False) as output:
+            output.write(content)
+            output.flush()
+            os.fsync(output.fileno())
+        os.fsync(parent_fd)
+        return None
+    except OSError as exc:
+        return GitEvidenceBlocker("adoption_publication_failed", target, str(exc))
+    finally:
+        if leaf_fd is not None:
+            os.close(leaf_fd)
+        if owned is not None and __import__("sys").exc_info()[0] is not None:
+            try:
+                current = os.stat(parts[-1], dir_fd=parent_fd, follow_symlinks=False)
+                if (current.st_dev, current.st_ino) == owned:
+                    os.unlink(parts[-1], dir_fd=parent_fd)
+                    os.fsync(parent_fd)
+            except OSError:
+                pass
+        os.close(parent_fd)
+
+
+def _remove_owned_adoption_leaf(root: Path, target: str, owned: tuple[int, int]) -> None:
+    parts = PurePosixPath(target).parts
+    parent_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in parts[:-1]:
+            next_fd = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
+            os.close(parent_fd)
+            parent_fd = next_fd
+        current = os.stat(parts[-1], dir_fd=parent_fd, follow_symlinks=False)
+        if (current.st_dev, current.st_ino) == owned:
+            os.unlink(parts[-1], dir_fd=parent_fd)
+            os.fsync(parent_fd)
+    except OSError:
+        pass
+    finally:
+        os.close(parent_fd)
+
+
+def decide_adoption(
+    root: Path,
+    requirement_target: str,
+    transition: str,
+    authority: str,
+    authority_action_id: str,
+    context_id: str,
+    capability_baseline_commit: str,
+    reason: str,
+    source_ref_json: tuple[str, ...],
+) -> AdoptionDecisionResult:
+    """Derive and safely publish one eligible exact-canary adoption decision."""
+
+    match = re.fullmatch(r"req-([0-9]+)-r([1-9][0-9]*)", requirement_target)
+    number = match.group(1) if match else "invalid"
+    revision_text = match.group(2) if match else "invalid"
+    target = f".specbound/adoptions/req-{number}/adp-{number}-r{revision_text}-{transition}.json"
+    if os.name != "posix" or not all(
+        hasattr(os, name) for name in ("O_DIRECTORY", "O_NOFOLLOW")
+    ):
+        return AdoptionDecisionResult((GitEvidenceBlocker(
+            "unsupported_platform", target,
+            "adoption publication requires POSIX directory-relative no-follow primitives",
+        ),))
+    if match is None or transition not in {"iteration_qc", "delivery_qc"}:
+        return AdoptionDecisionResult((GitEvidenceBlocker(
+            "invalid_adoption_target", target, "target and transition must identify one canonical adoption",
+        ),))
+
+    root = Path(root).resolve()
+    revision = int(revision_text)
+    requirement_id = f"req-{number}"
+    requirement_path = f".specbound/requirements/{requirement_id}/{requirement_id}-r{revision}.md"
+    approval_path = f".specbound/approvals/{requirement_id}-r{revision}.approval.json"
+    parsed_refs: list[dict[str, object]] = []
+    repository_paths: list[str] = []
+    try:
+        for raw in source_ref_json:
+            ref = _strict_json_loads(raw)
+            if not isinstance(ref, dict):
+                raise ValueError("source ref must be an object")
+            kind = ref.get("kind")
+            if kind == "repository" and set(ref) == {"kind", "path"} and isinstance(ref.get("path"), str) and _safe_repository_path(str(ref["path"])):
+                repository_paths.append(str(ref["path"]))
+                parsed_refs.append(ref)
+            elif kind == "external" and set(ref) == {"kind", "id", "digest_algorithm", "digest"} and ref.get("digest_algorithm") == "sha256" and isinstance(ref.get("id"), str) and unicodedata.normalize("NFC", str(ref["id"])) == ref["id"] and isinstance(ref.get("digest"), str) and re.fullmatch(r"[a-f0-9]{64}", str(ref["digest"])):
+                parsed_refs.append(ref)
+            else:
+                raise ValueError("source ref does not match a strict supported shape")
+        if not parsed_refs:
+            raise ValueError("at least one source ref is required")
+    except (ValueError, json.JSONDecodeError, _DuplicateKeyError) as exc:
+        return AdoptionDecisionResult((GitEvidenceBlocker("invalid_canary_source_refs", target, str(exc)),))
+
+    baseline_at_raw, baseline_error = _git_text(root, "show", "-s", "--format=%cI", capability_baseline_commit)
+    if baseline_error is not None or baseline_at_raw is None:
+        return AdoptionDecisionResult((GitEvidenceBlocker("invalid_baseline_commit", "baseline_commit", baseline_error or "missing timestamp"),))
+    try:
+        baseline_at = _parse_git_timestamp(baseline_at_raw).isoformat()
+    except ValueError as exc:
+        return AdoptionDecisionResult((GitEvidenceBlocker("invalid_baseline_timestamp", "baseline_commit", str(exc)),))
+    evidence = freeze_git_evidence(
+        root,
+        requirement_path=requirement_path,
+        approval_path=approval_path,
+        baseline_commit=capability_baseline_commit,
+        baseline_at=baseline_at,
+        repository_source_paths=tuple(repository_paths),
+    )
+    if evidence.blockers:
+        return AdoptionDecisionResult(evidence.blockers)
+    assert evidence.head_commit is not None and evidence.baseline_at is not None
+    try:
+        requirement_blob = _git(root, "show", f"{evidence.head_commit}:{requirement_path}").stdout
+        frontmatter = requirement_blob.decode("utf-8", errors="strict").split("---", 2)[1]
+        metadata = _strict_yaml_load(frontmatter)
+        approval_blob = _git(root, "show", f"{evidence.head_commit}:{approval_path}").stdout
+        approval = _strict_json_loads(approval_blob.decode("utf-8", errors="strict"))
+    except (UnicodeDecodeError, yaml.YAMLError, ValueError, IndexError, json.JSONDecodeError, _DuplicateKeyError) as exc:
+        return AdoptionDecisionResult((GitEvidenceBlocker("malformed_adoption_inputs", requirement_path, str(exc)),))
+    requirement_digest = evidence.blob_sha256.get(requirement_path)
+    if not isinstance(metadata, dict) or not isinstance(approval, dict) or any((
+        metadata.get("id") != requirement_id, metadata.get("revision") != revision,
+        metadata.get("status") != "approved", metadata.get("risk") not in {"low", "medium", "high"},
+        approval.get("requirement_path") != requirement_path, approval.get("requirement_id") != requirement_id,
+        approval.get("revision") != revision, approval.get("sha256") != requirement_digest,
+        approval.get("risk") != metadata.get("risk"), approval.get("authority") != authority,
+    )):
+        return AdoptionDecisionResult((GitEvidenceBlocker("invalid_adoption_approval_binding", approval_path, "approval must exactly bind the approved target, risk, and authority"),))
+    eligibility = resolve_adoption_eligibility(
+        root, evidence=evidence, approved_at=str(approval.get("approved_at")), transition=transition
+    )
+    if eligibility.blockers:
+        return AdoptionDecisionResult(eligibility.blockers)
+    try:
+        live_config = (root / "specbound.yaml").read_bytes()
+        config = _strict_yaml_load(live_config.decode("utf-8", errors="strict"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError, _DuplicateKeyError) as exc:
+        return AdoptionDecisionResult((GitEvidenceBlocker("malformed_control_plane_policy", "specbound.yaml", str(exc)),))
+    policy = config.get("policy") if isinstance(config, dict) else None
+    matrix = policy.get("discovery_confirmation_authorities_by_risk") if isinstance(policy, dict) else None
+    inherited = {"inherit": "discovery_confirmation_authorities_by_risk"}
+    if (
+        not isinstance(matrix, dict)
+        or policy.get("control_plane_adoption_authorities_by_risk") != inherited
+        or policy.get("control_plane_activation_authorities_by_risk") != inherited
+        or authority not in matrix.get(str(metadata["risk"]), ())
+    ):
+        return AdoptionDecisionResult((GitEvidenceBlocker("unauthorized_control_plane_record", target, "authority is not inherited for the effective risk"),))
+    head_at_raw, head_error = _git_text(root, "show", "-s", "--format=%cI", evidence.head_commit)
+    if head_error is not None or head_at_raw is None:
+        return AdoptionDecisionResult((GitEvidenceBlocker("git_query_failed", "HEAD", head_error or "missing timestamp"),))
+    decided_at = _parse_git_timestamp(head_at_raw).isoformat()
+    refs: list[dict[str, object]] = []
+    for ref in parsed_refs:
+        if ref["kind"] == "repository":
+            refs.append({"kind": "repository", "path": ref["path"], "sha256": evidence.blob_sha256[str(ref["path"])]})
+        else:
+            refs.append(ref)
+    refs.sort(key=lambda ref: (str(ref["kind"]), str(ref.get("path", ref.get("id"))), str(ref.get("sha256", ref.get("digest")))))
+    if len({json.dumps(ref, sort_keys=True) for ref in refs}) != len(refs):
+        return AdoptionDecisionResult((GitEvidenceBlocker("invalid_canary_source_refs", target, "source refs must be unique"),))
+    record = {
+        "adoption_id": f"adp-{number}-r{revision}-{transition}", "adoption_source_commit": evidence.head_commit,
+        "authority": authority, "authority_action_id": authority_action_id,
+        "authority_policy": {"path": "specbound.yaml", "selector": "control_plane_adoption_authorities_by_risk", "sha256": sha256(live_config).hexdigest()},
+        "canary_capability_baseline_at": evidence.baseline_at.isoformat(), "canary_capability_baseline_commit": capability_baseline_commit,
+        "canary_work_attested_at": decided_at, "canary_work_attested_by": authority,
+        "canary_work_source_refs": refs, "canary_work_state": "not_started", "context_id": context_id,
+        "decided_at": decided_at, "decision": "adopted_for_exact_canary",
+        "permitted_next_action": "approve_bootstrap_exception_for_exact_canary", "reason": reason,
+        "requirement": {"id": requirement_id, "path": requirement_path, "revision": revision, "sha256": requirement_digest},
+        "risk": metadata["risk"], "schema_version": 1, "scope_mode": "exact_canary", "transition": transition,
+    }
+    content = _canonical_json_bytes(record)
+    blocker = _publish_adoption_leaf(root, target, content)
+    if blocker is not None:
+        return AdoptionDecisionResult((blocker,))
+    state_info = os.stat(root / target, follow_symlinks=False)
+    owned = (state_info.st_dev, state_info.st_ino)
+    state, blockers = resolve_adoption_read_state(root, target)
+    if blockers or state is None:
+        _remove_owned_adoption_leaf(root, target, owned)
+        return AdoptionDecisionResult(blockers or (GitEvidenceBlocker("invalid_adoption_read_state", target, "published record did not validate"),))
+    return AdoptionDecisionResult(())
 
 
 @dataclass(frozen=True)

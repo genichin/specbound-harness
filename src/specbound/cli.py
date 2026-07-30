@@ -11,6 +11,7 @@ from .agent_contract import (
     validate_configured_agent_role_skills,
     validate_configured_role_request,
 )
+from .control_plane_adoption import decide_adoption
 from .validation import (
     ConfirmationError,
     REQUIRED_ROOTS,
@@ -71,6 +72,24 @@ def build_parser() -> argparse.ArgumentParser:
     issuance_request.add_argument("target_identity", help="canonical family identity, never a filesystem path")
     issuance_request.add_argument("--candidate-file", type=Path, help="complete UTF-8 candidate content to prevalidate without publication")
     issuance_request.add_argument("--publish", action="store_true", help="publish only a validated pre-adoption Micro-SPEC in a marked copied fixture; output includes final published SHA-256")
+
+    adoption = commands.add_parser(
+        "adoption",
+        help="operate on exact control-plane adoption decisions",
+    )
+    adoption_commands = adoption.add_subparsers(dest="adoption_command", required=True)
+    adoption_decide = adoption_commands.add_parser(
+        "decide",
+        help="publish one authority-bound exact-canary adoption decision",
+    )
+    adoption_decide.add_argument("requirement_target", help="exact target: req-<id>-r<revision>")
+    adoption_decide.add_argument("--transition", required=True, choices=("iteration_qc", "delivery_qc"))
+    adoption_decide.add_argument("--authority", required=True)
+    adoption_decide.add_argument("--authority-action-id", required=True)
+    adoption_decide.add_argument("--context-id", required=True)
+    adoption_decide.add_argument("--capability-baseline-commit", required=True)
+    adoption_decide.add_argument("--reason", required=True)
+    adoption_decide.add_argument("--source-ref-json", action="append", default=[], required=True)
 
     req = commands.add_parser("req", help="operate on canonical REQ artifacts")
     req_commands = req.add_subparsers(dest="req_command", required=True)
@@ -221,6 +240,21 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "issuance-request":
         result = publish_issuance(root, args.artifact_kind, args.target_identity, args.candidate_file) if args.publish else prevalidate_issuance_request(root, args.artifact_kind, args.target_identity, args.candidate_file)
+        _emit(result.payload())
+        return 0 if result.valid else 2
+
+    if args.command == "adoption" and args.adoption_command == "decide":
+        result = decide_adoption(
+            root,
+            args.requirement_target,
+            args.transition,
+            args.authority,
+            args.authority_action_id,
+            args.context_id,
+            args.capability_baseline_commit,
+            args.reason,
+            tuple(args.source_ref_json),
+        )
         _emit(result.payload())
         return 0 if result.valid else 2
 
