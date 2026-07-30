@@ -32,6 +32,7 @@ from .validation import (
 from .requirement_lifecycle import RequirementLifecycleError, approve_requirement, record_review_decision, reconsider_requirement, reject_requirement
 from .micro_spec_lifecycle import MicroSpecReviewError, record_micro_spec_review
 from .issuance_request import prevalidate_issuance_request, publish_issuance
+from .iteration_qc import decide_iteration_qc
 from .requirement_docs import (
     REQUIREMENTS_DOCUMENT,
     RequirementsDocumentError,
@@ -104,6 +105,30 @@ def build_parser() -> argparse.ArgumentParser:
         "list",
         help="list all exact effective adoptions without mutation",
     )
+
+    iteration_qc = commands.add_parser(
+        "iteration-qc",
+        help="publish authority-bound live canonical iteration-QC records",
+        description="Distinct authority-bound live writer; unlike issuance-request this validates immutable implementation/evaluator evidence and publishes one fixed-r1 canonical record.",
+    )
+    iteration_qc_commands = iteration_qc.add_subparsers(
+        dest="iteration_qc_command", required=True
+    )
+    iteration_qc_decide = iteration_qc_commands.add_parser(
+        "decide", help="exclusively publish one verified authority-bound IQC record"
+    )
+    iteration_qc_decide.add_argument(
+        "target_identity", help="exact fixed target: iqc-<numeric-id>-<positive-slice>-r1"
+    )
+    iteration_qc_decide.add_argument(
+        "--implementation-result-file", type=Path, required=True
+    )
+    iteration_qc_decide.add_argument(
+        "--evaluation-result-file", type=Path, required=True
+    )
+    iteration_qc_decide.add_argument("--authority", required=True)
+    iteration_qc_decide.add_argument("--authority-action-id", required=True)
+    iteration_qc_decide.add_argument("--context-id", required=True)
 
     req = commands.add_parser("req", help="operate on canonical REQ artifacts")
     req_commands = req.add_subparsers(dest="req_command", required=True)
@@ -279,6 +304,19 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "adoption" and args.adoption_command == "list":
         result = list_effective_adoptions(root)
+        _emit(result.payload())
+        return 0 if result.valid else 2
+
+    if args.command == "iteration-qc" and args.iteration_qc_command == "decide":
+        result = decide_iteration_qc(
+            root=root,
+            target_identity=args.target_identity,
+            implementation_result_path=args.implementation_result_file,
+            evaluation_result_path=args.evaluation_result_file,
+            authority_identity=args.authority,
+            authority_action_id=args.authority_action_id,
+            authority_context_id=args.context_id,
+        )
         _emit(result.payload())
         return 0 if result.valid else 2
 

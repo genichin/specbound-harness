@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "action_id": {
+      "minLength": 1,
+      "pattern": "^(?=.*\\S)(?!.*(?:<[^>]+>|[Tt][Oo][Dd][Oo]|[Tt][Bb][Dd]|[Pp][Ll][Aa][Cc][Ee][Hh][Oo][Ll][Dd][Ee][Rr])).+$",
+      "type": "string"
+    },
+    "context_id": {
+      "minLength": 1,
+      "pattern": "^(?=.*\\S)(?!.*(?:<[^>]+>|[Tt][Oo][Dd][Oo]|[Tt][Bb][Dd]|[Pp][Ll][Aa][Cc][Ee][Hh][Oo][Ll][Dd][Ee][Rr])).+$",
+      "type": "string"
+    },
+    "evaluator": {
+      "minLength": 1,
+      "pattern": "^(?=.*\\S)(?!.*(?:<[^>]+>|[Tt][Oo][Dd][Oo]|[Tt][Bb][Dd]|[Pp][Ll][Aa][Cc][Ee][Hh][Oo][Ll][Dd][Ee][Rr])).+$",
+      "type": "string"
+    },
+    "findings": {
+      "maxItems": 0,
+      "type": "array"
+    },
+    "implementation_result": {
+      "additionalProperties": false,
+      "properties": {
+        "result_id": {
+          "minLength": 1,
+          "pattern": "^(?=.*\\S)(?!.*(?:<[^>]+>|[Tt][Oo][Dd][Oo]|[Tt][Bb][Dd]|[Pp][Ll][Aa][Cc][Ee][Hh][Oo][Ll][Dd][Ee][Rr])).+$",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result_id",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "micro_spec": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^ms-[0-9]+-0*[1-9][0-9]*$",
+          "type": "string"
+        },
+        "path": {
+          "pattern": "^\\.specbound/micro-specs/req-[0-9]+/ms-[0-9]+-0*[1-9][0-9]*\\.md$",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "id",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "result_id": {
+      "minLength": 1,
+      "pattern": "^(?=.*\\S)(?!.*(?:<[^>]+>|[Tt][Oo][Dd][Oo]|[Tt][Bb][Dd]|[Pp][Ll][Aa][Cc][Ee][Hh][Oo][Ll][Dd][Ee][Rr])).+$",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "selected_acceptance_criteria": {
+      "items": {
+        "pattern": "^AC-[0-9]+$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "verdict": {
+      "const": "pass"
+    },
+    "verification_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "result_id",
+    "micro_spec",
+    "implementation_result",
+    "evaluator",
+    "action_id",
+    "context_id",
+    "selected_acceptance_criteria",
+    "verification_sha256",
+    "verdict",
+    "findings"
+  ],
+  "title": "SpecBound iteration-QC evaluation result v1",
+  "type": "object"
+}

@@ -66,10 +66,11 @@ jobs:
           import specbound.agent_contract as agent_contract
           import specbound.control_plane_adoption as control_plane_adoption
           import specbound.hermes_adapter as hermes_adapter
+          import specbound.iteration_qc as iteration_qc
           from jsonschema import Draft202012Validator
 
           repository = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
-          for module in (agent_contract, control_plane_adoption, hermes_adapter):
+          for module in (agent_contract, control_plane_adoption, hermes_adapter, iteration_qc):
               installed = Path(module.__file__).resolve()
               assert "site-packages" in installed.parts, installed
               assert not installed.is_relative_to(repository), installed
@@ -83,6 +84,9 @@ jobs:
               "canary-outcome.schema.json",
               "hermes-adapter-config.schema.json",
               "hermes-invocation.schema.json",
+              "iteration-qc.schema.json",
+              "iteration-qc-implementation-result.schema.json",
+              "iteration-qc-evaluation-result.schema.json",
           ):
               repository_bytes = (repository / "schemas" / name).read_bytes()
               installed_bytes = files("specbound.schemas").joinpath(name).read_bytes()
@@ -93,6 +97,7 @@ jobs:
               ("activation-decision.json", "activation-decision.schema.json"),
               ("adoption-decision.json", "adoption-decision.schema.json"),
               ("canary-outcome.json", "canary-outcome.schema.json"),
+              ("iteration-qc.json", "iteration-qc.schema.json"),
           ):
               template_bytes = (repository / "templates" / template_name).read_bytes()
               template = json.loads(template_bytes)
@@ -104,6 +109,7 @@ jobs:
           "$WHEEL_CLI" --root "$GITHUB_WORKSPACE/fixtures/valid-minimal" validate
           "$WHEEL_CLI" --root "$GITHUB_WORKSPACE/fixtures/valid-minimal" agent validate-skills
           cd "$RUNNER_TEMP"
+          "$WHEEL_CLI" iteration-qc --help
           "$WHEEL_CLI" --root "$GITHUB_WORKSPACE" adoption list
           set +e
           "$WHEEL_CLI" --root "$GITHUB_WORKSPACE" adoption check req-9999-r1 --transition iteration_qc > adoption-check.json
@@ -114,6 +120,9 @@ jobs:
           "$WHEEL_PY" -I -m pytest -c /dev/null -q \
             "$GITHUB_WORKSPACE/tests/test_agent_integration.py" \
             "$GITHUB_WORKSPACE/tests/test_control_plane_adoption.py" \
+            "$GITHUB_WORKSPACE/tests/test_iteration_qc.py" \
+            "$GITHUB_WORKSPACE/tests/test_cli.py" \
+            "$GITHUB_WORKSPACE/tests/test_artifact_topology.py" \
             "$GITHUB_WORKSPACE/tests/test_hermes_adapter.py"
           "$WHEEL_CLI" --root "$GITHUB_WORKSPACE" docs requirements --check
       - name: Harness validation

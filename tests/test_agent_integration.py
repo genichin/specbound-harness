@@ -591,6 +591,11 @@ def test_ci_installed_wheel_gate_is_isolated_and_complete() -> None:
         "agent-result.schema.json",
         "hermes-adapter-config.schema.json",
         "hermes-invocation.schema.json",
+        "iteration-qc.schema.json",
+        "iteration-qc-implementation-result.schema.json",
+        "iteration-qc-evaluation-result.schema.json",
+        "tests/test_iteration_qc.py",
+        "iteration-qc --help",
     ):
         assert required in workflow
     assert 'matrix:\n        python-version: ["3.11", "3.12"]' in workflow

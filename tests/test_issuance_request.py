@@ -554,6 +554,11 @@ def test_issuance_request_help_and_guidance_state_non_authorizing_boundary() -> 
     assert "never mutates the live adoption registry" in guidance
     assert "Publication is not approval, adoption, implementation completion, merge, delivery, or release" in guidance
 
+    live_help = run_cli("iteration-qc", "--help")
+    assert live_help.returncode == 0
+    assert "authority-bound" in live_help.stdout
+    assert "copied fixture" not in live_help.stdout
+
 
 def test_fixture_publication_never_mutates_live_adoption_registry(tmp_path: Path) -> None:
     fixture = copied_fixture(tmp_path)

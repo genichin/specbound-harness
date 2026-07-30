@@ -63,6 +63,25 @@ def test_cli_exposes_read_only_adoption_check_and_list_commands() -> None:
     assert list_help.returncode == 0
 
 
+def test_cli_exposes_distinct_authority_bearing_iteration_qc_writer() -> None:
+    family_help = run_cli("iteration-qc", "--help")
+    decide_help = run_cli("iteration-qc", "decide", "--help")
+
+    assert family_help.returncode == 0
+    assert "{decide}" in family_help.stdout
+    assert decide_help.returncode == 0
+    for option in (
+        "--implementation-result-file",
+        "--evaluation-result-file",
+        "--authority",
+        "--authority-action-id",
+        "--context-id",
+    ):
+        assert option in decide_help.stdout
+    assert "--revision" not in decide_help.stdout
+    assert "--output" not in decide_help.stdout
+
+
 def test_preflight_accepts_bootstrap_config() -> None:
     result = run_cli("--root", str(FIXTURES / "valid-minimal"), "preflight")
 

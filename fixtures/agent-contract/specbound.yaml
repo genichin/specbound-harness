@@ -5,6 +5,10 @@ policy:
     roles_path: .specbound/policies/agent-roles.yaml
   micro_spec_review_authorities_by_risk:
     high: [fixture-maintainer]
+  iteration_qc_authorities_by_risk:
+    low: [repository-maintainer]
+    medium: [repository-maintainer]
+    high: [independent-advanced-llm-reviewer]
   discovery_confirmation_authorities_by_risk:
     high: [fixture-maintainer]
   control_plane_adoption_authorities_by_risk:

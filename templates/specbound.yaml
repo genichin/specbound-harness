@@ -166,6 +166,13 @@ policy:
       - repository-maintainer
     high:
       - independent-advanced-llm-reviewer
+  iteration_qc_authorities_by_risk:
+    low:
+      - repository-maintainer
+    medium:
+      - repository-maintainer
+    high:
+      - independent-advanced-llm-reviewer
   delivery_qc_authorities_by_risk:
     low:
       - repository-maintainer

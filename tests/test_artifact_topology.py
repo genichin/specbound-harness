@@ -50,6 +50,15 @@ def test_ci_installed_wheel_gate_covers_control_plane_adoption_contract() -> Non
     assert '\"$GITHUB_WORKSPACE/tests/test_control_plane_adoption.py\"' in workflow
     assert "Draft202012Validator" in workflow
     assert 'repository / "templates"' in workflow
+    for schema_name in (
+        "iteration-qc.schema.json",
+        "iteration-qc-implementation-result.schema.json",
+        "iteration-qc-evaluation-result.schema.json",
+    ):
+        assert schema_name in workflow
+    assert "import specbound.iteration_qc as iteration_qc" in workflow
+    assert 'iteration-qc --help' in workflow
+    assert 'tests/test_iteration_qc.py' in workflow
     assert workflow.index('cd "$RUNNER_TEMP"') < workflow.index(
         '\"$WHEEL_CLI\" --root \"$GITHUB_WORKSPACE\" adoption list'
     )

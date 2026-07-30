@@ -9,13 +9,20 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import subprocess
 import tempfile
 from typing import Any
+import unicodedata
 
 import yaml
+from jsonschema import Draft202012Validator, FormatChecker
 
 from .agent_contract import validate_agent_role_skills, validate_agent_roles_policy
-from .control_plane_adoption import resolve_effective_activation_registry
+from .control_plane_adoption import (
+    _strict_json_loads,
+    check_effective_adoption,
+    resolve_effective_activation_registry,
+)
 
 REQUIREMENT_RE = re.compile(r"^(req-[0-9]+)-r([1-9][0-9]*)\.md$")
 DISCOVERY_RE = re.compile(r"^(dcy-[0-9]+)-r([1-9][0-9]*)\.md$")
@@ -319,6 +326,26 @@ def preflight(root: Path) -> Result:
             "malformed_config",
             "specbound.yaml",
             "policy.delivery_qc_authorities_by_risk must map each non-empty risk to a non-empty list of non-empty authority strings",
+        )
+    expected_iteration_qc_authorities = {
+        "low": ["repository-maintainer"],
+        "medium": ["repository-maintainer"],
+        "high": ["independent-advanced-llm-reviewer"],
+    }
+    iteration_qc_authorities = (
+        policy.get("iteration_qc_authorities_by_risk")
+        if isinstance(policy, dict)
+        else None
+    )
+    if (
+        iteration_qc_authorities != expected_iteration_qc_authorities
+        or not isinstance(iteration_qc_authorities, dict)
+        or list(iteration_qc_authorities) != ["low", "medium", "high"]
+    ):
+        result.block(
+            "malformed_config",
+            "specbound.yaml",
+            "policy.iteration_qc_authorities_by_risk must equal the exact ordered low/medium/high IQC authority matrix",
         )
     _validate_control_plane_authority_aliases(result, policy)
     _validate_legacy_control_plane_adoption_config(result, policy)
@@ -1398,6 +1425,311 @@ def _validate_qc_record(root: Path, path: Path, result: Result, family: str) -> 
         _validate_delivery_qc_aggregation(root, path, record, name_match, result)
 
 
+def _validate_authority_bound_iteration_qc(
+    root: Path,
+    path: Path,
+    record: dict[str, Any],
+    name_match: re.Match[str],
+    result: Result,
+) -> None:
+    relative = path.relative_to(root).as_posix()
+    number, slice_text, revision_text = name_match.groups()
+    malformed = lambda detail: result.block("malformed_iteration_qc", relative, detail)
+
+    def all_nfc(value: object) -> bool:
+        if isinstance(value, str):
+            return unicodedata.normalize("NFC", value) == value
+        if isinstance(value, list):
+            return all(all_nfc(item) for item in value)
+        if isinstance(value, dict):
+            return all(all_nfc(key) and all_nfc(item) for key, item in value.items())
+        return True
+
+    try:
+        payload = path.read_bytes()
+        if payload != (json.dumps(record, sort_keys=True, indent=2, ensure_ascii=False) + "\n").encode("utf-8"):
+            malformed("authority-bound iteration-QC must use canonical UTF-8 JSON bytes")
+            return
+        if not all_nfc(record):
+            malformed("authority-bound iteration-QC strings must be NFC-normalized")
+            return
+        decided_at = record.get("decided_at")
+        if (
+            not isinstance(decided_at, str)
+            or not decided_at.endswith("Z")
+            or not _valid_timestamp(decided_at)
+        ):
+            malformed("decided_at must be a UTC RFC3339 timestamp ending in Z")
+            return
+        schema = json.loads(
+            (Path(__file__).resolve().parent / "schemas/iteration-qc.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        errors = tuple(
+            Draft202012Validator(
+                schema, format_checker=FormatChecker()
+            ).iter_errors(record)
+        )
+        if errors:
+            malformed("; ".join(error.message for error in errors))
+            return
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        malformed(str(exc))
+        return
+    if revision_text != "1":
+        result.block(
+            "iteration_qc_revision_conflict",
+            relative,
+            "authority-bound live iteration-QC permits only r1",
+        )
+        return
+
+    requirement_id = f"req-{number}"
+    micro_id = f"ms-{number}-{slice_text}"
+    micro_path = f".specbound/micro-specs/{requirement_id}/{micro_id}.md"
+    review_path = (
+        f".specbound/micro-spec-reviews/{requirement_id}/{micro_id}.review.json"
+    )
+    requirement_binding = record.get("requirement")
+    if not isinstance(requirement_binding, dict):
+        malformed("requirement must be an exact object binding")
+        return
+    requirement_revision = requirement_binding.get("revision")
+    if (
+        not isinstance(requirement_revision, int)
+        or isinstance(requirement_revision, bool)
+        or requirement_revision < 1
+    ):
+        malformed("requirement.revision must be a positive integer")
+        return
+    requirement_path = (
+        f".specbound/requirements/{requirement_id}/"
+        f"{requirement_id}-r{requirement_revision}.md"
+    )
+    approval_path = (
+        f".specbound/approvals/{requirement_id}-r{requirement_revision}.approval.json"
+    )
+    micro_binding = record.get("micro_spec")
+    review_binding = record.get("micro_spec_review")
+    try:
+        requirement_bytes = (root / requirement_path).read_bytes()
+        requirement_metadata = _frontmatter(root / requirement_path)
+        approval_bytes = (root / approval_path).read_bytes()
+        approval = _strict_json_loads(approval_bytes.decode("utf-8"))
+        if not isinstance(approval, dict):
+            raise ValueError("approval must be an object")
+        if approval_bytes != (
+            json.dumps(approval, sort_keys=True, indent=2, ensure_ascii=False) + "\n"
+        ).encode("utf-8"):
+            raise ValueError("approval must use canonical UTF-8 JSON bytes")
+        micro_bytes = (root / micro_path).read_bytes()
+        micro_metadata = _frontmatter(root / micro_path)
+        review_bytes = (root / review_path).read_bytes()
+        review = _strict_json_loads(review_bytes.decode("utf-8"))
+        if not isinstance(review, dict):
+            raise ValueError("Micro-SPEC review must be an object")
+        if review_bytes != (
+            json.dumps(review, sort_keys=True, indent=2, ensure_ascii=False) + "\n"
+        ).encode("utf-8"):
+            raise ValueError("Micro-SPEC review must use canonical UTF-8 JSON bytes")
+        config_bytes = (root / "specbound.yaml").read_bytes()
+        config = yaml.safe_load(config_bytes.decode("utf-8"))
+        parent_order = re.findall(
+            r"^(?:###\s+|-\s+)(AC-[0-9]+)\b",
+            (root / requirement_path).read_text(encoding="utf-8"),
+            re.MULTILINE,
+        )
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError, yaml.YAMLError) as exc:
+        result.block("invalid_iteration_qc_binding", relative, str(exc))
+        return
+    requirement_digest = sha256(requirement_bytes).hexdigest()
+    risk = requirement_metadata.get("risk")
+    config_policy = config.get("policy") if isinstance(config, dict) else None
+    approval_authorities = (
+        config_policy.get("requirement_approval_authorities_by_risk")
+        if isinstance(config_policy, dict)
+        else None
+    )
+    review_authorities = (
+        config_policy.get("micro_spec_review_authorities_by_risk")
+        if isinstance(config_policy, dict)
+        else None
+    )
+    if any(
+        (
+            requirement_binding
+            != {
+                "path": requirement_path,
+                "id": requirement_id,
+                "revision": requirement_revision,
+                "sha256": requirement_digest,
+            },
+            requirement_metadata.get("status") != "approved",
+            approval.get("requirement_path") != requirement_path,
+            approval.get("requirement_id") != requirement_id,
+            approval.get("revision") != requirement_revision,
+            approval.get("sha256") != requirement_digest,
+            approval.get("risk") != risk,
+            not isinstance(approval_authorities, dict),
+            approval.get("authority")
+            not in approval_authorities.get(risk, [])
+            if isinstance(approval_authorities, dict)
+            else True,
+        )
+    ):
+        result.block(
+            "iteration_qc_requirement_binding_mismatch",
+            relative,
+            "record must bind the exact current approved REQ and approval",
+        )
+        return
+    micro_digest = sha256(micro_bytes).hexdigest()
+    selected = micro_metadata.get("selected_acceptance_criteria")
+    if any(
+        (
+            micro_binding
+            != {"path": micro_path, "id": micro_id, "sha256": micro_digest},
+            micro_metadata.get("requirement") != requirement_binding,
+            record.get("selected_acceptance_criteria") != selected,
+            review_binding
+            != {"path": review_path, "sha256": sha256(review_bytes).hexdigest()},
+            review.get("micro_spec_path") != micro_path,
+            review.get("micro_spec_sha256") != micro_digest,
+            review.get("requirement_sha256") != requirement_digest,
+            not isinstance(review_authorities, dict),
+            review.get("authority") not in review_authorities.get(risk, [])
+            if isinstance(review_authorities, dict)
+            else True,
+            review.get("decision") != "approved_for_implementation",
+        )
+    ):
+        result.block(
+            "iteration_qc_micro_spec_review_mismatch",
+            relative,
+            "record must bind the exact reviewed Micro-SPEC and selected ACs",
+        )
+        return
+    expected_remaining = [criterion for criterion in parent_order if criterion not in set(selected)]
+    if record.get("remaining_acceptance_criteria") != expected_remaining:
+        result.block(
+            "iteration_qc_remaining_ac_mismatch",
+            relative,
+            "remaining ACs must preserve exact parent order minus selected ACs",
+        )
+
+    policy = config.get("policy") if isinstance(config, dict) else None
+    expected_matrix = {
+        "low": ["repository-maintainer"],
+        "medium": ["repository-maintainer"],
+        "high": ["independent-advanced-llm-reviewer"],
+    }
+    authority = record.get("authority")
+    policy_binding = record.get("policy")
+    authority_identity = authority.get("identity") if isinstance(authority, dict) else None
+    if (
+        not isinstance(policy, dict)
+        or policy.get("iteration_qc_authorities_by_risk") != expected_matrix
+        or list(policy.get("iteration_qc_authorities_by_risk", {}))
+        != ["low", "medium", "high"]
+        or risk not in expected_matrix
+        or authority_identity not in expected_matrix[str(risk)]
+        or policy_binding
+        != {
+            "path": "specbound.yaml",
+            "sha256": sha256(config_bytes).hexdigest(),
+            "selector": "iteration_qc_authorities_by_risk",
+        }
+    ):
+        result.block(
+            "invalid_iteration_qc_authority_policy",
+            relative,
+            "record must bind the current exact risk-selected IQC authority policy",
+        )
+    implementation = record.get("implementation_result")
+    evaluation = record.get("evaluation_result")
+    if isinstance(implementation, dict) and isinstance(evaluation, dict) and isinstance(authority, dict):
+        if (
+            authority_identity == implementation.get("actor")
+            or evaluation.get("evaluator") == implementation.get("actor")
+        ):
+            result.block(
+                "iteration_qc_self_qc",
+                relative,
+                "implementation actor cannot be evaluator or IQC authority",
+            )
+        if len({implementation.get("action_id"), evaluation.get("action_id"), authority.get("authority_action_id")}) != 3:
+            result.block("iteration_qc_action_collision", relative, "three actions must be pairwise distinct")
+        if len({implementation.get("context_id"), evaluation.get("context_id"), authority.get("context_id")}) != 3:
+            result.block("iteration_qc_context_collision", relative, "three contexts must be pairwise distinct")
+        if (
+            evaluation.get("implementation_result_id") != implementation.get("result_id")
+            or evaluation.get("implementation_result_sha256") != implementation.get("sha256")
+        ):
+            result.block("iteration_qc_evaluation_binding_mismatch", relative, "evaluation edge must bind the exact implementation result")
+
+    adoption_binding = record.get("adoption")
+    adoption_query = check_effective_adoption(
+        root, f"{requirement_id}-r{requirement_revision}", "iteration_qc"
+    )
+    if not adoption_query.valid or len(adoption_query.adoptions) != 1:
+        result.block("invalid_iteration_qc_adoption", relative, "one exact effective iteration_qc adoption is required")
+    else:
+        adoption = adoption_query.adoptions[0]
+        expected_adoption = {
+            "path": adoption.path,
+            "sha256": adoption.sha256,
+            "transition": "iteration_qc",
+        }
+        if (
+            adoption_binding != expected_adoption
+            or adoption.requirement_path != requirement_path
+            or adoption.requirement_sha256 != requirement_digest
+            or adoption.revision != requirement_revision
+            or adoption.risk != risk
+        ):
+            result.block("invalid_iteration_qc_adoption", relative, "adoption binding must match the exact effective state")
+        source_commit = getattr(adoption, "source_commit", None)
+        if isinstance(source_commit, str):
+            adopted_approval = subprocess.run(
+                ["git", "show", f"{source_commit}:{approval_path}"],
+                cwd=root,
+                check=False,
+                capture_output=True,
+            )
+            if (
+                adopted_approval.returncode != 0
+                or adopted_approval.stdout != approval_bytes
+            ):
+                result.block(
+                    "invalid_iteration_qc_adoption",
+                    relative,
+                    "current approval bytes must equal the approval bound by the effective adoption source commit",
+                )
+        else:
+            result.block(
+                "invalid_iteration_qc_adoption",
+                relative,
+                "effective adoption must expose an exact source commit",
+            )
+
+    siblings = sorted(path.parent.glob(f"iqc-{number}-{slice_text}-r*.json"))
+    authority_profiles = 0
+    for sibling in siblings:
+        try:
+            sibling_record = json.loads(sibling.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(sibling_record, dict) and "authority" in sibling_record:
+            authority_profiles += 1
+    if authority_profiles > 1:
+        result.block(
+            "iteration_qc_record_conflict",
+            relative,
+            "a Micro-SPEC may have only one authority-bound IQC record across revisions",
+        )
+
+
 def _validate_iteration_qc_evidence(
     root: Path,
     path: Path,
@@ -1407,6 +1739,26 @@ def _validate_iteration_qc_evidence(
 ) -> None:
     """Validate AC-003's exact Micro-SPEC and focused-evidence contract."""
     relative = path.relative_to(root).as_posix()
+    authority_keys = {
+        "schema_version", "requirement", "adoption", "micro_spec",
+        "micro_spec_review", "selected_acceptance_criteria",
+        "implementation_result", "evaluation_result", "authority", "policy",
+        "verification", "verdict", "remaining_acceptance_criteria", "decided_at",
+    }
+    legacy_keys = {
+        "schema_version", "micro_spec", "selected_acceptance_criteria",
+        "verification", "verdict", "remaining_acceptance_criteria",
+    }
+    if set(record) == authority_keys:
+        _validate_authority_bound_iteration_qc(root, path, record, name_match, result)
+        return
+    if set(record) != legacy_keys:
+        result.block(
+            "malformed_iteration_qc",
+            relative,
+            "iteration-QC must use exactly the authority-bound or legacy compatibility profile",
+        )
+        return
     requirement_number, slice_text, _record_revision = name_match.groups()
     expected_id = f"ms-{requirement_number}-{slice_text}"
     expected_path = f"{REQUIRED_ROOTS['micro_specs_root']}/req-{requirement_number}/{expected_id}.md"

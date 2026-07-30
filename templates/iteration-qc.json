@@ -1,18 +1,63 @@
 {
-  "schema_version": 1,
-  "micro_spec": {
-    "path": ".specbound/micro-specs/req-<id>/ms-<id>-<slice>.md",
-    "id": "ms-<id>-<slice>",
-    "sha256": "<exact-canonical-micro-spec-sha256>"
+  "adoption": {
+    "path": ".specbound/adoptions/req-0001/adp-0001-r1-iteration_qc.json",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "transition": "iteration_qc"
   },
-  "selected_acceptance_criteria": ["AC-<id>"],
-  "verification": [
-    {
-      "command": "<reproducible-focused-command>",
-      "result": "passed",
-      "exit_code": 0
-    }
+  "authority": {
+    "authority_action_id": "authority-action-0001",
+    "context_id": "authority-context-0001",
+    "identity": "repository-maintainer"
+  },
+  "decided_at": "2026-01-01T00:00:00Z",
+  "evaluation_result": {
+    "action_id": "evaluation-action-0001",
+    "context_id": "evaluation-context-0001",
+    "evaluator": "independent-evaluator",
+    "implementation_result_id": "implementation-result-0001",
+    "implementation_result_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "result_id": "evaluation-result-0001",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "implementation_result": {
+    "action_id": "implementation-action-0001",
+    "actor": "implementation-actor",
+    "context_id": "implementation-context-0001",
+    "result_id": "implementation-result-0001",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "source_commit": "0000000000000000000000000000000000000000"
+  },
+  "micro_spec": {
+    "id": "ms-0001-001",
+    "path": ".specbound/micro-specs/req-0001/ms-0001-001.md",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "micro_spec_review": {
+    "path": ".specbound/micro-spec-reviews/req-0001/ms-0001-001.review.json",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "policy": {
+    "path": "specbound.yaml",
+    "selector": "iteration_qc_authorities_by_risk",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "remaining_acceptance_criteria": [],
+  "requirement": {
+    "id": "req-0001",
+    "path": ".specbound/requirements/req-0001/req-0001-r1.md",
+    "revision": 1,
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "schema_version": 1,
+  "selected_acceptance_criteria": [
+    "AC-001"
   ],
   "verdict": "verified",
-  "remaining_acceptance_criteria": ["AC-<id-not-in-this-slice>"]
+  "verification": [
+    {
+      "command": "pytest -q tests/test_iteration_qc.py",
+      "exit_code": 0,
+      "result": "passed"
+    }
+  ]
 }
