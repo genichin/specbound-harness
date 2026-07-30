@@ -50,6 +50,19 @@ def test_context_discovers_fixture_root() -> None:
     assert body["delivery_qc_root"] == ".specbound/delivery-qc"
 
 
+def test_cli_exposes_read_only_adoption_check_and_list_commands() -> None:
+    adoption_help = run_cli("adoption", "--help")
+    check_help = run_cli("adoption", "check", "--help")
+    list_help = run_cli("adoption", "list", "--help")
+
+    assert adoption_help.returncode == 0
+    assert "{decide,check,list}" in adoption_help.stdout
+    assert "without mutation" in adoption_help.stdout
+    assert check_help.returncode == 0
+    assert "--transition {iteration_qc,delivery_qc}" in check_help.stdout
+    assert list_help.returncode == 0
+
+
 def test_preflight_accepts_bootstrap_config() -> None:
     result = run_cli("--root", str(FIXTURES / "valid-minimal"), "preflight")
 

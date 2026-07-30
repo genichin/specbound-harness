@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+from types import SimpleNamespace
 
 from jsonschema import Draft202012Validator, ValidationError
 import pytest
@@ -127,13 +128,9 @@ def test_adoption_decide_refuses_unsupported_platform_before_mutation(
     assert not list(adoption_root.iterdir())
 
 
-@pytest.mark.skipif(
-    os.name != "posix" or not all(hasattr(os, name) for name in ("O_DIRECTORY", "O_NOFOLLOW")),
-    reason="safe publication primitives are unavailable",
-)
-def test_adoption_decide_publishes_one_derived_canonical_record_in_copied_git(
+def _prepare_adoption_decision_repo(
     tmp_path: Path,
-) -> None:
+) -> tuple[Path, Path, str, bytes, bytes, Path, str]:
     source_parent = tmp_path / "source"
     source_parent.mkdir()
     source = _init_git_repo(source_parent)
@@ -170,8 +167,29 @@ def test_adoption_decide_publishes_one_derived_canonical_record_in_copied_git(
     shutil.copytree(source, copied)
     target = Path(".specbound/adoptions/req-0042/adp-0042-r1-iteration_qc.json")
     (copied / target.parent).mkdir(parents=True)
+    return copied, source_ref, baseline, source_bytes, config_bytes, target, source_commit
+
+
+@pytest.mark.skipif(
+    os.name != "posix" or not all(hasattr(os, name) for name in ("O_DIRECTORY", "O_NOFOLLOW")),
+    reason="safe publication primitives are unavailable",
+)
+def test_adoption_decide_publishes_one_derived_canonical_record_in_copied_git(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    copied, source_ref, baseline, source_bytes, config_bytes, target, source_commit = (
+        _prepare_adoption_decision_repo(tmp_path)
+    )
     module = importlib.import_module("specbound.control_plane_adoption")
     assert not ({"output_path", "decided_at", "source_commit", "attester", "policy_selector"} & set(inspect.signature(module.decide_adoption).parameters))
+    validation_calls: list[Path] = []
+
+    def validate_repository(root: Path) -> SimpleNamespace:
+        validation_calls.append(root)
+        return SimpleNamespace(valid=True, blockers=[])
+
+    monkeypatch.setattr(validation, "validate", validate_repository)
 
     result = module.decide_adoption(
         copied,
@@ -204,9 +222,10 @@ def test_adoption_decide_publishes_one_derived_canonical_record_in_copied_git(
         "sha256": hashlib.sha256(config_bytes).hexdigest(),
     }
     assert record["canary_work_source_refs"] == [
-        {"digest": "2" * 64, "digest_algorithm": "sha256", "id": "urn:ticket:42", "kind": "external"},
         {"kind": "repository", "path": source_ref.as_posix(), "sha256": hashlib.sha256(source_bytes).hexdigest()},
+        {"digest": "2" * 64, "digest_algorithm": "sha256", "id": "urn:ticket:42", "kind": "external"},
     ]
+    assert validation_calls == [copied.resolve()]
     state, blockers = module.resolve_adoption_read_state(copied, target.as_posix())
     assert blockers == ()
     assert state is not None and state.path == target.as_posix()
@@ -228,11 +247,199 @@ def test_adoption_publication_file_fsync_failure_removes_owned_leaf(
         raise OSError("injected file fsync failure")
 
     monkeypatch.setattr(module.os, "fsync", fail_fsync)
-    blocker = module._publish_adoption_leaf(tmp_path, target, b"{}\n")
+    owned, blocker = module._publish_adoption_leaf(tmp_path, target, b"{}\n")
 
+    assert owned is None
     assert blocker is not None
     assert blocker.code == "adoption_publication_failed"
     assert not (tmp_path / target).exists()
+
+
+@pytest.mark.skipif(
+    os.name != "posix" or not all(hasattr(os, name) for name in ("O_DIRECTORY", "O_NOFOLLOW")),
+    reason="safe publication primitives are unavailable",
+)
+def test_adoption_publication_write_failure_removes_owned_leaf(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = ".specbound/adoptions/req-0042/adp-0042-r1-iteration_qc.json"
+    (tmp_path / ".specbound/adoptions/req-0042").mkdir(parents=True)
+    module = importlib.import_module("specbound.control_plane_adoption")
+
+    class FailingOutput:
+        def __init__(self, fd: int) -> None:
+            self.fd = fd
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args) -> None:
+            return None
+
+        def write(self, _content: bytes) -> None:
+            raise OSError("injected write failure")
+
+        def flush(self) -> None:
+            return None
+
+        def fileno(self) -> int:
+            return self.fd
+
+    monkeypatch.setattr(module.os, "fdopen", lambda fd, *_args, **_kwargs: FailingOutput(fd))
+
+    owned, blocker = module._publish_adoption_leaf(tmp_path, target, b"{}\n")
+
+    assert owned is None
+    assert blocker is not None
+    assert blocker.code == "adoption_publication_failed"
+    assert not (tmp_path / target).exists()
+
+
+@pytest.mark.skipif(
+    os.name != "posix" or not all(hasattr(os, name) for name in ("O_DIRECTORY", "O_NOFOLLOW")),
+    reason="safe publication primitives are unavailable",
+)
+def test_adoption_publication_directory_fsync_failure_removes_owned_leaf(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = ".specbound/adoptions/req-0042/adp-0042-r1-iteration_qc.json"
+    (tmp_path / ".specbound/adoptions/req-0042").mkdir(parents=True)
+    module = importlib.import_module("specbound.control_plane_adoption")
+    real_fsync = module.os.fsync
+    calls = 0
+
+    def fail_directory_fsync(fd: int) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("injected directory fsync failure")
+        real_fsync(fd)
+
+    monkeypatch.setattr(module.os, "fsync", fail_directory_fsync)
+
+    owned, blocker = module._publish_adoption_leaf(tmp_path, target, b"{}\n")
+
+    assert owned is None
+    assert blocker is not None
+    assert blocker.code == "adoption_publication_failed"
+    assert not (tmp_path / target).exists()
+
+
+@pytest.mark.skipif(
+    os.name != "posix" or not all(hasattr(os, name) for name in ("O_DIRECTORY", "O_NOFOLLOW")),
+    reason="safe publication primitives are unavailable",
+)
+def test_adoption_post_validation_failure_removes_owned_leaf(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    copied, _source_ref, baseline, _source_bytes, _config_bytes, target, _source_commit = (
+        _prepare_adoption_decision_repo(tmp_path)
+    )
+    module = importlib.import_module("specbound.control_plane_adoption")
+    invalid = SimpleNamespace(
+        valid=False,
+        blockers=[{"code": "injected_validation_failure", "path": "specbound.yaml", "detail": "fault"}],
+    )
+    monkeypatch.setattr(validation, "validate", lambda _root: invalid)
+
+    result = module.decide_adoption(
+        copied,
+        "req-0042-r1",
+        "iteration_qc",
+        "repository-maintainer",
+        "act-ref-adoption-0042-r1",
+        "ctx-adoption-0042-r1",
+        baseline,
+        "Exercise the exact prospective IQC adoption boundary.",
+        (json.dumps({"kind": "repository", "path": "docs/evidence/canary-source.txt"}),),
+    )
+
+    assert [blocker.code for blocker in result.blockers] == ["adoption_post_validation_failed"]
+    assert not (copied / target).exists()
+
+
+@pytest.mark.skipif(
+    os.name != "posix" or not all(hasattr(os, name) for name in ("O_DIRECTORY", "O_NOFOLLOW")),
+    reason="safe publication primitives are unavailable",
+)
+def test_adoption_post_validation_rollback_preserves_replacement_winner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    copied, _source_ref, baseline, _source_bytes, _config_bytes, target, _source_commit = (
+        _prepare_adoption_decision_repo(tmp_path)
+    )
+    module = importlib.import_module("specbound.control_plane_adoption")
+    winner = b"replacement winner\n"
+
+    def replace_then_fail(_root: Path) -> SimpleNamespace:
+        replacement = copied / target.parent / "replacement-winner.tmp"
+        replacement.write_bytes(winner)
+        os.replace(replacement, copied / target)
+        return SimpleNamespace(
+            valid=False,
+            blockers=[{"code": "injected_validation_failure", "path": "specbound.yaml", "detail": "fault"}],
+        )
+
+    monkeypatch.setattr(validation, "validate", replace_then_fail)
+
+    result = module.decide_adoption(
+        copied,
+        "req-0042-r1",
+        "iteration_qc",
+        "repository-maintainer",
+        "act-ref-adoption-0042-r1",
+        "ctx-adoption-0042-r1",
+        baseline,
+        "Exercise the exact prospective IQC adoption boundary.",
+        (json.dumps({"kind": "repository", "path": "docs/evidence/canary-source.txt"}),),
+    )
+
+    assert [blocker.code for blocker in result.blockers] == ["adoption_post_validation_failed"]
+    assert (copied / target).read_bytes() == winner
+
+
+@pytest.mark.skipif(
+    os.name != "posix" or not all(hasattr(os, name) for name in ("O_DIRECTORY", "O_NOFOLLOW")),
+    reason="safe publication primitives are unavailable",
+)
+def test_adoption_rollback_uses_exclusive_create_inode_when_target_is_replaced(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    copied, _source_ref, baseline, _source_bytes, _config_bytes, target, _source_commit = (
+        _prepare_adoption_decision_repo(tmp_path)
+    )
+    module = importlib.import_module("specbound.control_plane_adoption")
+    real_publish = module._publish_adoption_leaf
+    winner = b"replacement winner before ownership handoff\n"
+
+    def publish_then_replace(root: Path, relative: str, content: bytes):
+        publication = real_publish(root, relative, content)
+        replacement = copied / target.parent / "replacement-before-handoff.tmp"
+        replacement.write_bytes(winner)
+        os.replace(replacement, copied / target)
+        return publication
+
+    monkeypatch.setattr(module, "_publish_adoption_leaf", publish_then_replace)
+
+    result = module.decide_adoption(
+        copied,
+        "req-0042-r1",
+        "iteration_qc",
+        "repository-maintainer",
+        "act-ref-adoption-0042-r1",
+        "ctx-adoption-0042-r1",
+        baseline,
+        "Exercise the exact prospective IQC adoption boundary.",
+        (json.dumps({"kind": "repository", "path": "docs/evidence/canary-source.txt"}),),
+    )
+
+    assert not result.valid
+    assert (copied / target).read_bytes() == winner
 
 
 def _commit_minimal_adoption_inputs(
@@ -752,6 +959,31 @@ def test_resolve_adoption_read_state_rejects_non_authority_attester(
     assert [blocker.code for blocker in blockers] == [
         "invalid_canary_work_attestation"
     ]
+
+
+def test_resolve_adoption_read_state_rejects_external_before_repository_source_ref(
+    tmp_path: Path,
+) -> None:
+    root, adoption_path = _commit_valid_adoption_read_state(tmp_path)
+    record = json.loads((root / adoption_path).read_text(encoding="utf-8"))
+    record["canary_work_source_refs"].insert(
+        0,
+        {
+            "digest": "2" * 64,
+            "digest_algorithm": "sha256",
+            "id": "urn:ticket:42",
+            "kind": "external",
+        },
+    )
+    _write_canonical_json(root, Path(adoption_path), record)
+    _git(root, "add", "--", adoption_path)
+    _git(root, "commit", "--quiet", "-m", "record noncanonical source order")
+    module = importlib.import_module("specbound.control_plane_adoption")
+
+    state, blockers = module.resolve_adoption_read_state(root, adoption_path)
+
+    assert state is None
+    assert [blocker.code for blocker in blockers] == ["invalid_canary_source_refs"]
 
 
 def test_resolve_adoption_read_state_rejects_approval_not_after_baseline(

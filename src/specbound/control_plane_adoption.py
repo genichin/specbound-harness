@@ -199,7 +199,9 @@ class AdoptionDecisionResult:
         }
 
 
-def _publish_adoption_leaf(root: Path, target: str, content: bytes) -> GitEvidenceBlocker | None:
+def _publish_adoption_leaf(
+    root: Path, target: str, content: bytes
+) -> tuple[tuple[int, int] | None, GitEvidenceBlocker | None]:
     """Exclusively publish one leaf through existing no-follow directories."""
 
     parts = PurePosixPath(target).parts
@@ -214,7 +216,7 @@ def _publish_adoption_leaf(root: Path, target: str, content: bytes) -> GitEviden
                     part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd
                 )
             except OSError as exc:
-                return GitEvidenceBlocker(
+                return None, GitEvidenceBlocker(
                     "unsafe_adoption_target",
                     target,
                     "canonical adoption parent must already exist without symlinks"
@@ -230,7 +232,7 @@ def _publish_adoption_leaf(root: Path, target: str, content: bytes) -> GitEviden
                 dir_fd=parent_fd,
             )
         except FileExistsError:
-            return GitEvidenceBlocker(
+            return None, GitEvidenceBlocker(
                 "duplicate_adoption_target", target, "canonical adoption target already exists"
             )
         state = os.fstat(leaf_fd)
@@ -241,9 +243,9 @@ def _publish_adoption_leaf(root: Path, target: str, content: bytes) -> GitEviden
             os.fsync(output.fileno())
         os.fsync(parent_fd)
         published = True
-        return None
+        return owned, None
     except OSError as exc:
-        return GitEvidenceBlocker("adoption_publication_failed", target, str(exc))
+        return None, GitEvidenceBlocker("adoption_publication_failed", target, str(exc))
     finally:
         if leaf_fd is not None:
             os.close(leaf_fd)
@@ -274,6 +276,48 @@ def _remove_owned_adoption_leaf(root: Path, target: str, owned: tuple[int, int])
         pass
     finally:
         os.close(parent_fd)
+
+
+def _source_ref_key(source_ref: dict[str, object]) -> tuple[object, ...]:
+    if source_ref.get("kind") == "repository":
+        return (0, source_ref.get("path"), source_ref.get("sha256"))
+    return (
+        1,
+        source_ref.get("id"),
+        source_ref.get("digest_algorithm"),
+        source_ref.get("digest"),
+    )
+
+
+def _post_write_repository_validation(
+    root: Path, target: str
+) -> tuple[GitEvidenceBlocker, ...]:
+    try:
+        from .validation import validate
+
+        result = validate(root)
+    except Exception as exc:
+        return (
+            GitEvidenceBlocker(
+                "adoption_post_validation_failed",
+                target,
+                f"repository validation raised after publication: {exc}",
+            ),
+        )
+    if result.valid:
+        return ()
+    detail = "; ".join(
+        f"{blocker.get('code', 'unknown')}:{blocker.get('path', '')}:"
+        f"{blocker.get('detail', '')}"
+        for blocker in result.blockers
+    )
+    return (
+        GitEvidenceBlocker(
+            "adoption_post_validation_failed",
+            target,
+            detail or "repository validation failed after publication",
+        ),
+    )
 
 
 def decide_adoption(
@@ -395,7 +439,7 @@ def decide_adoption(
             refs.append({"kind": "repository", "path": ref["path"], "sha256": evidence.blob_sha256[str(ref["path"])]})
         else:
             refs.append(ref)
-    refs.sort(key=lambda ref: (str(ref["kind"]), str(ref.get("path", ref.get("id"))), str(ref.get("sha256", ref.get("digest")))))
+    refs.sort(key=_source_ref_key)
     if len({json.dumps(ref, sort_keys=True) for ref in refs}) != len(refs):
         return AdoptionDecisionResult((GitEvidenceBlocker("invalid_canary_source_refs", target, "source refs must be unique"),))
     record = {
@@ -411,15 +455,21 @@ def decide_adoption(
         "risk": metadata["risk"], "schema_version": 1, "scope_mode": "exact_canary", "transition": transition,
     }
     content = _canonical_json_bytes(record)
-    blocker = _publish_adoption_leaf(root, target, content)
+    owned, blocker = _publish_adoption_leaf(root, target, content)
     if blocker is not None:
         return AdoptionDecisionResult((blocker,))
-    state_info = os.stat(root / target, follow_symlinks=False)
-    owned = (state_info.st_dev, state_info.st_ino)
+    if owned is None:
+        return AdoptionDecisionResult((GitEvidenceBlocker(
+            "adoption_publication_failed", target, "publication did not return owned inode identity"
+        ),))
     state, blockers = resolve_adoption_read_state(root, target)
     if blockers or state is None:
         _remove_owned_adoption_leaf(root, target, owned)
         return AdoptionDecisionResult(blockers or (GitEvidenceBlocker("invalid_adoption_read_state", target, "published record did not validate"),))
+    post_validation_blockers = _post_write_repository_validation(root, target)
+    if post_validation_blockers:
+        _remove_owned_adoption_leaf(root, target, owned)
+        return AdoptionDecisionResult(post_validation_blockers)
     return AdoptionDecisionResult(())
 
 
@@ -776,7 +826,7 @@ def resolve_adoption_read_state(
         )
 
     source_refs = record.get("canary_work_source_refs", ())
-    source_keys: list[tuple[str, str, str]] = []
+    source_keys: list[tuple[object, ...]] = []
     for source_ref in source_refs:
         if not isinstance(source_ref, dict):
             return None, (invalid,)
@@ -796,7 +846,7 @@ def resolve_adoption_read_state(
                     "source refs must use canonical normalized identities and digests",
                 ),
             )
-        source_keys.append((kind, identity, digest))
+        source_keys.append(_source_ref_key(source_ref))
         if source_ref.get("kind") == "repository":
             source_path = source_ref.get("path")
             if not isinstance(source_path, str) or not _safe_repository_path(source_path):
