@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -352,7 +353,7 @@ def test_micro_spec_publish_rejects_a_superseded_parent_requirement_without_targ
     assert not target.exists()
 
 
-def test_qc_publish_requires_explicit_fixture_adoption(tmp_path: Path) -> None:
+def test_qc_publish_requires_git_backed_fixture_adoption(tmp_path: Path) -> None:
     fixture = copied_fixture(tmp_path)
     micro = fixture / ".specbound/micro-specs/req-0001/ms-0001-003.md"
     micro.parent.mkdir()
@@ -362,8 +363,47 @@ def test_qc_publish_requires_explicit_fixture_adoption(tmp_path: Path) -> None:
     target.parent.mkdir()
     result = run_cli("--root", str(fixture), "issuance-request", "iteration-qc", "iqc-0001-003-r1", "--candidate-file", str(candidate), "--publish")
     assert result.returncode == 2, result.stdout
-    assert "unadopted_parent" in {blocker["code"] for blocker in payload(result)["blockers"]}
+    assert "not_git_repository" in {
+        blocker["code"] for blocker in payload(result)["blockers"]
+    }
     assert not target.exists()
+
+
+def test_qc_prevalidation_uses_derived_adoption_registry_instead_of_manual_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = copied_fixture(tmp_path)
+    micro = fixture / ".specbound/micro-specs/req-0001/ms-0001-003.md"
+    micro.parent.mkdir()
+    micro.write_text(valid_micro_spec_candidate(), encoding="utf-8")
+    candidate = write_candidate(fixture, valid_iteration_qc_candidate(micro))
+    requirement_digest = sha256(
+        (fixture / ".specbound/requirements/req-0001/req-0001-r1.md").read_bytes()
+    ).hexdigest()
+    adoption = SimpleNamespace(
+        requirement_id="req-0001",
+        revision=1,
+        requirement_path=".specbound/requirements/req-0001/req-0001-r1.md",
+        requirement_sha256=requirement_digest,
+        transition="iteration_qc",
+    )
+    monkeypatch.setattr(
+        issuance_request,
+        "check_effective_adoption",
+        lambda _root, _target, _transition: SimpleNamespace(
+            valid=True, blockers=(), adoptions=(adoption,)
+        ),
+    )
+
+    result = issuance_request.prevalidate_issuance_request(
+        fixture,
+        "iteration-qc",
+        "iqc-0001-003-r1",
+        candidate,
+    )
+
+    assert result.valid
 
 
 def test_iteration_qc_publish_requires_exact_micro_spec_ac_set_before_fixture_mutation(tmp_path: Path) -> None:

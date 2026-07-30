@@ -11,7 +11,11 @@ from .agent_contract import (
     validate_configured_agent_role_skills,
     validate_configured_role_request,
 )
-from .control_plane_adoption import decide_adoption
+from .control_plane_adoption import (
+    check_effective_adoption,
+    decide_adoption,
+    list_effective_adoptions,
+)
 from .validation import (
     ConfirmationError,
     REQUIRED_ROOTS,
@@ -90,6 +94,16 @@ def build_parser() -> argparse.ArgumentParser:
     adoption_decide.add_argument("--capability-baseline-commit", required=True)
     adoption_decide.add_argument("--reason", required=True)
     adoption_decide.add_argument("--source-ref-json", action="append", default=[], required=True)
+    adoption_check = adoption_commands.add_parser(
+        "check",
+        help="read one exact effective adoption without mutation",
+    )
+    adoption_check.add_argument("requirement_target", help="exact target: req-<id>-r<revision>")
+    adoption_check.add_argument("--transition", required=True, choices=("iteration_qc", "delivery_qc"))
+    adoption_commands.add_parser(
+        "list",
+        help="list all exact effective adoptions without mutation",
+    )
 
     req = commands.add_parser("req", help="operate on canonical REQ artifacts")
     req_commands = req.add_subparsers(dest="req_command", required=True)
@@ -255,6 +269,16 @@ def main(argv: list[str] | None = None) -> int:
             args.reason,
             tuple(args.source_ref_json),
         )
+        _emit(result.payload())
+        return 0 if result.valid else 2
+
+    if args.command == "adoption" and args.adoption_command == "check":
+        result = check_effective_adoption(root, args.requirement_target, args.transition)
+        _emit(result.payload())
+        return 0 if result.valid else 2
+
+    if args.command == "adoption" and args.adoption_command == "list":
+        result = list_effective_adoptions(root)
         _emit(result.payload())
         return 0 if result.valid else 2
 

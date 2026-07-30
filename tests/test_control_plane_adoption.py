@@ -504,6 +504,222 @@ def test_resolve_adoption_read_state_accepts_exact_valid_record(tmp_path: Path) 
     assert state.source_commit == _git(root, "rev-parse", "HEAD^")
 
 
+def test_effective_adoption_registry_and_cli_check_list_use_exact_git_state(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root, adoption_path = _commit_valid_adoption_read_state(tmp_path)
+    module = importlib.import_module("specbound.control_plane_adoption")
+    cli = importlib.import_module("specbound.cli")
+
+    registry = module.resolve_effective_adoption_registry(root)
+
+    assert registry.blockers == ()
+    assert [state.path for state in registry.adoptions] == [adoption_path]
+
+    check_exit = cli.main(
+        [
+            "--root",
+            str(root),
+            "adoption",
+            "check",
+            "req-0042-r1",
+            "--transition",
+            "iteration_qc",
+        ]
+    )
+    check_payload = json.loads(capsys.readouterr().out)
+    assert check_exit == 0
+    assert check_payload == {
+        "adopted": True,
+        "adoption": {
+            "path": adoption_path,
+            "requirement": {
+                "id": "req-0042",
+                "path": ".specbound/requirements/req-0042/req-0042-r1.md",
+                "revision": 1,
+                "sha256": registry.adoptions[0].requirement_sha256,
+            },
+            "sha256": registry.adoptions[0].sha256,
+            "transition": "iteration_qc",
+        },
+        "operation": "adoption_check",
+        "valid": True,
+    }
+
+    list_exit = cli.main(["--root", str(root), "adoption", "list"])
+    list_payload = json.loads(capsys.readouterr().out)
+    assert list_exit == 0
+    assert list_payload == {
+        "adoptions": [check_payload["adoption"]],
+        "operation": "adoption_list",
+        "valid": True,
+    }
+
+    missing_exit = cli.main(
+        [
+            "--root",
+            str(root),
+            "adoption",
+            "check",
+            "req-0042-r1",
+            "--transition",
+            "delivery_qc",
+        ]
+    )
+    missing_payload = json.loads(capsys.readouterr().out)
+    assert missing_exit == 2
+    assert missing_payload["valid"] is False
+    assert [item["code"] for item in missing_payload["blockers"]] == [
+        "control_plane_not_adopted"
+    ]
+
+
+def test_effective_adoption_registry_rejects_noncanonical_target_bound_copy(
+    tmp_path: Path,
+) -> None:
+    root, adoption_path = _commit_valid_adoption_read_state(tmp_path)
+    duplicate = Path(".specbound/adoptions/req-0042/copied-adoption.json")
+    (root / duplicate).write_bytes((root / adoption_path).read_bytes())
+    _git(root, "add", "--", duplicate.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "add noncanonical adoption copy",
+        env=_git_env("2026-07-03T00:00:00+00:00"),
+    )
+    module = importlib.import_module("specbound.control_plane_adoption")
+
+    registry = module.resolve_effective_adoption_registry(root)
+    result = module.check_effective_adoption(root, "req-0042-r1", "iteration_qc")
+
+    assert not registry.valid
+    assert [state.path for state in registry.adoptions] == [adoption_path]
+    assert [(item.code, item.path) for item in registry.blockers] == [
+        ("ambiguous_effective_adoption", duplicate.as_posix())
+    ]
+    assert not result.valid
+    assert [item.code for item in result.blockers] == [
+        "ambiguous_effective_adoption"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("object_format", "shallow", "expected_code"),
+    (
+        ("sha256", "false", "unsupported_git_object_format"),
+        ("sha1", "true", "shallow_repository"),
+    ),
+)
+def test_effective_adoption_registry_enforces_git_repository_contract_before_listing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    object_format: str,
+    shallow: str,
+    expected_code: str,
+) -> None:
+    root = _init_git_repo(tmp_path)
+    module = importlib.import_module("specbound.control_plane_adoption")
+    original = module._git_text
+
+    def controlled_git_text(repository: Path, *args: str):
+        if args == ("rev-parse", "--show-object-format"):
+            return object_format, None
+        if args == ("rev-parse", "--is-shallow-repository"):
+            return shallow, None
+        return original(repository, *args)
+
+    monkeypatch.setattr(module, "_git_text", controlled_git_text)
+
+    registry = module.resolve_effective_adoption_registry(root)
+
+    assert registry.adoptions == ()
+    assert [item.code for item in registry.blockers] == [expected_code]
+
+
+def test_effective_adoption_check_isolates_unrelated_invalid_key(
+    tmp_path: Path,
+) -> None:
+    root, adoption_path = _commit_valid_adoption_read_state(tmp_path)
+    unrelated = Path(
+        ".specbound/adoptions/req-0043/adp-0043-r1-iteration_qc.json"
+    )
+    _write_canonical_json(root, unrelated, {})
+    _git(root, "add", "--", unrelated.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "add invalid unrelated adoption",
+        env=_git_env("2026-07-03T00:00:00+00:00"),
+    )
+    module = importlib.import_module("specbound.control_plane_adoption")
+
+    registry = module.resolve_effective_adoption_registry(root)
+    result = module.check_effective_adoption(root, "req-0042-r1", "iteration_qc")
+
+    assert [state.path for state in registry.adoptions] == [adoption_path]
+    assert [item.path for item in registry.blockers] == [unrelated.as_posix()]
+    assert result.valid
+    assert [state.path for state in result.adoptions] == [adoption_path]
+
+
+def test_effective_adoption_identity_conflict_blocks_every_affected_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, _ = _commit_valid_adoption_read_state(tmp_path)
+    module = importlib.import_module("specbound.control_plane_adoption")
+    first = module.resolve_effective_adoption_registry(root).adoptions[0]
+    second = replace(
+        first,
+        path=".specbound/adoptions/req-0043/adp-0043-r1-iteration_qc.json",
+        sha256="2" * 64,
+        requirement_path=".specbound/requirements/req-0043/req-0043-r1.md",
+        requirement_id="req-0043",
+        requirement_sha256="3" * 64,
+    )
+    registry = module._aggregate_effective_adoption_states((first, second), ())
+    monkeypatch.setattr(
+        module,
+        "resolve_effective_adoption_registry",
+        lambda _root: registry,
+    )
+
+    first_result = module.check_effective_adoption(
+        root, "req-0042-r1", "iteration_qc"
+    )
+    second_result = module.check_effective_adoption(
+        root, "req-0043-r1", "iteration_qc"
+    )
+
+    assert [blocker.path for blocker in registry.blockers] == [first.path, second.path]
+    for result in (first_result, second_result):
+        assert not result.valid
+        assert [blocker.code for blocker in result.blockers] == [
+            "conflicting_effective_adoption_identity"
+        ]
+
+
+def test_effective_adoption_registry_rejects_uncommitted_record_byte_drift(
+    tmp_path: Path,
+) -> None:
+    root, adoption_path = _commit_valid_adoption_read_state(tmp_path)
+    (root / adoption_path).write_text("{}\n", encoding="utf-8")
+    module = importlib.import_module("specbound.control_plane_adoption")
+
+    registry = module.resolve_effective_adoption_registry(root)
+
+    assert not registry.valid
+    assert registry.adoptions == ()
+    assert [item.code for item in registry.blockers] == [
+        "invalid_effective_adoption"
+    ]
+
+
 def test_resolve_adoption_read_state_rejects_mismatched_approval_authority(
     tmp_path: Path,
 ) -> None:

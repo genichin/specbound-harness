@@ -34,6 +34,26 @@ def copied_fixture(tmp_path: Path) -> Path:
     return destination
 
 
+def test_ci_installed_wheel_gate_covers_control_plane_adoption_contract() -> None:
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    for schema_name in (
+        "adoption-decision.schema.json",
+        "canary-outcome.schema.json",
+        "activation-decision.schema.json",
+    ):
+        assert schema_name in workflow
+    assert "import specbound.control_plane_adoption as control_plane_adoption" in workflow
+    assert '\"$WHEEL_CLI\" --root \"$GITHUB_WORKSPACE\" adoption list' in workflow
+    assert '\"$WHEEL_CLI\" --root \"$GITHUB_WORKSPACE\" adoption check' in workflow
+    assert '\"$GITHUB_WORKSPACE/tests/test_control_plane_adoption.py\"' in workflow
+    assert "Draft202012Validator" in workflow
+    assert 'repository / "templates"' in workflow
+    assert workflow.index('cd "$RUNNER_TEMP"') < workflow.index(
+        '\"$WHEEL_CLI\" --root \"$GITHUB_WORKSPACE\" adoption list'
+    )
+
+
 def valid_micro_spec(root: Path, target: str = "ms-0001-003") -> str:
     digest = sha256((root / ".specbound/requirements/req-0001/req-0001-r1.md").read_bytes()).hexdigest()
     return f"""---

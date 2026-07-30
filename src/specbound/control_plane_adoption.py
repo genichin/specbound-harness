@@ -624,6 +624,19 @@ class AdoptionReadState:
     authority_action_id: str
     context_id: str
 
+    def payload(self) -> dict[str, object]:
+        return {
+            "path": self.path,
+            "requirement": {
+                "id": self.requirement_id,
+                "path": self.requirement_path,
+                "revision": self.revision,
+                "sha256": self.requirement_sha256,
+            },
+            "sha256": self.sha256,
+            "transition": self.transition,
+        }
+
 
 def resolve_adoption_read_state(
     root: Path,
@@ -856,6 +869,306 @@ def resolve_adoption_read_state(
         ),
         (),
     )
+
+
+@dataclass(frozen=True)
+class EffectiveAdoptionRegistry:
+    adoptions: tuple[AdoptionReadState, ...]
+    blockers: tuple[GitEvidenceBlocker, ...]
+
+    @property
+    def valid(self) -> bool:
+        return not self.blockers
+
+
+def _aggregate_effective_adoption_states(
+    states: tuple[AdoptionReadState, ...],
+    blockers: tuple[GitEvidenceBlocker, ...],
+) -> EffectiveAdoptionRegistry:
+    ordered_states = tuple(
+        sorted(
+            states,
+            key=lambda state: (
+                state.requirement_id,
+                state.revision,
+                state.transition,
+                state.path,
+            ),
+        )
+    )
+    aggregated = list(blockers)
+    key_owners: dict[tuple[str, int, str], str] = {}
+    action_owners: dict[str, str] = {}
+    context_owners: dict[str, str] = {}
+    for state in ordered_states:
+        effective_key = (state.requirement_id, state.revision, state.transition)
+        owner = key_owners.get(effective_key)
+        if owner is not None:
+            aggregated.append(
+                GitEvidenceBlocker(
+                    "ambiguous_effective_adoption",
+                    min(owner, state.path),
+                    "more than one adoption claims the same exact-canary key",
+                )
+            )
+        action_owner = action_owners.get(state.authority_action_id)
+        context_owner = context_owners.get(state.context_id)
+        if action_owner is not None or context_owner is not None:
+            affected_paths = {state.path}
+            affected_paths.update(
+                candidate
+                for candidate in (action_owner, context_owner)
+                if candidate is not None
+            )
+            aggregated.extend(
+                GitEvidenceBlocker(
+                    "conflicting_effective_adoption_identity",
+                    affected_path,
+                    "effective adoptions must use globally unique action and context IDs",
+                )
+                for affected_path in sorted(affected_paths)
+            )
+        key_owners.setdefault(effective_key, state.path)
+        action_owners.setdefault(state.authority_action_id, state.path)
+        context_owners.setdefault(state.context_id, state.path)
+    ordered_blockers = tuple(
+        sorted(aggregated, key=lambda blocker: (blocker.path, blocker.code, blocker.detail))
+    )
+    return EffectiveAdoptionRegistry(
+        adoptions=ordered_states,
+        blockers=ordered_blockers,
+    )
+
+
+def _git_repository_contract_blockers(root: Path) -> tuple[GitEvidenceBlocker, ...]:
+    object_format, error = _git_text(root, "rev-parse", "--show-object-format")
+    if error is not None:
+        return (GitEvidenceBlocker("not_git_repository", ".", error),)
+    if object_format != "sha1":
+        return (
+            GitEvidenceBlocker(
+                "unsupported_git_object_format",
+                ".git",
+                "control-plane adoption V1 requires exact sha1 Git object format",
+            ),
+        )
+    shallow, error = _git_text(root, "rev-parse", "--is-shallow-repository")
+    if error is not None:
+        return (GitEvidenceBlocker("git_query_failed", ".git", error),)
+    if shallow != "false":
+        return (
+            GitEvidenceBlocker(
+                "shallow_repository",
+                ".git",
+                "complete reachable history is required for control-plane state",
+            ),
+        )
+    return ()
+
+
+def resolve_effective_adoption_registry(root: Path) -> EffectiveAdoptionRegistry:
+    """Reconstruct exact-canary adoptions from canonical records at one Git HEAD."""
+
+    root = Path(root).resolve()
+    contract_blockers = _git_repository_contract_blockers(root)
+    if contract_blockers:
+        return EffectiveAdoptionRegistry(adoptions=(), blockers=contract_blockers)
+    head, error = _git_text(root, "rev-parse", "--verify", "HEAD^{commit}")
+    if error is not None or head is None:
+        return EffectiveAdoptionRegistry(
+            adoptions=(),
+            blockers=(
+                GitEvidenceBlocker(
+                    "git_query_failed",
+                    ".specbound/adoptions",
+                    error or "could not resolve HEAD",
+                ),
+            ),
+        )
+    listing, error = _git_text(
+        root,
+        "ls-tree",
+        "-r",
+        "--name-only",
+        head,
+        "--",
+        ".specbound/adoptions",
+    )
+    if error is not None:
+        return EffectiveAdoptionRegistry(
+            adoptions=(),
+            blockers=(GitEvidenceBlocker("git_query_failed", ".specbound/adoptions", error),),
+        )
+    states: list[AdoptionReadState] = []
+    blockers: list[GitEvidenceBlocker] = []
+    for candidate_path in sorted(listing.splitlines() if listing else []):
+        if _ADOPTION_PATH_RE.fullmatch(candidate_path) is None:
+            candidate_blob = _git(root, "show", f"{head}:{candidate_path}")
+            target_bound = False
+            if candidate_blob.returncode == 0:
+                try:
+                    candidate = _strict_json_loads(
+                        candidate_blob.stdout.decode("utf-8", errors="strict")
+                    )
+                except (
+                    UnicodeDecodeError,
+                    json.JSONDecodeError,
+                    _DuplicateKeyError,
+                ):
+                    candidate = None
+                if isinstance(candidate, dict):
+                    adoption_id = candidate.get("adoption_id")
+                    requirement = candidate.get("requirement")
+                    target_bound = (
+                        isinstance(adoption_id, str)
+                        and adoption_id.startswith("adp-")
+                        and isinstance(requirement, dict)
+                        and isinstance(requirement.get("path"), str)
+                        and candidate.get("transition")
+                        in {"iteration_qc", "delivery_qc"}
+                    )
+            if target_bound:
+                blockers.append(
+                    GitEvidenceBlocker(
+                        "ambiguous_effective_adoption",
+                        candidate_path,
+                        "noncanonical target-bound adoption conflicts with the effective registry",
+                    )
+                )
+            continue
+        state, candidate_blockers = resolve_adoption_read_state(root, candidate_path)
+        if state is None or candidate_blockers:
+            detail = "; ".join(
+                f"{blocker.code}:{blocker.path}" for blocker in candidate_blockers
+            ) or "adoption did not resolve"
+            blockers.append(
+                GitEvidenceBlocker(
+                    "invalid_effective_adoption",
+                    candidate_path,
+                    detail,
+                )
+            )
+            continue
+        states.append(state)
+    return _aggregate_effective_adoption_states(tuple(states), tuple(blockers))
+
+
+@dataclass(frozen=True)
+class AdoptionQueryResult:
+    operation: str
+    adoptions: tuple[AdoptionReadState, ...]
+    blockers: tuple[GitEvidenceBlocker, ...]
+    adopted: bool | None = None
+
+    @property
+    def valid(self) -> bool:
+        return not self.blockers and self.adopted is not False
+
+    def payload(self) -> dict[str, object]:
+        if self.blockers:
+            return {
+                "valid": False,
+                "blockers": [
+                    {"code": item.code, "path": item.path, "detail": item.detail}
+                    for item in self.blockers
+                ],
+            }
+        payload: dict[str, object] = {"valid": self.valid, "operation": self.operation}
+        if self.operation == "adoption_list":
+            payload["adoptions"] = [state.payload() for state in self.adoptions]
+        else:
+            payload["adopted"] = bool(self.adoptions)
+            if self.adoptions:
+                payload["adoption"] = self.adoptions[0].payload()
+        return payload
+
+
+def list_effective_adoptions(root: Path) -> AdoptionQueryResult:
+    registry = resolve_effective_adoption_registry(root)
+    return AdoptionQueryResult("adoption_list", registry.adoptions, registry.blockers)
+
+
+def check_effective_adoption(
+    root: Path,
+    requirement_target: str,
+    transition: str,
+) -> AdoptionQueryResult:
+    match = re.fullmatch(r"req-([0-9]+)-r([1-9][0-9]*)", requirement_target)
+    if match is None or transition not in {"iteration_qc", "delivery_qc"}:
+        return AdoptionQueryResult(
+            "adoption_check",
+            (),
+            (
+                GitEvidenceBlocker(
+                    "invalid_adoption_target",
+                    requirement_target,
+                    "target and transition must identify one exact adoption",
+                ),
+            ),
+            adopted=False,
+        )
+    requirement_id = f"req-{match.group(1)}"
+    revision = int(match.group(2))
+    effective_key = (requirement_id, revision, transition)
+    registry = resolve_effective_adoption_registry(root)
+    related_blockers = tuple(
+        blocker
+        for blocker in registry.blockers
+        if (key := _effective_adoption_blocker_key(root, blocker)) is None
+        or key == effective_key
+    )
+    if related_blockers:
+        return AdoptionQueryResult("adoption_check", (), related_blockers, adopted=False)
+    matches = tuple(
+        state
+        for state in registry.adoptions
+        if state.requirement_id == requirement_id
+        and state.revision == revision
+        and state.transition == transition
+    )
+    if not matches:
+        return AdoptionQueryResult(
+            "adoption_check",
+            (),
+            (
+                GitEvidenceBlocker(
+                    "control_plane_not_adopted",
+                    requirement_target,
+                    "the exact REQ revision and transition have no effective adoption",
+                ),
+            ),
+            adopted=False,
+        )
+    return AdoptionQueryResult("adoption_check", matches, (), adopted=bool(matches))
+
+
+def _effective_adoption_blocker_key(
+    root: Path,
+    blocker: GitEvidenceBlocker,
+) -> tuple[str, int, str] | None:
+    match = _ADOPTION_PATH_RE.fullmatch(blocker.path)
+    if match is not None:
+        return match.group(1), int(match.group(3)), match.group(4)
+    if not blocker.path.startswith(".specbound/adoptions/"):
+        return None
+    blob = _git(root, "show", f"HEAD:{blocker.path}")
+    try:
+        record = _strict_json_loads(blob.stdout.decode("utf-8", errors="strict"))
+    except (UnicodeDecodeError, json.JSONDecodeError, _DuplicateKeyError):
+        return None
+    if not isinstance(record, dict) or not isinstance(record.get("requirement"), dict):
+        return None
+    requirement = record["requirement"]
+    requirement_id = requirement.get("id")
+    revision = requirement.get("revision")
+    transition = record.get("transition")
+    if (
+        isinstance(requirement_id, str)
+        and isinstance(revision, int)
+        and transition in {"iteration_qc", "delivery_qc"}
+    ):
+        return requirement_id, revision, str(transition)
+    return None
 
 
 @dataclass(frozen=True)
@@ -1352,6 +1665,9 @@ def resolve_effective_activation_registry(root: Path) -> EffectiveActivationRegi
     """Reconstruct the effective activation registry from one sorted Git HEAD."""
 
     root = Path(root).resolve()
+    contract_blockers = _git_repository_contract_blockers(root)
+    if contract_blockers:
+        return EffectiveActivationRegistry(activations=(), blockers=contract_blockers)
     head, error = _git_text(root, "rev-parse", "--verify", "HEAD^{commit}")
     if error is not None or head is None:
         return EffectiveActivationRegistry(

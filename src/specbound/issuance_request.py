@@ -13,6 +13,7 @@ from typing import Any
 
 import yaml
 
+from .control_plane_adoption import check_effective_adoption
 from .validation import REQUIRED_ROOTS, _frontmatter, _required_micro_spec_sections, _requirement_acceptance_criteria, preflight
 
 
@@ -190,8 +191,6 @@ def _json_candidate(root: Path, kind: str, target: str, candidate: str) -> list[
         return [IssuanceBlocker("invalid_candidate_schema", target, str(exc))]
     if not isinstance(record, dict) or record.get("schema_version") != 1:
         return [IssuanceBlocker("invalid_candidate_schema", target, "candidate must be a schema_version 1 JSON object")]
-    config = yaml.safe_load((root / "specbound.yaml").read_text(encoding="utf-8"))
-    entries = config.get("policy", {}).get("control_plane_adoption", {}).get("requirements", [])
     if kind == "iteration-qc":
         micro = record.get("micro_spec")
         if not isinstance(micro, dict) or not isinstance(micro.get("path"), str):
@@ -218,7 +217,29 @@ def _json_candidate(root: Path, kind: str, target: str, candidate: str) -> list[
     parent = root / requirement["path"]
     if not parent.is_file() or sha256(parent.read_bytes()).hexdigest() != requirement["sha256"] or _frontmatter(parent).get("status") != "approved":
         return [IssuanceBlocker("invalid_parent_requirement", str(requirement["path"]), "exact approved parent REQ is required")]
-    adopted = next((item for item in entries if isinstance(item, dict) and all(item.get(key) == requirement.get(key) for key in ("path", "id", "revision", "sha256"))), None)
+    transition = "iteration_qc" if kind == "iteration-qc" else "delivery_qc"
+    adoption = check_effective_adoption(
+        root,
+        f"{requirement['id']}-r{requirement['revision']}",
+        transition,
+    )
+    if adoption.blockers:
+        return [
+            IssuanceBlocker(blocker.code, blocker.path, blocker.detail)
+            for blocker in adoption.blockers
+        ]
+    adopted = next(
+        (
+            state
+            for state in adoption.adoptions
+            if state.requirement_path == requirement.get("path")
+            and state.requirement_id == requirement.get("id")
+            and state.revision == requirement.get("revision")
+            and state.requirement_sha256 == requirement.get("sha256")
+            and state.transition == transition
+        ),
+        None,
+    )
     if adopted is None:
         return [IssuanceBlocker("unadopted_parent", str(requirement["path"]), "QC publication requires exact copied-fixture adoption")]
     if kind == "delivery-qc":

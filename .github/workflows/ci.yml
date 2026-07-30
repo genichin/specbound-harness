@@ -59,12 +59,15 @@ jobs:
           from importlib.resources import files
           from pathlib import Path
           import hashlib
+          import json
           import os
           import specbound.agent_contract as agent_contract
+          import specbound.control_plane_adoption as control_plane_adoption
           import specbound.hermes_adapter as hermes_adapter
+          from jsonschema import Draft202012Validator
 
           repository = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
-          for module in (agent_contract, hermes_adapter):
+          for module in (agent_contract, control_plane_adoption, hermes_adapter):
               installed = Path(module.__file__).resolve()
               assert "site-packages" in installed.parts, installed
               assert not installed.is_relative_to(repository), installed
@@ -73,6 +76,9 @@ jobs:
           for name in (
               "agent-roles.schema.json",
               "agent-result.schema.json",
+              "activation-decision.schema.json",
+              "adoption-decision.schema.json",
+              "canary-outcome.schema.json",
               "hermes-adapter-config.schema.json",
               "hermes-invocation.schema.json",
           ):
@@ -80,12 +86,32 @@ jobs:
               installed_bytes = files("specbound.schemas").joinpath(name).read_bytes()
               assert installed_bytes == repository_bytes, name
               print(f"schema-sha256[{name}]={hashlib.sha256(installed_bytes).hexdigest()}")
+
+          for template_name, schema_name in (
+              ("activation-decision.json", "activation-decision.schema.json"),
+              ("adoption-decision.json", "adoption-decision.schema.json"),
+              ("canary-outcome.json", "canary-outcome.schema.json"),
+          ):
+              template_bytes = (repository / "templates" / template_name).read_bytes()
+              template = json.loads(template_bytes)
+              assert template_bytes == (json.dumps(template, sort_keys=True, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+              schema = json.loads(files("specbound.schemas").joinpath(schema_name).read_text(encoding="utf-8"))
+              Draft202012Validator(schema).validate(template)
+              print(f"template-sha256[{template_name}]={hashlib.sha256(template_bytes).hexdigest()}")
           PY
           "$WHEEL_CLI" --root "$GITHUB_WORKSPACE/fixtures/valid-minimal" validate
           "$WHEEL_CLI" --root "$GITHUB_WORKSPACE/fixtures/valid-minimal" agent validate-skills
           cd "$RUNNER_TEMP"
+          "$WHEEL_CLI" --root "$GITHUB_WORKSPACE" adoption list
+          set +e
+          "$WHEEL_CLI" --root "$GITHUB_WORKSPACE" adoption check req-9999-r1 --transition iteration_qc > adoption-check.json
+          check_status=$?
+          set -e
+          test "$check_status" -eq 2
+          "$WHEEL_PY" -I -c 'import json; body=json.load(open("adoption-check.json", encoding="utf-8")); assert body["valid"] is False and body["blockers"][0]["code"] == "control_plane_not_adopted"'
           "$WHEEL_PY" -I -m pytest -c /dev/null -q \
             "$GITHUB_WORKSPACE/tests/test_agent_integration.py" \
+            "$GITHUB_WORKSPACE/tests/test_control_plane_adoption.py" \
             "$GITHUB_WORKSPACE/tests/test_hermes_adapter.py"
           "$WHEEL_CLI" --root "$GITHUB_WORKSPACE" docs requirements --check
       - name: Harness validation
