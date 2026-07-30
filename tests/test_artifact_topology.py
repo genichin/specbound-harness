@@ -37,6 +37,7 @@ def copied_fixture(tmp_path: Path) -> Path:
 def test_ci_installed_wheel_gate_covers_control_plane_adoption_contract() -> None:
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
+    assert "fetch-depth: 0" in workflow
     for schema_name in (
         "adoption-decision.schema.json",
         "canary-outcome.schema.json",
