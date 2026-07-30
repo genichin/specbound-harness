@@ -2490,5 +2490,20 @@ def validate(root: Path, claim: str | None = None, requirement: str | None = Non
         result.checked_effective_activations = len(effective_registry.activations)
         for blocker in effective_registry.blockers:
             result.block(blocker.code, blocker.path, blocker.detail)
+        claim_transition = {
+            "iteration": "iteration_qc",
+            "delivery": "delivery_qc",
+        }.get(claim)
+        if claim_transition is not None and effective_registry.valid:
+            adopted_requirements = {
+                f"{state.requirement_id}-r{state.revision}": {
+                    "id": state.requirement_id,
+                    "revision": state.revision,
+                    "path": state.requirement_path,
+                    "sha256": state.requirement_sha256,
+                }
+                for state in effective_registry.activations
+                if state.transition == claim_transition
+            }
     _validate_adoption_claim(root, result, claim, requirement, adopted_requirements)
     return result

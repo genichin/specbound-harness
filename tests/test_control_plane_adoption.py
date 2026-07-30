@@ -627,6 +627,149 @@ def _commit_successful_iqc_activation(
     return root, activation_relative.as_posix()
 
 
+def _commit_successful_dqc_activation(
+    tmp_path: Path,
+    *,
+    iqc_present_in_adoption_source: bool = True,
+) -> tuple[Path, str]:
+    root, iqc_activation_path = _commit_successful_iqc_activation(tmp_path)
+    iqc_activation_bytes = (root / iqc_activation_path).read_bytes()
+    iqc_activation = json.loads(
+        (root / iqc_activation_path).read_text(encoding="utf-8")
+    )
+    dqc_baseline_commit = iqc_activation["prospective_baseline_commit"]
+
+    if not iqc_present_in_adoption_source:
+        (root / iqc_activation_path).unlink()
+        _git(root, "add", "--", iqc_activation_path)
+
+    approval_relative = Path(".specbound/approvals/req-0042-r1.approval.json")
+    approval = json.loads((root / approval_relative).read_text(encoding="utf-8"))
+    approval["approved_at"] = "2026-07-08T00:00:00+00:00"
+    _write_canonical_json(root, approval_relative, approval)
+    _git(root, "add", "--", approval_relative.as_posix())
+    _git(root, "commit", "--quiet", "-m", "approve exact DQC canary", env=_git_env("2026-07-08T00:00:00+00:00"))
+    adoption_source_commit = _git(root, "rev-parse", "HEAD")
+
+    if not iqc_present_in_adoption_source:
+        (root / iqc_activation_path).write_bytes(iqc_activation_bytes)
+        _git(root, "add", "--", iqc_activation_path)
+        _git(root, "commit", "--quiet", "-m", "restore IQC after frozen DQC source", env=_git_env("2026-07-08T12:00:00+00:00"))
+
+    iqc_adoption = json.loads(
+        (root / iqc_activation["adoption"]["path"]).read_text(encoding="utf-8")
+    )
+    adoption_relative = Path(
+        ".specbound/adoptions/req-0042/adp-0042-r1-delivery_qc.json"
+    )
+    adoption = deepcopy(iqc_adoption)
+    adoption.update(
+        adoption_id="adp-0042-r1-delivery_qc",
+        transition="delivery_qc",
+        adoption_source_commit=adoption_source_commit,
+        canary_capability_baseline_commit=dqc_baseline_commit,
+        canary_capability_baseline_at="2026-07-06T00:00:00+00:00",
+        decided_at="2026-07-09T00:00:00+00:00",
+        canary_work_attested_at="2026-07-09T00:00:00+00:00",
+        authority_action_id="act-ref-adoption-dqc-0042-r1",
+        context_id="ctx-adoption-dqc-0042-r1",
+    )
+    _write_canonical_json(root, adoption_relative, adoption)
+    _git(root, "add", "--", adoption_relative.as_posix())
+    _git(root, "commit", "--quiet", "-m", "record exact DQC adoption", env=_git_env("2026-07-09T00:00:00+00:00"))
+
+    exception_relative = Path(
+        "docs/governance/bootstrap-exceptions/req-0042-r1-delivery-qc-001.md"
+    )
+    exception_bytes = (
+        b"# Bootstrap exception: req-0042-r1-delivery-qc-001\n\n"
+        b"- Status: `active`\n- Transition: `delivery_qc`\n"
+        b"- Target artifact: `.specbound/requirements/req-0042/req-0042-r1.md`\n"
+        b"- Authority identity: `repository-maintainer`\n"
+        b"- Maximum review/attempt budget: `1`\n"
+    )
+    (root / exception_relative).write_bytes(exception_bytes)
+    _git(root, "add", "--", exception_relative.as_posix())
+    _git(root, "commit", "--quiet", "-m", "open exact DQC canary exception", env=_git_env("2026-07-10T00:00:00+00:00"))
+    pre_close_commit = _git(root, "rev-parse", "HEAD")
+
+    outcome_relative = Path(
+        ".specbound/canary-outcomes/req-0042/cny-0042-r1-delivery_qc-a1.json"
+    )
+    outcome = json.loads((ROOT / "templates/canary-outcome.json").read_text(encoding="utf-8"))
+    outcome.update(
+        canary_outcome_id="cny-0042-r1-delivery_qc-a1",
+        transition="delivery_qc",
+        recorded_at="2026-07-11T00:00:00+00:00",
+        authority_action_id="act-ref-outcome-dqc-0042-r1-a1",
+        context_id="ctx-outcome-dqc-0042-r1-a1",
+    )
+    outcome["adoption"] = {
+        "path": adoption_relative.as_posix(),
+        "sha256": hashlib.sha256((root / adoption_relative).read_bytes()).hexdigest(),
+    }
+    outcome["bootstrap_exception"] = {
+        "path": exception_relative.as_posix(),
+        "pre_close_commit": pre_close_commit,
+        "pre_close_sha256": hashlib.sha256(exception_bytes).hexdigest(),
+    }
+    _write_canonical_json(root, outcome_relative, outcome)
+    _git(root, "add", "--", outcome_relative.as_posix())
+    _git(root, "commit", "--quiet", "-m", "record passed DQC canary outcome", env=_git_env("2026-07-11T00:00:00+00:00"))
+    outcome_commit = _git(root, "rev-parse", "HEAD")
+
+    closed_exception_bytes = exception_bytes.replace(b"- Status: `active`", b"- Status: `closed`").replace(
+        b"- Maximum review/attempt budget: `1`\n",
+        f"- Successful outcome: `{outcome_relative.as_posix()}` at `{outcome_commit}`\n".encode()
+        + b"- Maximum review/attempt budget: `1`\n",
+    )
+    (root / exception_relative).write_bytes(closed_exception_bytes)
+    ledger_relative = Path("docs/governance/bootstrap-exceptions/README.md")
+    ledger_bytes = (
+        b"# Bootstrap exception ledger\n\n**Active exceptions: 0**\n\n## Inventory\n\n"
+        b"| Exception | Transition | Target | Status | Expiry |\n"
+        b"| --- | --- | --- | --- | --- |\n"
+        b"| [`req-0042-r1-delivery-qc-001.md`](req-0042-r1-delivery-qc-001.md) | `delivery_qc` "
+        b"| `.specbound/requirements/req-0042/req-0042-r1.md` | `closed` | consumed |\n"
+    )
+    (root / ledger_relative).write_bytes(ledger_bytes)
+    _git(root, "add", "--", exception_relative.as_posix(), ledger_relative.as_posix())
+    _git(root, "commit", "--quiet", "-m", "close DQC canary exception", env=_git_env("2026-07-12T00:00:00+00:00"))
+    closeout_commit = _git(root, "rev-parse", "HEAD")
+    (root / "docs/evidence/req-0042-dqc-baseline.txt").write_bytes(b"prospective DQC baseline\n")
+    _git(root, "add", "--", "docs/evidence/req-0042-dqc-baseline.txt")
+    _git(root, "commit", "--quiet", "-m", "establish prospective DQC baseline", env=_git_env("2026-07-13T00:00:00+00:00"))
+    baseline_commit = _git(root, "rev-parse", "HEAD")
+
+    activation_relative = Path(
+        ".specbound/activations/req-0042/act-0042-r1-delivery_qc.json"
+    )
+    activation = json.loads((ROOT / "templates/activation-decision.json").read_text(encoding="utf-8"))
+    activation.update(
+        activation_id="act-0042-r1-delivery_qc",
+        transition="delivery_qc",
+        passed_outcome_commit=outcome_commit,
+        prospective_baseline_commit=baseline_commit,
+        prospective_baseline_at="2026-07-13T00:00:00+00:00",
+        decided_at="2026-07-14T00:00:00+00:00",
+        authority_action_id="act-ref-activation-dqc-0042-r1",
+        context_id="ctx-activation-dqc-0042-r1",
+    )
+    activation["adoption"] = {"path": adoption_relative.as_posix(), "sha256": hashlib.sha256((root / adoption_relative).read_bytes()).hexdigest()}
+    activation["canary_outcome"] = {"path": outcome_relative.as_posix(), "sha256": hashlib.sha256((root / outcome_relative).read_bytes()).hexdigest()}
+    activation["bootstrap_exception"] = {
+        "path": exception_relative.as_posix(), "pre_close_commit": pre_close_commit,
+        "pre_close_sha256": hashlib.sha256(exception_bytes).hexdigest(),
+        "closeout_commit": closeout_commit, "closed_sha256": hashlib.sha256(closed_exception_bytes).hexdigest(),
+    }
+    activation["bootstrap_exception_ledger"]["sha256"] = hashlib.sha256(ledger_bytes).hexdigest()
+    activation["authority_policy"]["sha256"] = hashlib.sha256((root / "specbound.yaml").read_bytes()).hexdigest()
+    _write_canonical_json(root, activation_relative, activation)
+    _git(root, "add", "--", activation_relative.as_posix())
+    _git(root, "commit", "--quiet", "-m", "activate prospective DQC control plane", env=_git_env("2026-07-14T00:00:00+00:00"))
+    return root, activation_relative.as_posix()
+
+
 def test_resolve_successful_iqc_activation_accepts_exact_chain(tmp_path: Path) -> None:
     root, activation_path = _commit_successful_iqc_activation(tmp_path)
     module = importlib.import_module("specbound.control_plane_adoption")
@@ -753,6 +896,39 @@ def test_effective_activation_registry_contains_exact_valid_activation(
     ] == [("req-0042", 1, "iteration_qc")]
 
 
+def test_effective_activation_registry_contains_exact_valid_dqc_activation(
+    tmp_path: Path,
+) -> None:
+    root, activation_path = _commit_successful_dqc_activation(tmp_path)
+    module = importlib.import_module("specbound.control_plane_adoption")
+
+    registry = module.resolve_effective_activation_registry(root)
+
+    assert registry.blockers == ()
+    assert [state.path for state in registry.activations] == [
+        activation_path,
+        ".specbound/activations/req-0042/act-0042-r1-iteration_qc.json",
+    ]
+
+
+def test_effective_activation_registry_rejects_dqc_without_exact_iqc_in_source(
+    tmp_path: Path,
+) -> None:
+    root, activation_path = _commit_successful_dqc_activation(
+        tmp_path, iqc_present_in_adoption_source=False
+    )
+    module = importlib.import_module("specbound.control_plane_adoption")
+
+    registry = module.resolve_effective_activation_registry(root)
+
+    assert not registry.valid
+    assert registry.activations == ()
+    assert [(blocker.code, blocker.path) for blocker in registry.blockers] == [
+        ("invalid_effective_activation", activation_path)
+    ]
+    assert "invalid_iteration_qc_activation" in registry.blockers[0].detail
+
+
 def test_effective_activation_registry_fails_closed_on_target_bound_duplicate(
     tmp_path: Path,
 ) -> None:
@@ -860,6 +1036,54 @@ def test_repository_validation_reads_valid_effective_activation_registry(
         "ambiguous_effective_activation",
         "conflicting_effective_activation_identity",
     }.intersection(blocker["code"] for blocker in result.blockers)
+
+
+def test_iteration_claim_uses_exact_effective_activation(
+    tmp_path: Path,
+) -> None:
+    root, _activation_path = _commit_successful_iqc_activation(tmp_path)
+
+    result = validation.validate(
+        root,
+        claim="iteration",
+        requirement="req-0042-r1",
+    )
+
+    blocker_codes = {blocker["code"] for blocker in result.blockers}
+    assert "control_plane_not_adopted" not in blocker_codes
+    assert "missing_adopted_iteration_evidence" in blocker_codes
+
+
+def test_delivery_claim_uses_exact_delivery_effective_activation(
+    tmp_path: Path,
+) -> None:
+    root, _activation_path = _commit_successful_dqc_activation(tmp_path)
+
+    result = validation.validate(
+        root,
+        claim="delivery",
+        requirement="req-0042-r1",
+    )
+
+    blocker_codes = {blocker["code"] for blocker in result.blockers}
+    assert "control_plane_not_adopted" not in blocker_codes
+    assert "missing_adopted_delivery_evidence" in blocker_codes
+
+
+def test_delivery_claim_does_not_reuse_iteration_effective_activation(
+    tmp_path: Path,
+) -> None:
+    root, _activation_path = _commit_successful_iqc_activation(tmp_path)
+
+    result = validation.validate(
+        root,
+        claim="delivery",
+        requirement="req-0042-r1",
+    )
+
+    assert "control_plane_not_adopted" in {
+        blocker["code"] for blocker in result.blockers
+    }
 
 
 def test_repository_validation_uses_git_head_when_activation_worktree_is_missing(

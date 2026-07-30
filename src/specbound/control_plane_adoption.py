@@ -365,6 +365,7 @@ class AdoptionReadState:
     path: str
     sha256: str
     requirement_path: str
+    requirement_sha256: str
     requirement_id: str
     revision: int
     transition: str
@@ -554,11 +555,38 @@ def resolve_adoption_read_state(
             ),
         )
 
+    prerequisite_exempt_blobs: tuple[tuple[str, str], ...] = ()
+    if record.get("transition") == "delivery_qc":
+        number = requirement_id[4:]
+        iqc_activation_path = (
+            f".specbound/activations/{requirement_id}/"
+            f"act-{number}-r{revision}-iteration_qc.json"
+        )
+        iqc_state, iqc_blockers = resolve_successful_iqc_activation(root, iqc_activation_path)
+        prerequisite_blob = _git(root, "show", f"{source_commit}:{iqc_activation_path}")
+        if (
+            iqc_state is None
+            or iqc_blockers
+            or iqc_state.requirement_path != requirement_path
+            or prerequisite_blob.returncode != 0
+            or sha256(prerequisite_blob.stdout).hexdigest() != iqc_state.sha256
+        ):
+            detail = "; ".join(
+                f"{blocker.code}:{blocker.path}" for blocker in iqc_blockers
+            ) or "exact successful IQC activation is absent from adoption source commit"
+            return None, (
+                GitEvidenceBlocker(
+                    "invalid_iteration_qc_activation", iqc_activation_path, detail
+                ),
+            )
+        prerequisite_exempt_blobs = iqc_state.closure_blobs
+
     prior_work = _current_planning_prior_work(
         root,
         baseline_commit=baseline_commit,
         source_commit=source_commit,
         requirement_path=requirement_path,
+        exempt_blobs=prerequisite_exempt_blobs,
     )
     if prior_work:
         return None, prior_work
@@ -567,6 +595,7 @@ def resolve_adoption_read_state(
             path=path,
             sha256=loaded.sha256,
             requirement_path=requirement_path,
+            requirement_sha256=str(requirement["sha256"]),
             requirement_id=requirement_id,
             revision=revision,
             transition=str(record["transition"]),
@@ -751,6 +780,7 @@ class SuccessfulActivationState:
     sha256: str
     requirement_id: str
     requirement_path: str
+    requirement_sha256: str
     revision: int
     transition: str
     adoption_path: str
@@ -760,13 +790,17 @@ class SuccessfulActivationState:
     prospective_baseline_commit: str
     authority_action_id: str
     context_id: str
+    activation_commit: str
+    closure_blobs: tuple[tuple[str, str], ...]
 
 
-def resolve_successful_iqc_activation(
+def _resolve_successful_activation(
     root: Path,
     path: str,
+    *,
+    expected_transition: str,
 ) -> tuple[SuccessfulActivationState | None, tuple[GitEvidenceBlocker, ...]]:
-    """Resolve one exact successful prospective iteration-QC activation."""
+    """Resolve one exact successful prospective activation transition."""
 
     root = Path(root).resolve()
     loaded, blockers = _load_control_plane_record(root, path)
@@ -778,11 +812,13 @@ def resolve_successful_iqc_activation(
         )
     record = loaded.data
     invalid = GitEvidenceBlocker(
-        "invalid_iqc_activation_chain",
+        "invalid_iqc_activation_chain"
+        if expected_transition == "iteration_qc"
+        else "invalid_dqc_activation_chain",
         path,
-        "activation must bind one exact successful prospective IQC chain",
+        f"activation must bind one exact successful prospective {expected_transition} chain",
     )
-    if record.get("transition") != "iteration_qc":
+    if record.get("transition") != expected_transition:
         return None, (invalid,)
     adoption_binding = record.get("adoption")
     outcome_binding = record.get("canary_outcome")
@@ -965,6 +1001,7 @@ def resolve_successful_iqc_activation(
             sha256=loaded.sha256,
             requirement_id=adoption_state.requirement_id,
             requirement_path=adoption_state.requirement_path,
+            requirement_sha256=adoption_state.requirement_sha256,
             revision=adoption_state.revision,
             transition=adoption_state.transition,
             adoption_path=adoption_path,
@@ -974,8 +1011,27 @@ def resolve_successful_iqc_activation(
             prospective_baseline_commit=str(baseline_commit),
             authority_action_id=str(record["authority_action_id"]),
             context_id=str(record["context_id"]),
+            activation_commit=activation_commit,
+            closure_blobs=(
+                (adoption_state.path, adoption_state.sha256),
+                (outcome_state.path, outcome_state.sha256),
+                (str(exception_path), str(exception_binding["closed_sha256"])),
+                (str(ledger_path), str(ledger_binding["sha256"])),
+                (path, loaded.sha256),
+            ),
         ),
         (),
+    )
+
+
+def resolve_successful_iqc_activation(
+    root: Path,
+    path: str,
+) -> tuple[SuccessfulActivationState | None, tuple[GitEvidenceBlocker, ...]]:
+    """Resolve one exact successful prospective iteration-QC activation."""
+
+    return _resolve_successful_activation(
+        root, path, expected_transition="iteration_qc"
     )
 
 
@@ -1104,7 +1160,8 @@ def resolve_effective_activation_registry(root: Path) -> EffectiveActivationRegi
                         and activation_id.startswith("act-")
                         and isinstance(adoption_binding, dict)
                         and isinstance(adoption_binding.get("path"), str)
-                        and candidate.get("transition") == "iteration_qc"
+                        and candidate.get("transition")
+                        in {"iteration_qc", "delivery_qc"}
                     )
             if target_bound:
                 blockers.append(
@@ -1115,8 +1172,10 @@ def resolve_effective_activation_registry(root: Path) -> EffectiveActivationRegi
                     )
                 )
             continue
-        state, candidate_blockers = resolve_successful_iqc_activation(
-            root, candidate_path
+        path_match = _ACTIVATION_PATH_RE.fullmatch(candidate_path)
+        assert path_match is not None
+        state, candidate_blockers = _resolve_successful_activation(
+            root, candidate_path, expected_transition=path_match.group(4)
         )
         if state is None or candidate_blockers:
             detail = "; ".join(
@@ -1310,6 +1369,7 @@ def _current_planning_prior_work(
     baseline_commit: str,
     source_commit: str,
     requirement_path: str,
+    exempt_blobs: tuple[tuple[str, str], ...] = (),
 ) -> tuple[GitEvidenceBlocker, ...]:
     match = _REQUIREMENT_PATH_RE.fullmatch(requirement_path)
     if match is None or match.group(1) != match.group(2):
@@ -1332,6 +1392,7 @@ def _current_planning_prior_work(
     if error is not None:
         return (GitEvidenceBlocker("git_query_failed", root_paths[0], error),)
     blockers: dict[str, GitEvidenceBlocker] = {}
+    exact_exemptions = set(exempt_blobs)
     for commit in history.splitlines() if history else []:
         if _FULL_SHA1_RE.fullmatch(commit) is None:
             blockers["adoption_source_commit"] = GitEvidenceBlocker(
@@ -1355,6 +1416,8 @@ def _current_planning_prior_work(
                 blockers[path] = GitEvidenceBlocker(
                     "git_query_failed", path, detail or "could not read prior-work blob"
                 )
+                continue
+            if (path, sha256(blob.stdout).hexdigest()) in exact_exemptions:
                 continue
             if path.startswith("docs/governance/bootstrap-exceptions/"):
                 if path.endswith("/README.md"):
