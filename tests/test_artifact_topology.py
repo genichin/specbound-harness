@@ -152,13 +152,16 @@ def write_valid_family_set(root: Path) -> None:
     delivery.write_text(valid_delivery_qc(root), encoding="utf-8")
 
 
-def adopt_fixture_requirement(root: Path, digest: str | None = None) -> None:
+def write_legacy_adoption_registry(root: Path, digest: str | None = None) -> None:
     requirement = root / ".specbound/requirements/req-0001/req-0001-r1.md"
     exact_digest = digest or sha256(requirement.read_bytes()).hexdigest()
     config = root / "specbound.yaml"
     config.write_text(
         config.read_text(encoding="utf-8").replace(
-            "    requirements: []",
+            "policy:\n",
+            "policy:\n"
+            "  control_plane_adoption:\n"
+            "    schema_version: 1\n"
             "    requirements:\n"
             "      - path: .specbound/requirements/req-0001/req-0001-r1.md\n"
             "        id: req-0001\n"
@@ -182,9 +185,8 @@ def test_validate_accepts_version_one_artifact_families(tmp_path: Path) -> None:
     assert payload["checked_delivery_qc"] == 1
 
 
-def test_real_cli_accepts_adopted_single_ac_evidence_chain(tmp_path: Path) -> None:
+def test_real_cli_accepts_unscoped_evidence_but_rejects_unactivated_claims(tmp_path: Path) -> None:
     root = copied_fixture(tmp_path)
-    adopt_fixture_requirement(root)
     write_valid_family_set(root)
 
     # The minimal copied REQ deliberately has one AC. Delivery-QC must cover
@@ -202,9 +204,14 @@ def test_real_cli_accepts_adopted_single_ac_evidence_chain(tmp_path: Path) -> No
     iteration_claim = run_cli(root, "validate", "--claim", "iteration", "--requirement", "req-0001-r1")
     delivery_claim = run_cli(root, "validate", "--claim", "delivery", "--requirement", "req-0001-r1")
 
-    for result in (preflight, root_validation, iteration_claim, delivery_claim):
+    for result in (preflight, root_validation):
         assert result.returncode == 0, result.stdout
         assert body(result)["valid"] is True
+    for result in (iteration_claim, delivery_claim):
+        assert result.returncode == 2, result.stdout
+        assert "control_plane_not_adopted" in {
+            blocker["code"] for blocker in body(result)["blockers"]
+        }
 
     payload = body(root_validation)
     assert payload["checked_micro_specs"] == 1
@@ -469,47 +476,47 @@ def test_claim_requires_explicit_adoption(tmp_path: Path) -> None:
     assert "control_plane_not_adopted" in {blocker["code"] for blocker in body(result)["blockers"]}
 
 
-def test_adopted_root_remains_compatible_until_a_claim_is_made(tmp_path: Path) -> None:
+def test_nonempty_legacy_adoption_registry_is_rejected(tmp_path: Path) -> None:
     root = copied_fixture(tmp_path)
-    adopt_fixture_requirement(root)
+    write_legacy_adoption_registry(root)
 
     result = run_cli(root, "validate")
 
-    assert result.returncode == 0, result.stdout
+    assert result.returncode == 2, result.stdout
+    assert "malformed_config" in {blocker["code"] for blocker in body(result)["blockers"]}
 
 
-def test_adopted_iteration_claim_requires_canonical_micro_spec_and_qc(tmp_path: Path) -> None:
+def test_iteration_claim_remains_blocked_without_effective_activation(tmp_path: Path) -> None:
     root = copied_fixture(tmp_path)
-    adopt_fixture_requirement(root)
 
     missing = run_cli(root, "validate", "--claim", "iteration", "--requirement", "req-0001-r1")
     assert missing.returncode == 2, missing.stdout
-    assert "missing_adopted_iteration_evidence" in {blocker["code"] for blocker in body(missing)["blockers"]}
+    assert "control_plane_not_adopted" in {blocker["code"] for blocker in body(missing)["blockers"]}
 
     write_valid_family_set(root)
     verified = run_cli(root, "validate", "--claim", "iteration", "--requirement", "req-0001-r1")
-    assert verified.returncode == 0, verified.stdout
+    assert verified.returncode == 2, verified.stdout
+    assert "control_plane_not_adopted" in {blocker["code"] for blocker in body(verified)["blockers"]}
 
 
-def test_adopted_delivery_claim_requires_verified_delivery_qc(tmp_path: Path) -> None:
+def test_delivery_claim_remains_blocked_without_effective_activation(tmp_path: Path) -> None:
     root = copied_fixture(tmp_path)
-    adopt_fixture_requirement(root)
     write_valid_family_set(root)
     (root / ".specbound/delivery-qc/dqc-0001-r1.json").unlink()
 
     missing = run_cli(root, "validate", "--claim", "delivery", "--requirement", "req-0001-r1")
     assert missing.returncode == 2, missing.stdout
-    assert "missing_adopted_delivery_evidence" in {blocker["code"] for blocker in body(missing)["blockers"]}
+    assert "control_plane_not_adopted" in {blocker["code"] for blocker in body(missing)["blockers"]}
 
     delivery = root / ".specbound/delivery-qc/dqc-0001-r1.json"
     delivery.write_text(valid_delivery_qc(root), encoding="utf-8")
     verified = run_cli(root, "validate", "--claim", "delivery", "--requirement", "req-0001-r1")
-    assert verified.returncode == 0, verified.stdout
+    assert verified.returncode == 2, verified.stdout
+    assert "control_plane_not_adopted" in {blocker["code"] for blocker in body(verified)["blockers"]}
 
 
-def test_manual_bootstrap_micro_spec_does_not_satisfy_adopted_iteration_claim(tmp_path: Path) -> None:
+def test_manual_bootstrap_micro_spec_does_not_activate_iteration_claim(tmp_path: Path) -> None:
     root = copied_fixture(tmp_path)
-    adopt_fixture_requirement(root)
     path = root / ".specbound/micro-specs/req-0001/ms-0001-003.md"
     path.parent.mkdir(parents=True)
     path.write_text("---\nkind: manual-bootstrap-micro-spec\n---\n", encoding="utf-8")
@@ -517,23 +524,32 @@ def test_manual_bootstrap_micro_spec_does_not_satisfy_adopted_iteration_claim(tm
     result = run_cli(root, "validate", "--claim", "iteration", "--requirement", "req-0001-r1")
 
     assert result.returncode == 2, result.stdout
-    assert "missing_adopted_iteration_evidence" in {blocker["code"] for blocker in body(result)["blockers"]}
+    assert "control_plane_not_adopted" in {blocker["code"] for blocker in body(result)["blockers"]}
 
 
-def test_validate_rejects_stale_adoption_snapshot(tmp_path: Path) -> None:
+def test_validate_rejects_nonempty_legacy_adoption_snapshot(tmp_path: Path) -> None:
     root = copied_fixture(tmp_path)
-    adopt_fixture_requirement(root, digest="a" * 64)
+    write_legacy_adoption_registry(root, digest="a" * 64)
 
     result = run_cli(root, "validate")
 
     assert result.returncode == 2, result.stdout
-    assert "adoption_binding_mismatch" in {blocker["code"] for blocker in body(result)["blockers"]}
+    assert "malformed_config" in {blocker["code"] for blocker in body(result)["blockers"]}
 
 
 def test_preflight_rejects_unknown_adoption_schema_version(tmp_path: Path) -> None:
     root = copied_fixture(tmp_path)
     config = root / "specbound.yaml"
-    config.write_text(config.read_text(encoding="utf-8").replace("schema_version: 1", "schema_version: 2", 1), encoding="utf-8")
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "policy:\n",
+            "policy:\n"
+            "  control_plane_adoption:\n"
+            "    schema_version: 2\n"
+            "    requirements: []\n",
+        ),
+        encoding="utf-8",
+    )
 
     result = run_cli(root, "preflight")
 

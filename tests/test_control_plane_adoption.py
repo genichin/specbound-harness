@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 from datetime import datetime, timezone
 import hashlib
 import importlib
+import inspect
 import json
 import os
 from pathlib import Path
@@ -111,6 +113,889 @@ def _commit_minimal_adoption_inputs(
         env=_git_env(introduced_at),
     )
     return requirement, approval, _git(root, "rev-parse", "HEAD"), introduced_at
+
+
+def _write_canonical_json(root: Path, relative: Path, record: dict) -> bytes:
+    payload = (json.dumps(record, sort_keys=True, indent=2) + "\n").encode()
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+    return payload
+
+
+@pytest.mark.parametrize(
+    ("template_name", "relative"),
+    (
+        (
+            "adoption-decision.json",
+            ".specbound/adoptions/req-0042/adp-0042-r1-iteration_qc.json",
+        ),
+        (
+            "canary-outcome.json",
+            ".specbound/canary-outcomes/req-0042/"
+            "cny-0042-r1-iteration_qc-a1.json",
+        ),
+        (
+            "activation-decision.json",
+            ".specbound/activations/req-0042/act-0042-r1-iteration_qc.json",
+        ),
+    ),
+)
+def test_control_plane_record_loader_accepts_exact_canonical_family_bytes(
+    tmp_path: Path,
+    template_name: str,
+    relative: str,
+) -> None:
+    root = tmp_path / "repo"
+    target = root / relative
+    target.parent.mkdir(parents=True)
+    payload = (ROOT / "templates" / template_name).read_bytes()
+    target.write_bytes(payload)
+    module = importlib.import_module("specbound.control_plane_adoption")
+
+    loaded, blockers = module._load_control_plane_record(root, relative)
+
+    assert blockers == ()
+    assert loaded is not None
+    assert loaded.path == relative
+    assert loaded.sha256 == hashlib.sha256(payload).hexdigest()
+
+
+@pytest.mark.parametrize(
+    ("label", "mutate"),
+    (
+        ("bom", lambda payload: b"\xef\xbb\xbf" + payload),
+        ("crlf", lambda payload: payload.replace(b"\n", b"\r\n")),
+        ("compact", lambda payload: json.dumps(json.loads(payload)).encode() + b"\n"),
+        ("missing-final-lf", lambda payload: payload.rstrip(b"\n")),
+        ("extra-final-lf", lambda payload: payload + b"\n"),
+        (
+            "duplicate-key",
+            lambda payload: payload.replace(
+                b'{\n  "adoption_id"',
+                b'{\n  "schema_version": 1,\n  "adoption_id"',
+                1,
+            ),
+        ),
+    ),
+)
+def test_control_plane_record_loader_rejects_noncanonical_adoption_bytes(
+    tmp_path: Path,
+    label: str,
+    mutate,
+) -> None:
+    del label
+    root = tmp_path / "repo"
+    relative = ".specbound/adoptions/req-0042/adp-0042-r1-iteration_qc.json"
+    target = root / relative
+    target.parent.mkdir(parents=True)
+    payload = (ROOT / "templates/adoption-decision.json").read_bytes()
+    target.write_bytes(mutate(payload))
+    module = importlib.import_module("specbound.control_plane_adoption")
+
+    loaded, blockers = module._load_control_plane_record(root, relative)
+
+    assert loaded is None
+    assert [(blocker.code, blocker.path) for blocker in blockers] == [
+        ("malformed_control_plane_record", relative)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("template_name", "relative"),
+    (
+        (
+            "adoption-decision.json",
+            ".specbound/adoptions/req-0042/adp-0042-r1-iteration_qc.json",
+        ),
+        (
+            "activation-decision.json",
+            ".specbound/activations/req-0042/act-0042-r1-iteration_qc.json",
+        ),
+    ),
+)
+def test_control_plane_record_policy_accepts_only_current_production_binding(
+    tmp_path: Path,
+    template_name: str,
+    relative: str,
+) -> None:
+    root = tmp_path / "repo"
+    config_bytes = (ROOT / "specbound.yaml").read_bytes()
+    (root / "specbound.yaml").parent.mkdir(parents=True)
+    (root / "specbound.yaml").write_bytes(config_bytes)
+    record = json.loads((ROOT / "templates" / template_name).read_text(encoding="utf-8"))
+    record["authority_policy"]["sha256"] = hashlib.sha256(config_bytes).hexdigest()
+    _write_canonical_json(root, Path(relative), record)
+    module = importlib.import_module("specbound.control_plane_adoption")
+    loaded, load_blockers = module._load_control_plane_record(root, relative)
+    assert load_blockers == ()
+    assert loaded is not None
+
+    assert module._validate_record_policy(root, loaded, risk="high") == ()
+
+    record["authority"] = "fixture-maintainer"
+    _write_canonical_json(root, Path(relative), record)
+    loaded, load_blockers = module._load_control_plane_record(root, relative)
+    assert load_blockers == ()
+    assert loaded is not None
+    assert [blocker.code for blocker in module._validate_record_policy(root, loaded, risk="high")] == [
+        "unauthorized_control_plane_record"
+    ]
+
+
+def _commit_valid_adoption_read_state(
+    tmp_path: Path,
+    *,
+    approval_authority: str = "repository-maintainer",
+    approved_at: str = "2026-07-01T00:00:00+00:00",
+    attester: str = "repository-maintainer",
+    duplicate_source_ref: bool = False,
+) -> tuple[Path, str]:
+    root = _init_git_repo(tmp_path)
+    config_bytes = (ROOT / "specbound.yaml").read_bytes()
+    source_relative = Path("docs/evidence/req-0042-source.txt")
+    (root / "specbound.yaml").write_bytes(config_bytes)
+    (root / source_relative).parent.mkdir(parents=True)
+    source_bytes = b"exact immutable canary source\n"
+    (root / source_relative).write_bytes(source_bytes)
+    _git(root, "add", "--", "specbound.yaml", source_relative.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "establish canary capability baseline",
+        env=_git_env("2026-06-30T00:00:00+00:00"),
+    )
+    baseline_commit = _git(root, "rev-parse", "HEAD")
+
+    requirement_relative = Path(
+        ".specbound/requirements/req-0042/req-0042-r1.md"
+    )
+    requirement_bytes = (
+        b"---\nid: req-0042\nrevision: 1\nrisk: high\nstatus: approved\n---\n"
+    )
+    requirement_path = root / requirement_relative
+    requirement_path.parent.mkdir(parents=True)
+    requirement_path.write_bytes(requirement_bytes)
+    approval_relative = Path(".specbound/approvals/req-0042-r1.approval.json")
+    approval = {
+        "approved_at": approved_at,
+        "authority": approval_authority,
+        "requirement_id": "req-0042",
+        "requirement_path": requirement_relative.as_posix(),
+        "revision": 1,
+        "risk": "high",
+        "schema_version": 1,
+        "sha256": hashlib.sha256(requirement_bytes).hexdigest(),
+    }
+    _write_canonical_json(root, approval_relative, approval)
+    _git(root, "add", "--", requirement_relative.as_posix(), approval_relative.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "approve exact requirement",
+        env=_git_env("2026-07-01T00:00:00+00:00"),
+    )
+    source_commit = _git(root, "rev-parse", "HEAD")
+
+    adoption_relative = Path(
+        ".specbound/adoptions/req-0042/adp-0042-r1-iteration_qc.json"
+    )
+    adoption = json.loads(
+        (ROOT / "templates/adoption-decision.json").read_text(encoding="utf-8")
+    )
+    adoption["adoption_source_commit"] = source_commit
+    adoption["authority_policy"]["sha256"] = hashlib.sha256(config_bytes).hexdigest()
+    adoption["canary_capability_baseline_at"] = "2026-06-30T00:00:00+00:00"
+    adoption["canary_capability_baseline_commit"] = baseline_commit
+    adoption["canary_work_attested_at"] = "2026-07-02T00:00:00+00:00"
+    adoption["canary_work_attested_by"] = attester
+    adoption["decided_at"] = "2026-07-02T00:00:00+00:00"
+    adoption["requirement"]["sha256"] = hashlib.sha256(requirement_bytes).hexdigest()
+    adoption["canary_work_source_refs"] = [
+        {
+            "kind": "repository",
+            "path": source_relative.as_posix(),
+            "sha256": hashlib.sha256(source_bytes).hexdigest(),
+        }
+    ]
+    if duplicate_source_ref:
+        adoption["canary_work_source_refs"].append(
+            deepcopy(adoption["canary_work_source_refs"][0])
+        )
+    _write_canonical_json(root, adoption_relative, adoption)
+    _git(root, "add", "--", adoption_relative.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "record exact canary adoption",
+        env=_git_env("2026-07-02T00:00:00+00:00"),
+    )
+    return root, adoption_relative.as_posix()
+
+
+def test_resolve_adoption_read_state_accepts_exact_valid_record(tmp_path: Path) -> None:
+    root, adoption_path = _commit_valid_adoption_read_state(tmp_path)
+    module = importlib.import_module("specbound.control_plane_adoption")
+
+    state, blockers = module.resolve_adoption_read_state(root, adoption_path)
+
+    assert blockers == ()
+    assert state is not None
+    assert state.path == adoption_path
+    assert state.requirement_path == ".specbound/requirements/req-0042/req-0042-r1.md"
+    assert state.transition == "iteration_qc"
+    assert state.risk == "high"
+    assert state.source_commit == _git(root, "rev-parse", "HEAD^")
+
+
+def test_resolve_adoption_read_state_rejects_mismatched_approval_authority(
+    tmp_path: Path,
+) -> None:
+    root, adoption_path = _commit_valid_adoption_read_state(
+        tmp_path,
+        approval_authority="fixture-maintainer",
+    )
+    module = importlib.import_module("specbound.control_plane_adoption")
+
+    state, blockers = module.resolve_adoption_read_state(root, adoption_path)
+
+    assert state is None
+    assert [blocker.code for blocker in blockers] == [
+        "invalid_adoption_approval_binding"
+    ]
+
+
+def test_resolve_adoption_read_state_rejects_non_authority_attester(
+    tmp_path: Path,
+) -> None:
+    root, adoption_path = _commit_valid_adoption_read_state(
+        tmp_path,
+        attester="fixture-maintainer",
+    )
+    module = importlib.import_module("specbound.control_plane_adoption")
+
+    state, blockers = module.resolve_adoption_read_state(root, adoption_path)
+
+    assert state is None
+    assert [blocker.code for blocker in blockers] == [
+        "invalid_canary_work_attestation"
+    ]
+
+
+def test_resolve_adoption_read_state_rejects_approval_not_after_baseline(
+    tmp_path: Path,
+) -> None:
+    root, adoption_path = _commit_valid_adoption_read_state(
+        tmp_path,
+        approved_at="2026-06-30T00:00:00+00:00",
+    )
+    module = importlib.import_module("specbound.control_plane_adoption")
+
+    state, blockers = module.resolve_adoption_read_state(root, adoption_path)
+
+    assert state is None
+    assert [blocker.code for blocker in blockers] == [
+        "invalid_adoption_approval_timing"
+    ]
+
+
+def test_resolve_adoption_read_state_rejects_duplicate_source_refs(
+    tmp_path: Path,
+) -> None:
+    root, adoption_path = _commit_valid_adoption_read_state(
+        tmp_path,
+        duplicate_source_ref=True,
+    )
+    module = importlib.import_module("specbound.control_plane_adoption")
+
+    state, blockers = module.resolve_adoption_read_state(root, adoption_path)
+
+    assert state is None
+    assert [blocker.code for blocker in blockers] == ["invalid_canary_source_refs"]
+
+
+def _commit_passed_canary_outcome(
+    tmp_path: Path,
+    *,
+    attempt_sequence: int = 1,
+) -> tuple[Path, str]:
+    root, adoption_path = _commit_valid_adoption_read_state(tmp_path)
+    exception_relative = Path(
+        "docs/governance/bootstrap-exceptions/req-0042-r1-iteration-qc-001.md"
+    )
+    exception_bytes = (
+        b"# Bootstrap exception: req-0042-r1-iteration-qc-001\n\n"
+        b"- Status: `active`\n"
+        b"- Transition: `iteration_qc`\n"
+        b"- Target artifact: `.specbound/requirements/req-0042/req-0042-r1.md`\n"
+        b"- Authority identity: `repository-maintainer`\n"
+        b"- Maximum review/attempt budget: `1`\n"
+    )
+    exception_path = root / exception_relative
+    exception_path.parent.mkdir(parents=True, exist_ok=True)
+    exception_path.write_bytes(exception_bytes)
+    _git(root, "add", "--", exception_relative.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "open exact IQC canary exception",
+        env=_git_env("2026-07-03T00:00:00+00:00"),
+    )
+    pre_close_commit = _git(root, "rev-parse", "HEAD")
+
+    outcome_relative = Path(
+        ".specbound/canary-outcomes/req-0042/"
+        f"cny-0042-r1-iteration_qc-a{attempt_sequence}.json"
+    )
+    outcome = json.loads(
+        (ROOT / "templates/canary-outcome.json").read_text(encoding="utf-8")
+    )
+    outcome["adoption"]["path"] = adoption_path
+    outcome["adoption"]["sha256"] = hashlib.sha256(
+        (root / adoption_path).read_bytes()
+    ).hexdigest()
+    outcome["bootstrap_exception"]["path"] = exception_relative.as_posix()
+    outcome["bootstrap_exception"]["pre_close_commit"] = pre_close_commit
+    outcome["bootstrap_exception"]["pre_close_sha256"] = hashlib.sha256(
+        exception_bytes
+    ).hexdigest()
+    outcome["attempt_sequence"] = attempt_sequence
+    outcome["canary_outcome_id"] = (
+        f"cny-0042-r1-iteration_qc-a{attempt_sequence}"
+    )
+    outcome["recorded_at"] = "2026-07-04T00:00:00+00:00"
+    _write_canonical_json(root, outcome_relative, outcome)
+    _git(root, "add", "--", outcome_relative.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "record passed IQC canary outcome",
+        env=_git_env("2026-07-04T00:00:00+00:00"),
+    )
+    return root, outcome_relative.as_posix()
+
+
+def test_resolve_passed_canary_outcome_accepts_exact_lineage(tmp_path: Path) -> None:
+    root, outcome_path = _commit_passed_canary_outcome(tmp_path)
+    module = importlib.import_module("specbound.control_plane_adoption")
+
+    state, blockers = module.resolve_passed_canary_outcome(root, outcome_path)
+
+    assert blockers == ()
+    assert state is not None
+    assert state.path == outcome_path
+    assert state.adoption_path == (
+        ".specbound/adoptions/req-0042/adp-0042-r1-iteration_qc.json"
+    )
+    assert state.transition == "iteration_qc"
+    assert state.attempt_sequence == 1
+    assert state.pre_close_commit == _git(root, "rev-parse", "HEAD^")
+
+
+def test_resolve_passed_canary_outcome_rejects_attempt_sequence_gap(
+    tmp_path: Path,
+) -> None:
+    root, outcome_path = _commit_passed_canary_outcome(
+        tmp_path,
+        attempt_sequence=2,
+    )
+    module = importlib.import_module("specbound.control_plane_adoption")
+
+    state, blockers = module.resolve_passed_canary_outcome(root, outcome_path)
+
+    assert state is None
+    assert [blocker.code for blocker in blockers] == [
+        "noncontiguous_canary_attempt_sequence"
+    ]
+
+
+def _commit_successful_iqc_activation(
+    tmp_path: Path,
+    *,
+    separate_prospective_baseline: bool = True,
+) -> tuple[Path, str]:
+    root, outcome_path = _commit_passed_canary_outcome(tmp_path)
+    outcome_commit = _git(root, "rev-parse", "HEAD")
+    outcome = json.loads((root / outcome_path).read_text(encoding="utf-8"))
+    exception_relative = Path(outcome["bootstrap_exception"]["path"])
+    closed_exception_bytes = (
+        b"# Bootstrap exception: req-0042-r1-iteration-qc-001\n\n"
+        b"- Status: `closed`\n"
+        b"- Transition: `iteration_qc`\n"
+        b"- Target artifact: `.specbound/requirements/req-0042/req-0042-r1.md`\n"
+        b"- Authority identity: `repository-maintainer`\n"
+        + f"- Successful outcome: `{outcome_path}` at `{outcome_commit}`\n".encode()
+        + b"- Maximum review/attempt budget: `1`\n"
+    )
+    (root / exception_relative).write_bytes(closed_exception_bytes)
+    ledger_relative = Path("docs/governance/bootstrap-exceptions/README.md")
+    ledger_bytes = (
+        b"# Bootstrap exception ledger\n\n"
+        b"**Active exceptions: 0**\n\n"
+        b"## Inventory\n\n"
+        b"| Exception | Transition | Target | Status | Expiry |\n"
+        b"| --- | --- | --- | --- | --- |\n"
+        b"| [`req-0042-r1-iteration-qc-001.md`](req-0042-r1-iteration-qc-001.md) "
+        b"| `iteration_qc` "
+        b"| `.specbound/requirements/req-0042/req-0042-r1.md` "
+        b"| `closed` | consumed |\n"
+    )
+    ledger_path = root / ledger_relative
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    ledger_path.write_bytes(ledger_bytes)
+    _git(root, "add", "--", exception_relative.as_posix(), ledger_relative.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "close IQC canary exception",
+        env=_git_env("2026-07-05T00:00:00+00:00"),
+    )
+    closeout_commit = _git(root, "rev-parse", "HEAD")
+
+    if separate_prospective_baseline:
+        baseline_relative = Path("docs/evidence/req-0042-iqc-baseline.txt")
+        (root / baseline_relative).write_bytes(b"prospective IQC baseline\n")
+        _git(root, "add", "--", baseline_relative.as_posix())
+        _git(
+            root,
+            "commit",
+            "--quiet",
+            "-m",
+            "establish prospective IQC baseline",
+            env=_git_env("2026-07-06T00:00:00+00:00"),
+        )
+        baseline_commit = _git(root, "rev-parse", "HEAD")
+        baseline_at = "2026-07-06T00:00:00+00:00"
+    else:
+        baseline_commit = closeout_commit
+        baseline_at = "2026-07-05T00:00:00+00:00"
+
+    activation_relative = Path(
+        ".specbound/activations/req-0042/act-0042-r1-iteration_qc.json"
+    )
+    activation = json.loads(
+        (ROOT / "templates/activation-decision.json").read_text(encoding="utf-8")
+    )
+    adoption_path = outcome["adoption"]["path"]
+    activation["adoption"]["path"] = adoption_path
+    activation["adoption"]["sha256"] = hashlib.sha256(
+        (root / adoption_path).read_bytes()
+    ).hexdigest()
+    activation["canary_outcome"]["path"] = outcome_path
+    activation["canary_outcome"]["sha256"] = hashlib.sha256(
+        (root / outcome_path).read_bytes()
+    ).hexdigest()
+    activation["passed_outcome_commit"] = outcome_commit
+    activation["bootstrap_exception"] = {
+        "path": exception_relative.as_posix(),
+        "pre_close_commit": outcome["bootstrap_exception"]["pre_close_commit"],
+        "pre_close_sha256": outcome["bootstrap_exception"]["pre_close_sha256"],
+        "closeout_commit": closeout_commit,
+        "closed_sha256": hashlib.sha256(closed_exception_bytes).hexdigest(),
+    }
+    activation["bootstrap_exception_ledger"]["sha256"] = hashlib.sha256(
+        ledger_bytes
+    ).hexdigest()
+    activation["authority_policy"]["sha256"] = hashlib.sha256(
+        (root / "specbound.yaml").read_bytes()
+    ).hexdigest()
+    activation["prospective_baseline_commit"] = baseline_commit
+    activation["prospective_baseline_at"] = baseline_at
+    activation["decided_at"] = "2026-07-07T00:00:00+00:00"
+    _write_canonical_json(root, activation_relative, activation)
+    _git(root, "add", "--", activation_relative.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "activate prospective IQC control plane",
+        env=_git_env("2026-07-07T00:00:00+00:00"),
+    )
+    return root, activation_relative.as_posix()
+
+
+def test_resolve_successful_iqc_activation_accepts_exact_chain(tmp_path: Path) -> None:
+    root, activation_path = _commit_successful_iqc_activation(tmp_path)
+    module = importlib.import_module("specbound.control_plane_adoption")
+
+    state, blockers = module.resolve_successful_iqc_activation(root, activation_path)
+
+    assert blockers == ()
+    assert state is not None
+    assert state.path == activation_path
+    assert state.requirement_id == "req-0042"
+    assert state.revision == 1
+    assert state.transition == "iteration_qc"
+    assert state.prospective_baseline_commit == _git(root, "rev-parse", "HEAD^")
+
+
+def test_resolve_successful_iqc_activation_requires_post_closeout_baseline(
+    tmp_path: Path,
+) -> None:
+    root, activation_path = _commit_successful_iqc_activation(
+        tmp_path,
+        separate_prospective_baseline=False,
+    )
+    module = importlib.import_module("specbound.control_plane_adoption")
+
+    state, blockers = module.resolve_successful_iqc_activation(root, activation_path)
+
+    assert state is None
+    assert [blocker.code for blocker in blockers] == [
+        "prospective_baseline_not_after_closeout"
+    ]
+
+
+def test_delivery_qc_prerequisite_accepts_exact_successful_iqc_activation(
+    tmp_path: Path,
+) -> None:
+    root, activation_path = _commit_successful_iqc_activation(tmp_path)
+    activation = json.loads((root / activation_path).read_text(encoding="utf-8"))
+    adoption = json.loads(
+        (root / activation["adoption"]["path"]).read_text(encoding="utf-8")
+    )
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=adoption["requirement"]["path"],
+        approval_path=".specbound/approvals/req-0042-r1.approval.json",
+        baseline_commit=adoption["canary_capability_baseline_commit"],
+        baseline_at=adoption["canary_capability_baseline_at"],
+    )
+    assert evidence.valid
+
+    result = module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:00+00:00",
+        transition="delivery_qc",
+    )
+
+    assert "missing_successful_iteration_qc_activation" not in {
+        blocker.code for blocker in result.blockers
+    }
+    assert "invalid_iteration_qc_activation" not in {
+        blocker.code for blocker in result.blockers
+    }
+
+
+def test_delivery_qc_prerequisite_rejects_duplicate_target_bound_activation(
+    tmp_path: Path,
+) -> None:
+    root, activation_path = _commit_successful_iqc_activation(tmp_path)
+    duplicate_path = Path(
+        ".specbound/activations/req-0042/"
+        "act-0042-r1-iteration_qc-copy.json"
+    )
+    (root / duplicate_path).write_bytes((root / activation_path).read_bytes())
+    _git(root, "add", "--", duplicate_path.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "add conflicting target-bound activation evidence",
+        env=_git_env("2026-07-08T00:00:00+00:00"),
+    )
+    activation = json.loads((root / activation_path).read_text(encoding="utf-8"))
+    adoption = json.loads(
+        (root / activation["adoption"]["path"]).read_text(encoding="utf-8")
+    )
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=adoption["requirement"]["path"],
+        approval_path=".specbound/approvals/req-0042-r1.approval.json",
+        baseline_commit=adoption["canary_capability_baseline_commit"],
+        baseline_at=adoption["canary_capability_baseline_at"],
+    )
+    assert evidence.valid
+
+    result = module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:00+00:00",
+        transition="delivery_qc",
+    )
+
+    assert "invalid_iteration_qc_activation" in {
+        blocker.code for blocker in result.blockers
+    }
+
+
+def test_effective_activation_registry_contains_exact_valid_activation(
+    tmp_path: Path,
+) -> None:
+    root, activation_path = _commit_successful_iqc_activation(tmp_path)
+    module = importlib.import_module("specbound.control_plane_adoption")
+
+    registry = module.resolve_effective_activation_registry(root)
+
+    assert registry.blockers == ()
+    assert registry.valid
+    assert [state.path for state in registry.activations] == [activation_path]
+    assert [
+        (state.requirement_id, state.revision, state.transition)
+        for state in registry.activations
+    ] == [("req-0042", 1, "iteration_qc")]
+
+
+def test_effective_activation_registry_fails_closed_on_target_bound_duplicate(
+    tmp_path: Path,
+) -> None:
+    root, activation_path = _commit_successful_iqc_activation(tmp_path)
+    duplicate_path = Path(
+        ".specbound/activations/req-0042/"
+        "act-0042-r1-iteration_qc-duplicate.json"
+    )
+    (root / duplicate_path).write_bytes((root / activation_path).read_bytes())
+    _git(root, "add", "--", duplicate_path.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "add ambiguous effective activation",
+        env=_git_env("2026-07-08T00:00:00+00:00"),
+    )
+    module = importlib.import_module("specbound.control_plane_adoption")
+
+    registry = module.resolve_effective_activation_registry(root)
+
+    assert not registry.valid
+    assert registry.activations == ()
+    assert [blocker.code for blocker in registry.blockers] == [
+        "ambiguous_effective_activation"
+    ]
+    assert registry.blockers[0].path == duplicate_path.as_posix()
+
+
+def test_effective_activation_registry_aggregates_global_identity_collision(
+    tmp_path: Path,
+) -> None:
+    root, activation_path = _commit_successful_iqc_activation(tmp_path)
+    module = importlib.import_module("specbound.control_plane_adoption")
+    state, blockers = module.resolve_successful_iqc_activation(root, activation_path)
+    assert blockers == ()
+    assert state is not None
+    conflicting_state = replace(
+        state,
+        path=".specbound/activations/req-0043/act-0043-r1-iteration_qc.json",
+        requirement_id="req-0043",
+        requirement_path=".specbound/requirements/req-0043/req-0043-r1.md",
+        adoption_path=".specbound/adoptions/req-0043/adp-0043-r1-iteration_qc.json",
+        outcome_path=(
+            ".specbound/canary-outcomes/req-0043/"
+            "cny-0043-r1-iteration_qc-a1.json"
+        ),
+    )
+
+    registry = module._aggregate_effective_activation_states(
+        (conflicting_state, state),
+        (),
+    )
+
+    assert not registry.valid
+    assert registry.activations == ()
+    assert [blocker.code for blocker in registry.blockers] == [
+        "conflicting_effective_activation_identity"
+    ]
+    assert registry.blockers[0].path == activation_path
+
+
+def test_effective_activation_registry_rejects_duplicate_effective_key(
+    tmp_path: Path,
+) -> None:
+    root, activation_path = _commit_successful_iqc_activation(tmp_path)
+    module = importlib.import_module("specbound.control_plane_adoption")
+    state, blockers = module.resolve_successful_iqc_activation(root, activation_path)
+    assert blockers == ()
+    assert state is not None
+    conflicting_state = replace(
+        state,
+        path=(
+            ".specbound/activations/req-0042/"
+            "act-0042-r1-iteration_qc-conflict.json"
+        ),
+        authority_action_id="different-effective-action-reference",
+        context_id="different-effective-context-reference",
+    )
+
+    registry = module._aggregate_effective_activation_states(
+        (conflicting_state, state),
+        (),
+    )
+
+    assert not registry.valid
+    assert registry.activations == ()
+    assert [blocker.code for blocker in registry.blockers] == [
+        "ambiguous_effective_activation"
+    ]
+    assert registry.blockers[0].path == min(activation_path, conflicting_state.path)
+
+
+def test_repository_validation_reads_valid_effective_activation_registry(
+    tmp_path: Path,
+) -> None:
+    root, _activation_path = _commit_successful_iqc_activation(tmp_path)
+
+    result = validation.validate(root)
+
+    assert result.checked_effective_activations == 1
+    assert not {
+        "invalid_effective_activation",
+        "ambiguous_effective_activation",
+        "conflicting_effective_activation_identity",
+    }.intersection(blocker["code"] for blocker in result.blockers)
+
+
+def test_repository_validation_uses_git_head_when_activation_worktree_is_missing(
+    tmp_path: Path,
+) -> None:
+    root, activation_path = _commit_successful_iqc_activation(tmp_path)
+    (root / activation_path).unlink()
+
+    result = validation.validate(root)
+
+    assert result.checked_effective_activations == 0
+    assert "invalid_effective_activation" in {
+        blocker["code"] for blocker in result.blockers
+    }
+
+
+def test_repository_validation_rejects_fixture_authority_policy_replacement(
+    tmp_path: Path,
+) -> None:
+    root, _activation_path = _commit_successful_iqc_activation(tmp_path)
+    config_path = root / "specbound.yaml"
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config["policy"]["discovery_confirmation_authorities_by_risk"]["medium"] = [
+        "fixture-authority"
+    ]
+    config_path.write_text(
+        yaml.safe_dump(config, sort_keys=False),
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    result = validation.validate(root)
+
+    assert result.checked_effective_activations == 0
+    assert "invalid_effective_activation" in {
+        blocker["code"] for blocker in result.blockers
+    }
+
+
+def test_bootstrap_ledger_parser_preserves_exact_row_semantics() -> None:
+    module = importlib.import_module("specbound.control_plane_adoption")
+    ledger = (
+        "# Bootstrap exception ledger\n\n"
+        "**Active exceptions: 1**\n\n"
+        "## Inventory\n\n"
+        "| Exception | Transition | Target | Status | Expiry |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| [`req-0042-r1-iteration-qc-001.md`](req-0042-r1-iteration-qc-001.md) "
+        "| `iteration_qc` "
+        "| `.specbound/requirements/req-0042/req-0042-r1.md` "
+        "| `active` | 2026-08-01T00:00:00Z |\n"
+    ).encode("utf-8")
+
+    parsed = module._parse_bootstrap_ledger(
+        ledger,
+        requirement_path=".specbound/requirements/req-0042/req-0042-r1.md",
+        exception_prefix="req-0042-r1-",
+    )
+
+    assert parsed.active_count == 1
+    assert [
+        (row.exception_path, row.transition, row.target, row.status, row.expiry)
+        for row in parsed.rows
+    ] == [
+        (
+            "req-0042-r1-iteration-qc-001.md",
+            "iteration_qc",
+            ".specbound/requirements/req-0042/req-0042-r1.md",
+            "active",
+            "2026-08-01T00:00:00Z",
+        )
+    ]
+
+
+def test_bootstrap_ledger_parser_accepts_repository_ledger_bytes() -> None:
+    module = importlib.import_module("specbound.control_plane_adoption")
+
+    parsed = module._parse_bootstrap_ledger(
+        (ROOT / "docs/governance/bootstrap-exceptions/README.md").read_bytes(),
+        requirement_path=".specbound/requirements/req-0005/req-0005-r1.md",
+        exception_prefix="req-0005-r1-",
+    )
+
+    assert parsed.active_count == 0
+    assert [row.exception_path for row in parsed.rows] == [
+        "req-0005-r1-review-return-001.md"
+    ]
+    assert parsed.rows[0].status == "closed"
+
+
+def test_bootstrap_ledger_parser_rejects_active_count_mismatch() -> None:
+    module = importlib.import_module("specbound.control_plane_adoption")
+    ledger = (
+        "# Bootstrap exception ledger\n\n"
+        "**Active exceptions: 0**\n\n"
+        "## Inventory\n\n"
+        "| Exception | Transition | Target | Status | Expiry |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| [`req-0042-r1-iteration-qc-001.md`](req-0042-r1-iteration-qc-001.md) "
+        "| `iteration_qc` "
+        "| `.specbound/requirements/req-0042/req-0042-r1.md` "
+        "| `active` | 2026-08-01T00:00:00Z |\n"
+    ).encode("utf-8")
+
+    with pytest.raises(ValueError, match="active exception count"):
+        module._parse_bootstrap_ledger(
+            ledger,
+            requirement_path=".specbound/requirements/req-0042/req-0042-r1.md",
+            exception_prefix="req-0042-r1-",
+        )
+
+
+def test_bootstrap_ledger_parser_rejects_duplicate_exception_rows() -> None:
+    module = importlib.import_module("specbound.control_plane_adoption")
+    row = (
+        "| [`req-0042-r1-iteration-qc-001.md`](req-0042-r1-iteration-qc-001.md) "
+        "| `iteration_qc` "
+        "| `.specbound/requirements/req-0042/req-0042-r1.md` "
+        "| `active` | 2026-08-01T00:00:00Z |\n"
+    )
+    ledger = (
+        "# Bootstrap exception ledger\n\n"
+        "**Active exceptions: 2**\n\n"
+        "## Inventory\n\n"
+        "| Exception | Transition | Target | Status | Expiry |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        + row * 2
+    ).encode("utf-8")
+
+    with pytest.raises(ValueError, match="duplicate exception"):
+        module._parse_bootstrap_ledger(
+            ledger,
+            requirement_path=".specbound/requirements/req-0042/req-0042-r1.md",
+            exception_prefix="req-0042-r1-",
+        )
+
 
 
 def _config(path: Path) -> dict:
@@ -551,10 +1436,1299 @@ def test_resolve_adoption_eligibility_accepts_inputs_introduced_after_baseline(
         root,
         evidence=evidence,
         approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
     )
 
     assert result.eligible
     assert result.blockers == ()
+
+
+def test_delivery_qc_adoption_requires_successful_iteration_qc_activation(
+    tmp_path: Path,
+) -> None:
+    root = _init_git_repo(tmp_path)
+    baseline_at = "2026-06-01T00:00:00+00:00"
+    (root / ".gitkeep").write_bytes(b"")
+    _git(root, "add", "--", ".gitkeep")
+    _git(root, "commit", "--quiet", "-m", "capability baseline", env=_git_env(baseline_at))
+    baseline = _git(root, "rev-parse", "HEAD")
+    requirement, approval, _, _ = _commit_minimal_adoption_inputs(root)
+
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=requirement.as_posix(),
+        approval_path=approval.as_posix(),
+        baseline_commit=baseline,
+        baseline_at=baseline_at,
+    )
+    result = module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:01+00:00",
+        transition="delivery_qc",
+    )
+
+    assert [(blocker.code, blocker.path) for blocker in result.blockers] == [
+        (
+            "missing_successful_iteration_qc_activation",
+            ".specbound/activations/req-0042",
+        )
+    ]
+
+
+def test_adoption_eligibility_rejects_unsupported_transition(tmp_path: Path) -> None:
+    root = _init_git_repo(tmp_path)
+    baseline_at = "2026-06-01T00:00:00+00:00"
+    (root / ".gitkeep").write_bytes(b"")
+    _git(root, "add", "--", ".gitkeep")
+    _git(root, "commit", "--quiet", "-m", "capability baseline", env=_git_env(baseline_at))
+    baseline = _git(root, "rev-parse", "HEAD")
+    requirement, approval, _, _ = _commit_minimal_adoption_inputs(root)
+
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=requirement.as_posix(),
+        approval_path=approval.as_posix(),
+        baseline_commit=baseline,
+        baseline_at=baseline_at,
+    )
+    result = module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:01+00:00",
+        transition="release",
+    )
+
+    assert [(blocker.code, blocker.path) for blocker in result.blockers] == [
+        ("unsupported_adoption_transition", "transition")
+    ]
+
+
+def test_adoption_eligibility_requires_explicit_transition() -> None:
+    module = importlib.import_module("specbound.control_plane_adoption")
+
+    assert (
+        inspect.signature(module.resolve_adoption_eligibility)
+        .parameters["transition"]
+        .default
+        is inspect.Parameter.empty
+    )
+
+
+
+def test_resolve_adoption_eligibility_rejects_exact_candidate_micro_spec_prior_work(
+    tmp_path: Path,
+) -> None:
+    root = _init_git_repo(tmp_path)
+    baseline_at = "2026-06-01T00:00:00+00:00"
+    (root / ".gitkeep").write_bytes(b"")
+    _git(root, "add", "--", ".gitkeep")
+    _git(root, "commit", "--quiet", "-m", "capability baseline", env=_git_env(baseline_at))
+    baseline = _git(root, "rev-parse", "HEAD")
+    requirement, approval, _, _ = _commit_minimal_adoption_inputs(root)
+    micro_spec = Path(".specbound/micro-specs/req-0042/ms-0042-001.md")
+    micro_spec_path = root / micro_spec
+    micro_spec_path.parent.mkdir(parents=True, exist_ok=True)
+    micro_spec_path.write_bytes(
+        b"---\n"
+        b"schema_version: 1\n"
+        b"id: ms-0042-001\n"
+        b"kind: micro-spec\n"
+        b"requirement:\n"
+        b"  path: .specbound/requirements/req-0042/req-0042-r1.md\n"
+        b"  id: req-0042\n"
+        b"  revision: 1\n"
+        b"  sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+        b"---\n"
+    )
+    _git(root, "add", "--", micro_spec.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "record prior micro spec work",
+        env=_git_env("2026-07-02T00:00:00+00:00"),
+    )
+
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=requirement.as_posix(),
+        approval_path=approval.as_posix(),
+        baseline_commit=baseline,
+        baseline_at=baseline_at,
+    )
+    result = module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
+    )
+
+    assert [(blocker.code, blocker.path) for blocker in result.blockers] == [
+        ("prior_work_detected", micro_spec.as_posix())
+    ]
+
+
+def test_iteration_qc_adoption_fails_closed_on_ambiguous_malformed_micro_spec(
+    tmp_path: Path,
+) -> None:
+    root = _init_git_repo(tmp_path)
+    baseline_at = "2026-06-01T00:00:00+00:00"
+    (root / ".gitkeep").write_bytes(b"")
+    _git(root, "add", "--", ".gitkeep")
+    _git(root, "commit", "--quiet", "-m", "capability baseline", env=_git_env(baseline_at))
+    baseline = _git(root, "rev-parse", "HEAD")
+    requirement, approval, _, _ = _commit_minimal_adoption_inputs(root)
+    micro_spec = Path(".specbound/micro-specs/req-0042/ms-0042-001.md")
+    path = root / micro_spec
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\xffnot-yaml\n")
+    _git(root, "add", "--", micro_spec.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "record malformed planning evidence",
+        env=_git_env("2026-07-02T00:00:00+00:00"),
+    )
+
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=requirement.as_posix(),
+        approval_path=approval.as_posix(),
+        baseline_commit=baseline,
+        baseline_at=baseline_at,
+    )
+    result = module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
+    )
+
+    assert [(blocker.code, blocker.path) for blocker in result.blockers] == [
+        ("malformed_prior_work_evidence", micro_spec.as_posix())
+    ]
+
+
+def _resolve_iteration_qc_with_prior_blob(
+    tmp_path: Path,
+    *,
+    relative: str,
+    payload: bytes,
+):
+    root = _init_git_repo(tmp_path)
+    baseline_at = "2026-06-01T00:00:00+00:00"
+    (root / ".gitkeep").write_bytes(b"")
+    _git(root, "add", "--", ".gitkeep")
+    _git(root, "commit", "--quiet", "-m", "capability baseline", env=_git_env(baseline_at))
+    baseline = _git(root, "rev-parse", "HEAD")
+    requirement, approval, _, _ = _commit_minimal_adoption_inputs(root)
+    evidence_path = Path(relative)
+    path = root / evidence_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+    _git(root, "add", "--", evidence_path.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "record prior evidence",
+        env=_git_env("2026-07-02T00:00:00+00:00"),
+    )
+
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=requirement.as_posix(),
+        approval_path=approval.as_posix(),
+        baseline_commit=baseline,
+        baseline_at=baseline_at,
+    )
+    return module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
+    )
+
+
+@pytest.mark.parametrize(
+    ("relative", "payload"),
+    (
+        (
+            ".specbound/micro-specs/req-0042/ms-0042-999.md",
+            b"---\nrequirement:\n"
+            b"  path: .specbound/requirements/req-0042/req-0042-r2.md\n"
+            b"  id: req-0042\n  revision: 2\n  revision: 2\n---\n",
+        ),
+        (
+            ".specbound/micro-spec-reviews/req-0042/ms-0042-999.review.json",
+            b'{"requirement_path":".specbound/requirements/req-0042/req-0042-r2.md",'
+            b'"requirement_id":"req-0042","revision":2,"revision":2}\n',
+        ),
+    ),
+)
+def test_iteration_qc_adoption_ignores_unambiguous_malformed_other_revision(
+    tmp_path: Path,
+    relative: str,
+    payload: bytes,
+) -> None:
+    result = _resolve_iteration_qc_with_prior_blob(
+        tmp_path,
+        relative=relative,
+        payload=payload,
+    )
+
+    assert result.eligible
+    assert result.blockers == ()
+
+
+def test_iteration_qc_adoption_ignores_valid_prior_work_for_another_revision(
+    tmp_path: Path,
+) -> None:
+    root = _init_git_repo(tmp_path)
+    baseline_at = "2026-06-01T00:00:00+00:00"
+    (root / ".gitkeep").write_bytes(b"")
+    _git(root, "add", "--", ".gitkeep")
+    _git(root, "commit", "--quiet", "-m", "capability baseline", env=_git_env(baseline_at))
+    baseline = _git(root, "rev-parse", "HEAD")
+    requirement, approval, _, _ = _commit_minimal_adoption_inputs(root)
+    micro_spec = Path(".specbound/micro-specs/req-0042/ms-0042-002.md")
+    path = root / micro_spec
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(
+        b"---\n"
+        b"id: ms-0042-002\n"
+        b"kind: micro-spec\n"
+        b"requirement:\n"
+        b"  path: .specbound/requirements/req-0042/req-0042-r2.md\n"
+        b"  id: req-0042\n"
+        b"  revision: 2\n"
+        b"  sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+        b"---\n\n# Other revision planning evidence\n"
+    )
+    _git(root, "add", "--", micro_spec.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "record another revision",
+        env=_git_env("2026-07-02T00:00:00+00:00"),
+    )
+
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=requirement.as_posix(),
+        approval_path=approval.as_posix(),
+        baseline_commit=baseline,
+        baseline_at=baseline_at,
+    )
+    result = module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
+    )
+
+    assert result.eligible
+    assert result.blockers == ()
+
+
+def test_iteration_qc_adoption_ignores_malformed_iqc_for_another_revision(
+    tmp_path: Path,
+) -> None:
+    root = _init_git_repo(tmp_path)
+    baseline_at = "2026-06-01T00:00:00+00:00"
+    (root / ".gitkeep").write_bytes(b"")
+    _git(root, "add", "--", ".gitkeep")
+    _git(root, "commit", "--quiet", "-m", "capability baseline", env=_git_env(baseline_at))
+    baseline = _git(root, "rev-parse", "HEAD")
+    requirement, approval, _, _ = _commit_minimal_adoption_inputs(root)
+    other_revision = Path(
+        ".specbound/iteration-qc/req-0042/iqc-0042-001-r2.json"
+    )
+    path = root / other_revision
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\xff")
+    _git(root, "add", "--", other_revision.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "record malformed r2 IQC",
+        env=_git_env("2026-07-02T00:00:00+00:00"),
+    )
+
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=requirement.as_posix(),
+        approval_path=approval.as_posix(),
+        baseline_commit=baseline,
+        baseline_at=baseline_at,
+    )
+    result = module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
+    )
+
+    assert result.eligible
+    assert result.blockers == ()
+
+
+def test_resolve_adoption_eligibility_rejects_exact_candidate_micro_spec_review_prior_work(
+    tmp_path: Path,
+) -> None:
+    root = _init_git_repo(tmp_path)
+    baseline_at = "2026-06-01T00:00:00+00:00"
+    (root / ".gitkeep").write_bytes(b"")
+    _git(root, "add", "--", ".gitkeep")
+    _git(root, "commit", "--quiet", "-m", "capability baseline", env=_git_env(baseline_at))
+    baseline = _git(root, "rev-parse", "HEAD")
+    requirement, approval, _, _ = _commit_minimal_adoption_inputs(root)
+    review = Path(
+        ".specbound/micro-spec-reviews/req-0042/ms-0042-001.review.json"
+    )
+    review_path = root / review
+    review_path.parent.mkdir(parents=True, exist_ok=True)
+    review_path.write_bytes(
+        b'{"micro_spec_id":"ms-0042-001",'
+        b'"micro_spec_path":".specbound/micro-specs/req-0042/ms-0042-001.md",'
+        b'"requirement_id":"req-0042",'
+        b'"requirement_path":".specbound/requirements/req-0042/req-0042-r1.md",'
+        b'"revision":1}\n'
+    )
+    _git(root, "add", "--", review.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "record prior micro spec review",
+        env=_git_env("2026-07-02T00:00:00+00:00"),
+    )
+
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=requirement.as_posix(),
+        approval_path=approval.as_posix(),
+        baseline_commit=baseline,
+        baseline_at=baseline_at,
+    )
+    result = module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
+    )
+
+    assert [(blocker.code, blocker.path) for blocker in result.blockers] == [
+        ("prior_work_detected", review.as_posix())
+    ]
+
+
+def test_resolve_adoption_eligibility_rejects_deleted_exact_candidate_prior_work(
+    tmp_path: Path,
+) -> None:
+    root = _init_git_repo(tmp_path)
+    baseline_at = "2026-06-01T00:00:00+00:00"
+    (root / ".gitkeep").write_bytes(b"")
+    _git(root, "add", "--", ".gitkeep")
+    _git(root, "commit", "--quiet", "-m", "capability baseline", env=_git_env(baseline_at))
+    baseline = _git(root, "rev-parse", "HEAD")
+    requirement, approval, _, _ = _commit_minimal_adoption_inputs(root)
+    micro_spec = Path(".specbound/micro-specs/req-0042/ms-0042-001.md")
+    micro_spec_path = root / micro_spec
+    micro_spec_path.parent.mkdir(parents=True, exist_ok=True)
+    micro_spec_path.write_bytes(
+        b"---\n"
+        b"requirement:\n"
+        b"  path: .specbound/requirements/req-0042/req-0042-r1.md\n"
+        b"  id: req-0042\n"
+        b"  revision: 1\n"
+        b"  sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+        b"---\n"
+    )
+    _git(root, "add", "--", micro_spec.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "record prior work",
+        env=_git_env("2026-07-02T00:00:00+00:00"),
+    )
+    micro_spec_path.unlink()
+    _git(root, "add", "--all")
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "delete prior work",
+        env=_git_env("2026-07-03T00:00:00+00:00"),
+    )
+
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=requirement.as_posix(),
+        approval_path=approval.as_posix(),
+        baseline_commit=baseline,
+        baseline_at=baseline_at,
+    )
+    result = module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
+    )
+
+    assert [(blocker.code, blocker.path) for blocker in result.blockers] == [
+        ("prior_work_detected", micro_spec.as_posix())
+    ]
+
+
+def test_prior_work_scan_includes_deleted_evidence_from_merged_side_branch(
+    tmp_path: Path,
+) -> None:
+    root = _init_git_repo(tmp_path)
+    (root / ".gitkeep").write_bytes(b"")
+    _git(root, "add", "--", ".gitkeep")
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "common root",
+        env=_git_env("2026-05-01T00:00:00+00:00"),
+    )
+    main_branch = _git(root, "branch", "--show-current")
+    _git(root, "checkout", "--quiet", "-b", "historical-work")
+    micro_spec = Path(".specbound/micro-specs/req-0042/ms-0042-001.md")
+    path = root / micro_spec
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(
+        b"---\nrequirement:\n"
+        b"  path: .specbound/requirements/req-0042/req-0042-r1.md\n"
+        b"  id: req-0042\n"
+        b"  revision: 1\n"
+        b"  sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+        b"---\n"
+    )
+    _git(root, "add", "--", micro_spec.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "side branch prior work",
+        env=_git_env("2026-06-02T00:00:00+00:00"),
+    )
+    path.unlink()
+    _git(root, "add", "--all")
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "delete side branch prior work",
+        env=_git_env("2026-06-03T00:00:00+00:00"),
+    )
+
+    _git(root, "checkout", "--quiet", main_branch)
+    (root / "baseline.txt").write_bytes(b"capability\n")
+    _git(root, "add", "--", "baseline.txt")
+    baseline_at = "2026-06-01T00:00:00+00:00"
+    _git(root, "commit", "--quiet", "-m", "capability baseline", env=_git_env(baseline_at))
+    baseline = _git(root, "rev-parse", "HEAD")
+    requirement, approval, _, _ = _commit_minimal_adoption_inputs(root)
+    _git(
+        root,
+        "merge",
+        "--quiet",
+        "--no-ff",
+        "historical-work",
+        "-m",
+        "merge historical work",
+        env=_git_env("2026-07-02T00:00:00+00:00"),
+    )
+
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=requirement.as_posix(),
+        approval_path=approval.as_posix(),
+        baseline_commit=baseline,
+        baseline_at=baseline_at,
+    )
+    result = module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
+    )
+
+    assert [(blocker.code, blocker.path) for blocker in result.blockers] == [
+        ("prior_work_detected", micro_spec.as_posix())
+    ]
+
+
+def test_iteration_qc_adoption_rejects_exact_candidate_iteration_qc_prior_work(
+    tmp_path: Path,
+) -> None:
+    root = _init_git_repo(tmp_path)
+    baseline_at = "2026-06-01T00:00:00+00:00"
+    (root / ".gitkeep").write_bytes(b"")
+    _git(root, "add", "--", ".gitkeep")
+    _git(root, "commit", "--quiet", "-m", "capability baseline", env=_git_env(baseline_at))
+    baseline = _git(root, "rev-parse", "HEAD")
+    requirement, approval, _, _ = _commit_minimal_adoption_inputs(root)
+    micro_spec = Path(".specbound/micro-specs/req-0042/ms-0042-001.md")
+    micro_spec_path = root / micro_spec
+    micro_spec_path.parent.mkdir(parents=True, exist_ok=True)
+    micro_spec_path.write_bytes(
+        b"---\n"
+        b"requirement:\n"
+        b"  path: .specbound/requirements/req-0042/req-0042-r1.md\n"
+        b"  id: req-0042\n"
+        b"  revision: 1\n"
+        b"  sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+        b"---\n"
+    )
+    iteration_qc = Path(
+        ".specbound/iteration-qc/req-0042/iqc-0042-001-r1.json"
+    )
+    iteration_qc_path = root / iteration_qc
+    iteration_qc_path.parent.mkdir(parents=True, exist_ok=True)
+    iteration_qc_path.write_bytes(
+        b'{"micro_spec":{"id":"ms-0042-001",'
+        b'"path":".specbound/micro-specs/req-0042/ms-0042-001.md",'
+        b'"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}\n'
+    )
+    _git(root, "add", "--", micro_spec.as_posix(), iteration_qc.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "record prior iteration QC",
+        env=_git_env("2026-07-02T00:00:00+00:00"),
+    )
+
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=requirement.as_posix(),
+        approval_path=approval.as_posix(),
+        baseline_commit=baseline,
+        baseline_at=baseline_at,
+    )
+    result = module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
+    )
+
+    assert [(blocker.code, blocker.path) for blocker in result.blockers] == [
+        ("prior_work_detected", iteration_qc.as_posix()),
+        ("prior_work_detected", micro_spec.as_posix()),
+    ]
+
+
+def test_iteration_qc_adoption_rejects_exact_candidate_delivery_qc_prior_work(
+    tmp_path: Path,
+) -> None:
+    root = _init_git_repo(tmp_path)
+    baseline_at = "2026-06-01T00:00:00+00:00"
+    (root / ".gitkeep").write_bytes(b"")
+    _git(root, "add", "--", ".gitkeep")
+    _git(root, "commit", "--quiet", "-m", "capability baseline", env=_git_env(baseline_at))
+    baseline = _git(root, "rev-parse", "HEAD")
+    requirement, approval, _, _ = _commit_minimal_adoption_inputs(root)
+    delivery_qc = Path(".specbound/delivery-qc/dqc-0042-r1.json")
+    delivery_qc_path = root / delivery_qc
+    delivery_qc_path.parent.mkdir(parents=True, exist_ok=True)
+    delivery_qc_path.write_bytes(
+        b'{"requirement":{"id":"req-0042",'
+        b'"path":".specbound/requirements/req-0042/req-0042-r1.md",'
+        b'"revision":1,'
+        b'"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}\n'
+    )
+    _git(root, "add", "--", delivery_qc.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "record prior delivery QC",
+        env=_git_env("2026-07-02T00:00:00+00:00"),
+    )
+
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=requirement.as_posix(),
+        approval_path=approval.as_posix(),
+        baseline_commit=baseline,
+        baseline_at=baseline_at,
+    )
+    result = module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
+    )
+
+    assert [(blocker.code, blocker.path) for blocker in result.blockers] == [
+        ("prior_work_detected", delivery_qc.as_posix())
+    ]
+
+
+def test_iteration_qc_adoption_rejects_prior_adoption_identity(
+    tmp_path: Path,
+) -> None:
+    root = _init_git_repo(tmp_path)
+    baseline_at = "2026-06-01T00:00:00+00:00"
+    (root / ".gitkeep").write_bytes(b"")
+    _git(root, "add", "--", ".gitkeep")
+    _git(root, "commit", "--quiet", "-m", "capability baseline", env=_git_env(baseline_at))
+    baseline = _git(root, "rev-parse", "HEAD")
+    requirement, approval, _, _ = _commit_minimal_adoption_inputs(root)
+    adoption = Path(
+        ".specbound/adoptions/req-0042/adp-0042-r1-iteration_qc.json"
+    )
+    adoption_path = root / adoption
+    adoption_path.parent.mkdir(parents=True, exist_ok=True)
+    adoption_path.write_bytes(
+        b'{"adoption_id":"adp-0042-r1-iteration_qc",'
+        b'"requirement":{"id":"req-0042",'
+        b'"path":".specbound/requirements/req-0042/req-0042-r1.md",'
+        b'"revision":1,'
+        b'"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},'
+        b'"transition":"iteration_qc"}\n'
+    )
+    _git(root, "add", "--", adoption.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "record prior adoption",
+        env=_git_env("2026-07-02T00:00:00+00:00"),
+    )
+
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=requirement.as_posix(),
+        approval_path=approval.as_posix(),
+        baseline_commit=baseline,
+        baseline_at=baseline_at,
+    )
+    result = module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
+    )
+
+    assert [(blocker.code, blocker.path) for blocker in result.blockers] == [
+        ("prior_work_detected", adoption.as_posix())
+    ]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        b'{"adoption_id":"adp-0042-r1-iteration_qc",'
+        b'"transition":"delivery_qc","requirement":'
+        b'{"path":".specbound/requirements/req-0042/req-0042-r1.md",'
+        b'"id":"req-0042","revision":1}}\n',
+        b'{"adoption_id":"adp-0042-r1-delivery_qc",'
+        b'"transition":"iteration_qc","requirement":'
+        b'{"path":".specbound/requirements/req-0042/req-0042-r1.md",'
+        b'"id":"req-0042","revision":1}}\n',
+    ),
+)
+def test_iteration_qc_adoption_rejects_conflicting_adoption_path_identity(
+    tmp_path: Path,
+    payload: bytes,
+) -> None:
+    relative = ".specbound/adoptions/req-0042/adp-0042-r1-iteration_qc.json"
+    result = _resolve_iteration_qc_with_prior_blob(
+        tmp_path,
+        relative=relative,
+        payload=payload,
+    )
+
+    assert [(blocker.code, blocker.path) for blocker in result.blockers] == [
+        ("malformed_prior_work_evidence", relative)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("relative", "content"),
+    (
+        (
+            ".specbound/canary-outcomes/req-0042/"
+            "cny-0042-r1-iteration_qc-a1.json",
+            b'{"attempt_sequence":1,'
+            b'"canary_outcome_id":"cny-0042-r1-iteration_qc-a1",'
+            b'"transition":"iteration_qc"}\n',
+        ),
+        (
+            ".specbound/activations/req-0042/act-0042-r1-iteration_qc.json",
+            b'{"activation_id":"act-0042-r1-iteration_qc",'
+            b'"transition":"iteration_qc"}\n',
+        ),
+    ),
+)
+def test_iteration_qc_adoption_rejects_prior_canary_or_activation_identity(
+    tmp_path: Path,
+    relative: str,
+    content: bytes,
+) -> None:
+    root = _init_git_repo(tmp_path)
+    baseline_at = "2026-06-01T00:00:00+00:00"
+    (root / ".gitkeep").write_bytes(b"")
+    _git(root, "add", "--", ".gitkeep")
+    _git(root, "commit", "--quiet", "-m", "capability baseline", env=_git_env(baseline_at))
+    baseline = _git(root, "rev-parse", "HEAD")
+    requirement, approval, _, _ = _commit_minimal_adoption_inputs(root)
+    evidence_path = Path(relative)
+    path = root / evidence_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+    _git(root, "add", "--", evidence_path.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "record prior canary lineage",
+        env=_git_env("2026-07-02T00:00:00+00:00"),
+    )
+
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=requirement.as_posix(),
+        approval_path=approval.as_posix(),
+        baseline_commit=baseline,
+        baseline_at=baseline_at,
+    )
+    result = module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
+    )
+
+    assert [(blocker.code, blocker.path) for blocker in result.blockers] == [
+        ("prior_work_detected", evidence_path.as_posix())
+    ]
+
+
+def test_iteration_qc_adoption_rejects_mismatched_canary_attempt_sequence(
+    tmp_path: Path,
+) -> None:
+    root = _init_git_repo(tmp_path)
+    baseline_at = "2026-06-01T00:00:00+00:00"
+    (root / ".gitkeep").write_bytes(b"")
+    _git(root, "add", "--", ".gitkeep")
+    _git(root, "commit", "--quiet", "-m", "capability baseline", env=_git_env(baseline_at))
+    baseline = _git(root, "rev-parse", "HEAD")
+    requirement, approval, _, _ = _commit_minimal_adoption_inputs(root)
+    outcome = Path(
+        ".specbound/canary-outcomes/req-0042/"
+        "cny-0042-r1-iteration_qc-a2.json"
+    )
+    outcome_path = root / outcome
+    outcome_path.parent.mkdir(parents=True, exist_ok=True)
+    outcome_path.write_bytes(
+        b'{"attempt_sequence":1,'
+        b'"canary_outcome_id":"cny-0042-r1-iteration_qc-a2",'
+        b'"transition":"iteration_qc"}\n'
+    )
+    _git(root, "add", "--", outcome.as_posix())
+    _git(root, "commit", "--quiet", "-m", "record mismatched canary attempt", env=_git_env("2026-07-02T00:00:00+00:00"))
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=requirement.as_posix(),
+        approval_path=approval.as_posix(),
+        baseline_commit=baseline,
+        baseline_at=baseline_at,
+    )
+
+    result = module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
+    )
+
+    assert [(blocker.code, blocker.path) for blocker in result.blockers] == [
+        ("malformed_prior_work_evidence", outcome.as_posix())
+    ]
+
+
+def test_iteration_qc_adoption_fails_closed_on_malformed_target_bound_prior_work(
+    tmp_path: Path,
+) -> None:
+    root = _init_git_repo(tmp_path)
+    baseline_at = "2026-06-01T00:00:00+00:00"
+    (root / ".gitkeep").write_bytes(b"")
+    _git(root, "add", "--", ".gitkeep")
+    _git(root, "commit", "--quiet", "-m", "capability baseline", env=_git_env(baseline_at))
+    baseline = _git(root, "rev-parse", "HEAD")
+    requirement, approval, _, _ = _commit_minimal_adoption_inputs(root)
+    malformed = Path(
+        ".specbound/canary-outcomes/req-0042/"
+        "cny-0042-r1-iteration_qc-a1.json"
+    )
+    malformed_path = root / malformed
+    malformed_path.parent.mkdir(parents=True, exist_ok=True)
+    malformed_path.write_bytes(b"\xffnot-json\n")
+    _git(root, "add", "--", malformed.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "record malformed prior work",
+        env=_git_env("2026-07-02T00:00:00+00:00"),
+    )
+
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=requirement.as_posix(),
+        approval_path=approval.as_posix(),
+        baseline_commit=baseline,
+        baseline_at=baseline_at,
+    )
+    result = module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
+    )
+
+    assert [(blocker.code, blocker.path) for blocker in result.blockers] == [
+        ("malformed_prior_work_evidence", malformed.as_posix())
+    ]
+
+
+@pytest.mark.parametrize(
+    "relative",
+    (
+        ".specbound/micro-spec-reviews/req-0042/ms-0042-001.review.json",
+        ".specbound/iteration-qc/req-0042/iqc-0042-001-r1.json",
+        ".specbound/delivery-qc/dqc-0042-r1.json",
+        ".specbound/adoptions/req-0042/adp-0042-r1-iteration_qc.json",
+        "docs/governance/bootstrap-exceptions/req-0042-r1-iteration-qc-001.md",
+    ),
+)
+def test_iteration_qc_adoption_fails_closed_on_malformed_family_evidence(
+    tmp_path: Path,
+    relative: str,
+) -> None:
+    root = _init_git_repo(tmp_path)
+    baseline_at = "2026-06-01T00:00:00+00:00"
+    (root / ".gitkeep").write_bytes(b"")
+    _git(root, "add", "--", ".gitkeep")
+    _git(root, "commit", "--quiet", "-m", "capability baseline", env=_git_env(baseline_at))
+    baseline = _git(root, "rev-parse", "HEAD")
+    requirement, approval, _, _ = _commit_minimal_adoption_inputs(root)
+    malformed = Path(relative)
+    malformed_path = root / malformed
+    malformed_path.parent.mkdir(parents=True, exist_ok=True)
+    malformed_path.write_bytes(b"\xffnot-valid-evidence\n")
+    _git(root, "add", "--", malformed.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "record malformed family evidence",
+        env=_git_env("2026-07-02T00:00:00+00:00"),
+    )
+
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=requirement.as_posix(),
+        approval_path=approval.as_posix(),
+        baseline_commit=baseline,
+        baseline_at=baseline_at,
+    )
+    result = module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
+    )
+
+    assert [(blocker.code, blocker.path) for blocker in result.blockers] == [
+        ("malformed_prior_work_evidence", malformed.as_posix())
+    ]
+
+
+@pytest.mark.parametrize(
+    "relative",
+    (
+        ".specbound/delivery-qc/dqc-0042-r1.json",
+        ".specbound/adoptions/req-0042/adp-0042-r1-iteration_qc.json",
+    ),
+)
+def test_adoption_fails_closed_on_target_path_with_conflicting_binding(
+    tmp_path: Path,
+    relative: str,
+) -> None:
+    root = _init_git_repo(tmp_path)
+    baseline_at = "2026-06-01T00:00:00+00:00"
+    (root / ".gitkeep").write_bytes(b"")
+    _git(root, "add", "--", ".gitkeep")
+    _git(root, "commit", "--quiet", "-m", "capability baseline", env=_git_env(baseline_at))
+    baseline = _git(root, "rev-parse", "HEAD")
+    requirement, approval, _, _ = _commit_minimal_adoption_inputs(root)
+    evidence_path = Path(relative)
+    path = root / evidence_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "requirement": {
+                    "id": "req-0042",
+                    "path": ".specbound/requirements/req-0042/req-0042-r2.md",
+                    "revision": 2,
+                }
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    _git(root, "add", "--", evidence_path.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "record conflicting canonical evidence",
+        env=_git_env("2026-07-02T00:00:00+00:00"),
+    )
+
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=requirement.as_posix(),
+        approval_path=approval.as_posix(),
+        baseline_commit=baseline,
+        baseline_at=baseline_at,
+    )
+    result = module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
+    )
+
+    assert [(blocker.code, blocker.path) for blocker in result.blockers] == [
+        ("malformed_prior_work_evidence", evidence_path.as_posix())
+    ]
+
+
+@pytest.mark.parametrize(
+    ("exception_transition", "expected_code"),
+    (
+        ("iteration_qc", "prior_work_detected"),
+        ("delivery_qc", "malformed_prior_work_evidence"),
+    ),
+)
+def test_iteration_qc_adoption_rejects_bootstrap_exception_prior_work(
+    tmp_path: Path,
+    exception_transition: str,
+    expected_code: str,
+) -> None:
+    root = _init_git_repo(tmp_path)
+    baseline_at = "2026-06-01T00:00:00+00:00"
+    (root / ".gitkeep").write_bytes(b"")
+    _git(root, "add", "--", ".gitkeep")
+    _git(root, "commit", "--quiet", "-m", "capability baseline", env=_git_env(baseline_at))
+    baseline = _git(root, "rev-parse", "HEAD")
+    requirement, approval, _, _ = _commit_minimal_adoption_inputs(root)
+    exception = Path(
+        "docs/governance/bootstrap-exceptions/req-0042-r1-iteration-qc-001.md"
+    )
+    exception_path = root / exception
+    exception_path.parent.mkdir(parents=True, exist_ok=True)
+    exception_path.write_text(
+        "# Bootstrap exception: req-0042-r1-iteration-qc-001\n\n"
+        "- Exception ID: `req-0042-r1-iteration-qc-001`\n"
+        "- Status: `closed`\n"
+        f"- Transition: `{exception_transition}`\n"
+        "- Target artifact: `.specbound/requirements/req-0042/req-0042-r1.md`\n"
+        "- Target ID/revision: `req-0042-r1`\n"
+        "- Action evidence: `commit:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    _git(root, "add", "--", exception.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "record bootstrap prior work",
+        env=_git_env("2026-07-02T00:00:00+00:00"),
+    )
+
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=requirement.as_posix(),
+        approval_path=approval.as_posix(),
+        baseline_commit=baseline,
+        baseline_at=baseline_at,
+    )
+    result = module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
+    )
+
+    assert [(blocker.code, blocker.path) for blocker in result.blockers] == [
+        (expected_code, exception.as_posix())
+    ]
+
+
+@pytest.mark.parametrize(
+    ("ledger_transition", "row_count", "expected_code"),
+    (
+        ("iteration_qc", 1, "prior_work_detected"),
+        ("delivery_qc", 1, "malformed_prior_work_evidence"),
+        ("iteration_qc", 2, "malformed_prior_work_evidence"),
+    ),
+)
+def test_iteration_qc_adoption_rejects_closed_bootstrap_ledger_row(
+    tmp_path: Path,
+    ledger_transition: str,
+    row_count: int,
+    expected_code: str,
+) -> None:
+    root = _init_git_repo(tmp_path)
+    baseline_at = "2026-06-01T00:00:00+00:00"
+    (root / ".gitkeep").write_bytes(b"")
+    _git(root, "add", "--", ".gitkeep")
+    _git(root, "commit", "--quiet", "-m", "capability baseline", env=_git_env(baseline_at))
+    baseline = _git(root, "rev-parse", "HEAD")
+    requirement, approval, _, _ = _commit_minimal_adoption_inputs(root)
+    ledger = Path("docs/governance/bootstrap-exceptions/README.md")
+    ledger_path = root / ledger
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    row = (
+        "| [`req-0042-r1-iteration-qc-001.md`](req-0042-r1-iteration-qc-001.md) "
+        f"| `{ledger_transition}` "
+        "| `.specbound/requirements/req-0042/req-0042-r1.md` "
+        "| `closed` | n/a |\n"
+    )
+    ledger_path.write_text(
+        "# Bootstrap exception ledger\n\n"
+        "**Active exceptions: 0**\n\n"
+        "## Inventory\n\n"
+        "| Exception | Transition | Target | Status | Expiry |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        + row * row_count,
+        encoding="utf-8",
+        newline="\n",
+    )
+    _git(root, "add", "--", ledger.as_posix())
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "record closed exception ledger row",
+        env=_git_env("2026-07-02T00:00:00+00:00"),
+    )
+
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=requirement.as_posix(),
+        approval_path=approval.as_posix(),
+        baseline_commit=baseline,
+        baseline_at=baseline_at,
+    )
+    result = module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
+    )
+
+    assert [(blocker.code, blocker.path) for blocker in result.blockers] == [
+        (expected_code, ledger.as_posix())
+    ]
+
+
+def test_iteration_qc_adoption_rejects_ledger_active_count_mismatch(
+    tmp_path: Path,
+) -> None:
+    root = _init_git_repo(tmp_path)
+    baseline_at = "2026-06-01T00:00:00+00:00"
+    (root / ".gitkeep").write_bytes(b"")
+    _git(root, "add", "--", ".gitkeep")
+    _git(root, "commit", "--quiet", "-m", "capability baseline", env=_git_env(baseline_at))
+    baseline = _git(root, "rev-parse", "HEAD")
+    requirement, approval, _, _ = _commit_minimal_adoption_inputs(root)
+    ledger = Path("docs/governance/bootstrap-exceptions/README.md")
+    ledger_path = root / ledger
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    ledger_path.write_text(
+        "# Bootstrap exception ledger\n\n"
+        "**Active exceptions: 0**\n\n"
+        "## Inventory\n\n"
+        "| Exception | Transition | Target | Status | Expiry |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| [`req-0042-r1-iteration-qc-001.md`](req-0042-r1-iteration-qc-001.md) "
+        "| `iteration_qc` | `.specbound/requirements/req-0042/req-0042-r1.md` "
+        "| `active` | 2026-08-01T00:00:00Z |\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    _git(root, "add", "--", ledger.as_posix())
+    _git(root, "commit", "--quiet", "-m", "record inconsistent ledger", env=_git_env("2026-07-02T00:00:00+00:00"))
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=requirement.as_posix(),
+        approval_path=approval.as_posix(),
+        baseline_commit=baseline,
+        baseline_at=baseline_at,
+    )
+
+    result = module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
+    )
+
+    assert [(blocker.code, blocker.path) for blocker in result.blockers] == [
+        ("malformed_prior_work_evidence", ledger.as_posix())
+    ]
+
+
+def test_iteration_qc_adoption_ignores_malformed_ledger_row_for_other_revision(
+    tmp_path: Path,
+) -> None:
+    root = _init_git_repo(tmp_path)
+    baseline_at = "2026-06-01T00:00:00+00:00"
+    (root / ".gitkeep").write_bytes(b"")
+    _git(root, "add", "--", ".gitkeep")
+    _git(root, "commit", "--quiet", "-m", "capability baseline", env=_git_env(baseline_at))
+    baseline = _git(root, "rev-parse", "HEAD")
+    requirement, approval, _, _ = _commit_minimal_adoption_inputs(root)
+    ledger = Path("docs/governance/bootstrap-exceptions/README.md")
+    ledger_path = root / ledger
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    ledger_path.write_text(
+        "# Bootstrap exception ledger\n\n"
+        "**Active exceptions: 0**\n\n"
+        "## Inventory\n\n"
+        "| Exception | Transition | Target | Status | Expiry |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| [req-0042-r2-iteration-qc-001](req-0042-r2-iteration-qc-001.md) "
+        "| `iteration_qc` | `.specbound/requirements/req-0042/req-0042-r2.md` "
+        "| `closed` |\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    _git(root, "add", "--", ledger.as_posix())
+    _git(root, "commit", "--quiet", "-m", "record unrelated malformed ledger row", env=_git_env("2026-07-02T00:00:00+00:00"))
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=requirement.as_posix(),
+        approval_path=approval.as_posix(),
+        baseline_commit=baseline,
+        baseline_at=baseline_at,
+    )
+
+    result = module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
+    )
+
+    assert result.eligible
+
+
+def test_iteration_qc_adoption_rejects_duplicate_key_candidate_binding(
+    tmp_path: Path,
+) -> None:
+    root = _init_git_repo(tmp_path)
+    baseline_at = "2026-06-01T00:00:00+00:00"
+    (root / ".gitkeep").write_bytes(b"")
+    _git(root, "add", "--", ".gitkeep")
+    _git(root, "commit", "--quiet", "-m", "capability baseline", env=_git_env(baseline_at))
+    baseline = _git(root, "rev-parse", "HEAD")
+    requirement, approval, _, _ = _commit_minimal_adoption_inputs(root)
+    adoption = Path(
+        ".specbound/adoptions/req-0042/adp-0042-r2-iteration_qc.json"
+    )
+    adoption_path = root / adoption
+    adoption_path.parent.mkdir(parents=True, exist_ok=True)
+    adoption_path.write_text(
+        '{"requirement":{"path":".specbound/requirements/req-0042/req-0042-r1.md",'
+        '"id":"req-0042","revision":1},'
+        '"requirement":{"path":".specbound/requirements/req-0042/req-0042-r2.md",'
+        '"id":"req-0042","revision":2}}\n',
+        encoding="utf-8",
+        newline="\n",
+    )
+    _git(root, "add", "--", adoption.as_posix())
+    _git(root, "commit", "--quiet", "-m", "record duplicate-key adoption", env=_git_env("2026-07-02T00:00:00+00:00"))
+    module = importlib.import_module("specbound.control_plane_adoption")
+    evidence = module.freeze_git_evidence(
+        root,
+        requirement_path=requirement.as_posix(),
+        approval_path=approval.as_posix(),
+        baseline_commit=baseline,
+        baseline_at=baseline_at,
+    )
+
+    result = module.resolve_adoption_eligibility(
+        root,
+        evidence=evidence,
+        approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
+    )
+
+    assert [(blocker.code, blocker.path) for blocker in result.blockers] == [
+        ("malformed_prior_work_evidence", adoption.as_posix())
+    ]
 
 
 def test_resolve_adoption_eligibility_rejects_requirement_in_baseline_history(
@@ -589,6 +2763,7 @@ def test_resolve_adoption_eligibility_rejects_requirement_in_baseline_history(
         root,
         evidence=evidence,
         approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
     )
 
     assert {blocker.code for blocker in result.blockers} == {
@@ -628,6 +2803,7 @@ def test_resolve_adoption_eligibility_rejects_approval_in_baseline_history(
         root,
         evidence=evidence,
         approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
     )
 
     assert {blocker.code for blocker in result.blockers} == {
@@ -699,6 +2875,7 @@ def test_resolve_adoption_eligibility_rejects_side_branch_history_merged_into_ba
         root,
         evidence=evidence,
         approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
     )
 
     assert {blocker.code for blocker in result.blockers} == {expected_blocker}
@@ -729,6 +2906,7 @@ def test_resolve_adoption_eligibility_requires_approval_after_baseline(
         root,
         evidence=evidence,
         approved_at=baseline_at,
+        transition="iteration_qc",
     )
 
     assert {blocker.code for blocker in result.blockers} == {
@@ -759,6 +2937,7 @@ def test_resolve_adoption_eligibility_rejects_non_utc_approved_at(
         root,
         evidence=evidence,
         approved_at="2026-07-01T09:00:01+09:00",
+        transition="iteration_qc",
     )
 
     assert {blocker.code for blocker in result.blockers} == {"invalid_approved_at"}
@@ -789,6 +2968,7 @@ def test_resolve_adoption_eligibility_requires_introductions_after_baseline(
         root,
         evidence=evidence,
         approved_at="2026-07-01T00:00:01+00:00",
+        transition="iteration_qc",
     )
 
     assert {blocker.code for blocker in result.blockers} == {

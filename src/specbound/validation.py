@@ -15,6 +15,7 @@ from typing import Any
 import yaml
 
 from .agent_contract import validate_agent_role_skills, validate_agent_roles_policy
+from .control_plane_adoption import resolve_effective_activation_registry
 
 REQUIREMENT_RE = re.compile(r"^(req-[0-9]+)-r([1-9][0-9]*)\.md$")
 DISCOVERY_RE = re.compile(r"^(dcy-[0-9]+)-r([1-9][0-9]*)\.md$")
@@ -151,6 +152,7 @@ class Result:
     checked_delivery_qc: int = 0
     checked_agent_roles: int = 0
     checked_agent_skills: int = 0
+    checked_effective_activations: int = 0
 
     @property
     def valid(self) -> bool:
@@ -172,6 +174,7 @@ class Result:
             "checked_delivery_qc": self.checked_delivery_qc,
             "checked_agent_roles": self.checked_agent_roles,
             "checked_agent_skills": self.checked_agent_skills,
+            "checked_effective_activations": self.checked_effective_activations,
             "blockers": self.blockers,
         }
 
@@ -2481,5 +2484,11 @@ def validate(root: Path, claim: str | None = None, requirement: str | None = Non
         _validate_family_root(root, iteration_qc_root, result, "iteration_qc")
     if delivery_qc_root:
         _validate_family_root(root, delivery_qc_root, result, "delivery_qc")
+    activation_root = root / REQUIRED_ROOTS["activations_root"]
+    if (root / ".git").exists() and activation_root.is_dir():
+        effective_registry = resolve_effective_activation_registry(root)
+        result.checked_effective_activations = len(effective_registry.activations)
+        for blocker in effective_registry.blockers:
+            result.block(blocker.code, blocker.path, blocker.detail)
     _validate_adoption_claim(root, result, claim, requirement, adopted_requirements)
     return result
