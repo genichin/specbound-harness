@@ -1,0 +1,16 @@
+{
+  "authority": "independent-advanced-llm-reviewer",
+  "decided_at": "2026-07-30T08:40:27Z",
+  "decision": "approved_for_implementation",
+  "micro_spec_id": "ms-0005-002",
+  "micro_spec_path": ".specbound/micro-specs/req-0005/ms-0005-002.md",
+  "micro_spec_sha256": "876ab79c4ca7c539e3e4f48b14fc715c6eb60ec5b6fd7c2eba4b6d5024dbbcc8",
+  "permitted_next_action": "implement_bound_micro_spec_only",
+  "reason": "Fresh-context exact-byte review passed for req-0005-r1 AC-003: independent IQC authority, immutable implementation/evaluator result bindings, fixed single-result revision semantics, exact effective-adoption prerequisites, and failure-atomic publication boundaries are implementation-ready with no remaining blocker.",
+  "requirement_id": "req-0005",
+  "requirement_path": ".specbound/requirements/req-0005/req-0005-r1.md",
+  "requirement_sha256": "fa483adbf3155a138aaa7507faa96b7a0997c06df0ee645013fbaf7dcad8a545",
+  "revision": 1,
+  "risk": "high",
+  "schema_version": 1
+}
