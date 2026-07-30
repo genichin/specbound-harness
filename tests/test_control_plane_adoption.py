@@ -86,6 +86,7 @@ def _init_git_repo(tmp_path: Path) -> Path:
     return root
 
 
+@pytest.mark.skipif(os.name == "posix", reason="unsupported-platform contract requires a non-POSIX host")
 def test_adoption_decide_refuses_unsupported_platform_before_mutation(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
