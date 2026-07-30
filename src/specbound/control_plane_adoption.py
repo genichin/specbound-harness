@@ -206,6 +206,7 @@ def _publish_adoption_leaf(root: Path, target: str, content: bytes) -> GitEviden
     parent_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
     leaf_fd: int | None = None
     owned: tuple[int, int] | None = None
+    published = False
     try:
         for part in parts[:-1]:
             try:
@@ -239,13 +240,14 @@ def _publish_adoption_leaf(root: Path, target: str, content: bytes) -> GitEviden
             output.flush()
             os.fsync(output.fileno())
         os.fsync(parent_fd)
+        published = True
         return None
     except OSError as exc:
         return GitEvidenceBlocker("adoption_publication_failed", target, str(exc))
     finally:
         if leaf_fd is not None:
             os.close(leaf_fd)
-        if owned is not None and __import__("sys").exc_info()[0] is not None:
+        if owned is not None and not published:
             try:
                 current = os.stat(parts[-1], dir_fd=parent_fd, follow_symlinks=False)
                 if (current.st_dev, current.st_ino) == owned:
