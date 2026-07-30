@@ -977,7 +977,14 @@ def test_resolve_adoption_read_state_rejects_external_before_repository_source_r
     )
     _write_canonical_json(root, Path(adoption_path), record)
     _git(root, "add", "--", adoption_path)
-    _git(root, "commit", "--quiet", "-m", "record noncanonical source order")
+    _git(
+        root,
+        "commit",
+        "--quiet",
+        "-m",
+        "record noncanonical source order",
+        env=_git_env("2026-07-03T00:00:00+00:00"),
+    )
     module = importlib.import_module("specbound.control_plane_adoption")
 
     state, blockers = module.resolve_adoption_read_state(root, adoption_path)
